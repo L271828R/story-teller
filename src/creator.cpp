@@ -256,7 +256,8 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
 
 std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
                                    const std::string& targetLanguage,
-                                   const std::string& llmReadme) {
+                                   const std::string& llmReadme,
+                                   const std::string& extraInstruction) {
     std::ostringstream out;
     out << "## Translation request\n\n"
         << "Translate the following complete StoryTeller markdown document into "
@@ -269,7 +270,15 @@ std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
            "Keep the tidbit block syntax valid and keep the same speaker name unless the "
            "source name has a standard target-language rendering. "
            "Return only the translated markdown document with no prose before or after.\n\n"
-        << "## Source markdown\n\n"
+        << "## Additional translation instructions\n\n";
+
+    if (trim_copy(extraInstruction).empty()) {
+        out << "None.\n\n";
+    } else {
+        out << extraInstruction << "\n\n";
+    }
+
+    out << "## Source markdown\n\n"
         << "```markdown\n" << sourceMarkdown << "\n```\n\n";
 
     std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;

@@ -710,7 +710,11 @@ void EditPanel::OnTranslate(wxCommandEvent&) {
 
     AppState st = LoadAppState();
     LLMConfig cfg = llm_config_from_state(st);
-    std::string prompt = BuildTranslationPrompt(sourceContent, lang.ToStdString(), "");
+    wxString extraInstr = m_instructCtrl->GetValue().Trim();
+    std::string prompt = BuildTranslationPrompt(sourceContent,
+                                                lang.ToStdString(),
+                                                "",
+                                                extraInstr.ToStdString());
 
     if (cfg.backend == LLMBackend::Clipboard) {
         if (wxTheClipboard->Open()) {

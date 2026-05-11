@@ -139,7 +139,10 @@ int test_creator() {
 
     // BuildTranslationPrompt preserves structure and names the target language.
     {
-        std::string prompt = BuildTranslationPrompt("<!-- ch:0 -->\n## Chapter 1: Hello\n", "Spanish", "");
+        std::string prompt = BuildTranslationPrompt("<!-- ch:0 -->\n## Chapter 1: Hello\n",
+                                                    "Spanish",
+                                                    "",
+                                                    "Add a pinyin line below each Chinese sentence.");
         bool hasLang = prompt.find("Spanish") != std::string::npos;
         bool hasMarker = prompt.find("ch:N") != std::string::npos
                       || prompt.find("<!-- ch:0 -->") != std::string::npos;
@@ -147,7 +150,8 @@ int test_creator() {
         bool hasAdapt = prompt.find("culturally relevant") != std::string::npos
                      && prompt.find("instead of literal") != std::string::npos;
         bool hasNewFile = prompt.find("translated markdown document") != std::string::npos;
-        if (!hasLang || !hasMarker || !hasSource || !hasAdapt || !hasNewFile) {
+        bool hasExtra = prompt.find("pinyin line") != std::string::npos;
+        if (!hasLang || !hasMarker || !hasSource || !hasAdapt || !hasNewFile || !hasExtra) {
             std::cerr << "FAIL [build-translation-prompt]\n";
             ++failures;
         } else {

@@ -35,7 +35,8 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
 
 std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
                                    const std::string& targetLanguage,
-                                   const std::string& llmReadme);
+                                   const std::string& llmReadme,
+                                   const std::string& extraInstruction = "");
 
 // Removes common LLM wrappers around returned markdown, such as an outer
 // ```markdown fence and short prose before the actual document begins.
