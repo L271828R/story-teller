@@ -17,4 +17,4 @@ cmake --build build -j"$(sysctl -n hw.logicalcpu)"
 
 echo ""
 echo "Done. Run with:"
-echo "  ./build/mdviewer <file.md|file.html>"
+echo "  ./build/story-teller [file.md|file.html]"

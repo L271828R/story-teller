@@ -21,3 +21,13 @@ bool ApplyTidbitPatch(const std::string& filepath,
 // Overwrites the file at filepath with newContent.
 // Returns true on success.
 bool ReplaceChapter(const std::string& filepath, const std::string& newContent);
+
+// Returns the block from <!-- ch:N --> up to (not including) the next <!-- ch: -->
+// marker, or to end-of-file. Returns "" if the marker is not found.
+std::string ExtractChapter(const std::string& fileContent, int chapterId);
+
+// Reads the file at filepath, replaces the section for chapterId with newBlock,
+// and writes the result back. Returns true on success.
+bool ApplyChapterPatch(const std::string& filepath,
+                       int chapterId,
+                       const std::string& newBlock);

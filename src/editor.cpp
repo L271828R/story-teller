@@ -101,3 +101,52 @@ bool ReplaceChapter(const std::string& filepath, const std::string& newContent) 
     f << newContent;
     return f.good();
 }
+
+static std::string ch_marker_for(int id) {
+    return "<!-- ch:" + std::to_string(id) + " -->";
+}
+
+std::string ExtractChapter(const std::string& fileContent, int chapterId) {
+    std::string marker = ch_marker_for(chapterId);
+    auto mpos = fileContent.find(marker);
+    if (mpos == std::string::npos) return "";
+
+    // Find the start of the next <!-- ch: --> marker (or EOF).
+    auto next = fileContent.find("<!-- ch:", mpos + marker.size());
+    std::size_t block_end = (next == std::string::npos) ? fileContent.size() : next;
+
+    // Trim trailing whitespace.
+    while (block_end > mpos && fileContent[block_end - 1] == '\n') --block_end;
+
+    return fileContent.substr(mpos, block_end - mpos);
+}
+
+bool ApplyChapterPatch(const std::string& filepath,
+                       int chapterId,
+                       const std::string& newBlock) {
+    std::string content;
+    {
+        std::ifstream f(filepath);
+        if (!f) return false;
+        content.assign(std::istreambuf_iterator<char>(f), {});
+    }
+
+    std::string marker = ch_marker_for(chapterId);
+    auto mpos = content.find(marker);
+    if (mpos == std::string::npos) return false;
+
+    auto next = content.find("<!-- ch:", mpos + marker.size());
+    std::size_t block_end = (next == std::string::npos) ? content.size() : next;
+
+    std::string result;
+    result.reserve(content.size());
+    result += content.substr(0, mpos);
+    result += newBlock;
+    result += '\n';
+    if (next != std::string::npos)
+        result += content.substr(block_end);
+
+    std::ofstream f(filepath, std::ios::trunc);
+    f << result;
+    return f.good();
+}

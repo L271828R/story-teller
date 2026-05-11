@@ -6,6 +6,7 @@
 #include <vector>
 #include <wx/wx.h>
 #include <wx/checklst.h>
+#include "config.h"
 #include "creator.h"
 
 // Self-contained form panel for content generation.
@@ -19,7 +20,8 @@ private:
     OpenCallback   m_openCallback;
 
     // ── Form fields ───────────────────────────────────────────────────────
-    wxTextCtrl*      m_projectDir;
+    wxChoice*        m_projectChoice;
+    wxStaticText*    m_projectPathLabel;
     wxTextCtrl*      m_topicCtrl;
     wxChoice*        m_styleChoice;
 
@@ -40,6 +42,7 @@ private:
     wxSizerItem*     m_ollamaSizer  = nullptr;
 
     wxButton*        m_generateBtn;
+    wxListBox*       m_chapterListBox;
     wxTextCtrl*      m_statusCtrl;
 
     bool m_generating = false;
@@ -51,7 +54,9 @@ private:
     std::string SelectedCategory() const;
 
     // ── Event handlers ────────────────────────────────────────────────────
-    void OnBrowse(wxCommandEvent&);
+    void OnNewProject(wxCommandEvent&);
+    void OnProjectSelected(wxCommandEvent&);
+    void OnSave(wxCommandEvent&);
     void OnCatSelected(wxCommandEvent&);
     void OnCharToggled(wxCommandEvent&);
     void OnAddCategory(wxCommandEvent&);
@@ -61,11 +66,19 @@ private:
     void OnBackendChanged(wxCommandEvent&);
     void OnGenerate(wxCommandEvent&);
     void OnCopyPrompt(wxCommandEvent&);
+    void OnOpenInView(wxCommandEvent&);
 
     GenerationRequest BuildRequest() const;
     void UpdateBackendFields();
     void SetStatus(const wxString& msg);
     void SetGenerating(bool on);
+
+    void LoadProjects();
+    void LoadChapters();
+    void SelectProject(const wxString& name);
+    wxString CurrentProjectPath() const;
+    void SaveFormState() const;
+    void RestoreFormState(const AppState& st);
 
     wxDECLARE_EVENT_TABLE();
 };

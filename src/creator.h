@@ -14,9 +14,16 @@ struct GenerationRequest {
 std::string BuildPrompt(const GenerationRequest& req, const std::string& llmReadme);
 
 // Builds a patch prompt asking the LLM to rewrite a single block per the instruction.
+// chapterContext: the full chapter text — gives the LLM story context for the rewrite.
 std::string BuildPatchPrompt(const std::string& originalBlock,
                              const std::string& instruction,
-                             const std::string& llmReadme);
+                             const std::string& llmReadme,
+                             const std::string& chapterContext = "");
+
+// Injects <!-- ch:N --> markers before each "## Chapter N:" heading.
+// Returns the stamped text and the count of chapters found.
+struct StampResult { std::string text; int count; };
+StampResult StampChapters(const std::string& content, int baseId);
 
 // Returns a filename like "ch03_black_holes.md" from a topic and chapter number.
 std::string ChapterFilename(const std::string& topic, int chapterNumber);

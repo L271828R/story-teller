@@ -2,7 +2,7 @@
 #include <string>
 #include <fstream>
 
-// Appends timestamped lines to ~/Library/Logs/MDViewer/mdviewer.log.
+// Appends timestamped lines to ~/Library/Logs/StoryTeller/story-teller.log.
 class Logger {
 public:
     static Logger& get();

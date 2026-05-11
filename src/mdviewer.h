@@ -7,6 +7,7 @@
 #include <wx/stattext.h>
 #include <string>
 #include "logger.h"
+#include "edit_panel.h"
 
 enum {
     ID_RELOAD       = wxID_HIGHEST + 1,
@@ -30,6 +31,7 @@ public:
 private:
     wxNotebook*   m_notebook    = nullptr;
     wxPanel*      m_viewPage    = nullptr;
+    EditPanel*    m_editPage    = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;

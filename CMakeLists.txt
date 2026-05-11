@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(mdviewer CXX)
+project(story-teller CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -86,49 +86,53 @@ set(SOURCES
     src/main.cpp
     src/mdviewer.cpp
     src/create_panel.cpp
+    src/edit_panel.cpp
     src/llm.cpp
     src/markdown.cpp
     src/html_template.cpp
+    src/config.cpp
     src/project.cpp
     src/creator.cpp
     src/editor.cpp
     src/logger.cpp
     src/inspector.mm
 )
-add_executable(mdviewer ${SOURCES})
-add_dependencies(mdviewer gen_mermaid_header gen_hljs_headers)
+add_executable(story-teller ${SOURCES})
+add_dependencies(story-teller gen_mermaid_header gen_hljs_headers)
 
-target_include_directories(mdviewer PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(mdviewer PRIVATE ${wxWidgets_LIBRARIES})
+target_include_directories(story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(story-teller PRIVATE ${wxWidgets_LIBRARIES})
 
 # ── Tests (no wxWidgets dependency) ──────────────────────────────────────────
-add_executable(test_mdviewer
+add_executable(test_story-teller
     tests/main.cpp
+    tests/test_config.cpp
     tests/test_markdown.cpp
     tests/test_html_template.cpp
     tests/test_mdviewer.cpp
     tests/test_project.cpp
     tests/test_creator.cpp
     tests/test_editor.cpp
+    src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
     src/project.cpp
     src/creator.cpp
     src/editor.cpp
 )
-add_dependencies(test_mdviewer gen_mermaid_header gen_hljs_headers)
-target_include_directories(test_mdviewer PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
+add_dependencies(test_story-teller gen_mermaid_header gen_hljs_headers)
+target_include_directories(test_story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
 
 enable_testing()
-add_test(NAME dark_mode COMMAND test_mdviewer)
+add_test(NAME dark_mode COMMAND test_story-teller)
 
 if(APPLE)
     find_library(WEBKIT_FW WebKit)
     if(WEBKIT_FW)
-        target_link_libraries(mdviewer PRIVATE ${WEBKIT_FW})
+        target_link_libraries(story-teller PRIVATE ${WEBKIT_FW})
     endif()
 endif()
 
-install(TARGETS mdviewer DESTINATION bin)
-install(FILES completions/_mdviewer
+install(TARGETS story-teller DESTINATION bin)
+install(FILES completions/_story-teller
     DESTINATION share/zsh/site-functions)

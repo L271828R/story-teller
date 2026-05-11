@@ -429,7 +429,7 @@ std::string BuildLogsHTML(const std::string& rawLog,
 
     return R"HTML(<!DOCTYPE html><html><head>
 <meta charset="UTF-8">
-<title>MDViewer — Logs</title>
+<title>StoryTeller — Logs</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;
@@ -442,7 +442,7 @@ td{padding:5px 10px;vertical-align:top;white-space:pre-wrap;word-break:break-all
 .ts{color:)HTML" + muted + R"HTML(;white-space:nowrap;padding-right:20px;user-select:none}
 tr:hover{background:)HTML" + surface + R"HTML(}
 </style></head><body>
-<h2>MDViewer — Application Log</h2>
+<h2>StoryTeller — Application Log</h2>
 <p style="font-size:12px;color:)HTML" + muted + R"HTML(;margin:8px 0 16px">)HTML"
 + EscapeHTML(logPath) + R"HTML(</p>
 <table>)HTML" + rows + R"HTML(</table>

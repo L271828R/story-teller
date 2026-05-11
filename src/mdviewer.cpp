@@ -1,5 +1,6 @@
 #include "mdviewer.h"
 #include "create_panel.h"
+#include "edit_panel.h"
 #include "markdown.h"
 #include "html_template.h"
 #include "inspector.h"
@@ -44,14 +45,17 @@ wxEND_EVENT_TABLE()
 // ---------------------------------------------------------------------------
 MDViewerFrame::MDViewerFrame(const wxString& filePath)
     : wxFrame(nullptr, wxID_ANY,
-              "MDViewer — " + wxFileName(filePath).GetFullName(),
+              filePath.empty() ? wxString("StoryTeller")
+                               : wxString("StoryTeller — " + wxFileName(filePath).GetFullName()),
               wxDefaultPosition, wxSize(1280, 860))
     , m_darkMode(false)
     , m_fontSizePercent(100)
 {
-    wxFileName fn(filePath);
-    fn.MakeAbsolute();
-    m_filePath = fn.GetFullPath();
+    if (!filePath.empty()) {
+        wxFileName fn(filePath);
+        fn.MakeAbsolute();
+        m_filePath = fn.GetFullPath();
+    }
 
     wxConfig cfg("MDViewer");
     m_darkMode        = cfg.ReadBool("darkMode", false);
@@ -153,12 +157,18 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         else evt.Skip();
     });
 
-    m_notebook->AddPage(m_viewPage, "View");
-
     // ── Create page ───────────────────────────────────────────────────────
     auto* createPage = new CreatePanel(m_notebook,
         [this](const std::string& path) { LoadFile(path); });
     m_notebook->AddPage(createPage, "Create");
+
+    // ── Edit page ─────────────────────────────────────────────────────────
+    m_editPage = new EditPanel(m_notebook,
+        [this](const std::string& path) { LoadFile(path); });
+    m_notebook->AddPage(m_editPage, "Edit");
+
+    // ── View page (last) ──────────────────────────────────────────────────
+    m_notebook->AddPage(m_viewPage, "View");
 
     // ── Frame layout ─────────────────────────────────────────────────────
     auto* sizer = new wxBoxSizer(wxVERTICAL);
@@ -193,6 +203,16 @@ std::string MDViewerFrame::ReadFile(const std::string& path) {
 // Dispatch: .html → load URL directly; .md → render markdown
 // ---------------------------------------------------------------------------
 void MDViewerFrame::LoadAndRender() {
+    if (m_filePath.empty()) {
+        std::string body = RenderMarkdown(
+            "# StoryTeller\n\n"
+            "Open a file with **File → Open** (Ctrl+O) or paste markdown with **Ctrl+V**.\n");
+        std::string html = BuildHTML(body, "StoryTeller", m_darkMode, m_fontSizePercent);
+        m_webView->SetPage(wxString::FromUTF8(html), "");
+        SetStatusText("Ready");
+        return;
+    }
+
     wxString ext = wxFileName(m_filePath).GetExt().Lower();
     Logger::get().log("LoadAndRender: " + m_filePath.ToStdString() + "  ext=" + ext.ToStdString());
 
@@ -229,8 +249,9 @@ void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
 
 void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
-    SetTitle("MDViewer — " + wxFileName(m_filePath).GetFullName());
-    m_notebook->SetSelection(0);
+    SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
+    // View is the last tab (index 2: Create=0, Edit=1, View=2).
+    m_notebook->SetSelection(2);
     LoadAndRender();
 }
 

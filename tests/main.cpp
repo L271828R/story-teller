@@ -3,6 +3,7 @@
 
 #include <iostream>
 
+int test_config();
 int test_markdown();
 int test_html_template();
 int test_mdviewer();
@@ -12,6 +13,7 @@ int test_editor();
 
 int main() {
     int failures = 0;
+    failures += test_config();
     failures += test_markdown();
     failures += test_html_template();
     failures += test_mdviewer();

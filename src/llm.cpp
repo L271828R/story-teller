@@ -1,4 +1,5 @@
 #include "llm.h"
+#include "logger.h"
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -10,17 +11,25 @@ namespace fs = std::filesystem;
 
 static std::string temp_prompt_path() {
     auto ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-    return (fs::temp_directory_path() / ("mdviewer_prompt_" + std::to_string(ns) + ".txt"))
+    return (fs::temp_directory_path() / ("story-teller_prompt_" + std::to_string(ns) + ".txt"))
            .string();
 }
 
 static LLMResult run_shell(const std::string& cmd) {
+    Logger::get().log("run_shell: " + cmd);
     FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return {false, "", "popen failed: " + cmd};
+    if (!pipe) {
+        Logger::get().log("run_shell FAILED: popen returned null");
+        return {false, "", "popen failed: " + cmd};
+    }
     std::string out;
     char buf[4096];
     while (fgets(buf, sizeof(buf), pipe)) out += buf;
     int rc = pclose(pipe);
+    std::string preview = out.size() > 300 ? out.substr(0, 300) + "…" : out;
+    Logger::get().log("run_shell exit=" + std::to_string(rc)
+                      + "  output_len=" + std::to_string(out.size())
+                      + "  preview=" + preview);
     if (rc != 0) return {false, out, "command failed (exit " + std::to_string(rc) + ")"};
     return {true, out, ""};
 }
@@ -54,11 +63,17 @@ static std::string extract_json_string(const std::string& json, const std::strin
 }
 
 LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
+    static const char* kBackendNames[] = {"ClaudeP", "Ollama", "API", "Clipboard"};
+    int backendIdx = static_cast<int>(cfg.backend);
+    Logger::get().log("InvokeLLM backend=" + std::string(kBackendNames[backendIdx])
+                      + "  prompt_len=" + std::to_string(prompt.size()));
+
     if (cfg.backend == LLMBackend::Clipboard) {
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
             wxTheClipboard->Close();
         }
+        Logger::get().log("InvokeLLM: copied to clipboard");
         return {true, "clipboard", ""};
     }
 
@@ -142,5 +157,9 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
     }
 
     fs::remove(tmpFile);
+    if (result.ok)
+        Logger::get().log("InvokeLLM OK  response_len=" + std::to_string(result.text.size()));
+    else
+        Logger::get().log("InvokeLLM FAILED: " + result.error);
     return result;
 }

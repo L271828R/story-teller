@@ -125,6 +125,66 @@ int test_editor() {
         fs::remove_all(tmp);
     }
 
+    // ExtractChapter returns the block between <!-- ch:N --> and the next marker (or EOF).
+    {
+        std::string content =
+            "# Story\n\n"
+            "<!-- ch:0 -->\n## Chapter 1: Start\n\nText one.\n\n"
+            "<!-- ch:1 -->\n## Chapter 2: End\n\nText two.\n";
+
+        std::string ch0 = ExtractChapter(content, 0);
+        std::string ch1 = ExtractChapter(content, 1);
+        std::string missing = ExtractChapter(content, 99);
+
+        bool ch0HasText  = ch0.find("Text one")    != std::string::npos;
+        bool ch0NoTwo    = ch0.find("Text two")    == std::string::npos;
+        bool ch1HasText  = ch1.find("Text two")    != std::string::npos;
+        bool missingEmpty = missing.empty();
+
+        if (!ch0HasText || !ch0NoTwo || !ch1HasText || !missingEmpty) {
+            std::cerr << "FAIL [extract-chapter]: ch0=" << ch0HasText
+                      << " ch0NoTwo=" << ch0NoTwo
+                      << " ch1=" << ch1HasText
+                      << " missing=" << missingEmpty << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [extract-chapter]\n";
+        }
+    }
+
+    // ApplyChapterPatch replaces a chapter section in a file, preserving the rest.
+    {
+        auto tmp = make_temp_dir();
+        fs::path filepath = tmp / "story.md";
+        {
+            std::ofstream f(filepath);
+            f << "# Story\n\n"
+                 "<!-- ch:0 -->\n## Chapter 1: Start\n\nOld text.\n\n"
+                 "<!-- ch:1 -->\n## Chapter 2: End\n\nKeep this.\n";
+        }
+
+        bool ok = ApplyChapterPatch(filepath.string(), 0,
+                                    "<!-- ch:0 -->\n## Chapter 1: Start\n\nNew text.\n\n");
+        std::string onDisk;
+        { std::ifstream f(filepath);
+          onDisk.assign(std::istreambuf_iterator<char>(f), {}); }
+
+        bool hasNew  = onDisk.find("New text")  != std::string::npos;
+        bool hasKeep = onDisk.find("Keep this") != std::string::npos;
+        bool noOld   = onDisk.find("Old text")  == std::string::npos;
+
+        if (!ok || !hasNew || !hasKeep || !noOld) {
+            std::cerr << "FAIL [apply-chapter-patch]: ok=" << ok
+                      << " hasNew=" << hasNew
+                      << " hasKeep=" << hasKeep
+                      << " noOld=" << noOld << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [apply-chapter-patch]\n";
+        }
+        fs::remove_all(tmp);
+    }
+
     // ReplaceChapter writes entirely new content to a file.
     {
         auto tmp = make_temp_dir();

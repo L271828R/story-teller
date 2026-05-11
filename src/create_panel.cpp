@@ -1,4 +1,6 @@
 #include "create_panel.h"
+#include "config.h"
+#include "logger.h"
 #include "creator.h"
 #include "llm.h"
 #include "markdown.h"
@@ -26,10 +28,14 @@
 namespace fs = std::filesystem;
 
 enum {
-    ID_CP_BROWSE     = wxID_HIGHEST + 200,
+    ID_CP_NEW_PROJECT = wxID_HIGHEST + 200,
+    ID_CP_PROJECT_SEL,
     ID_CP_BACKEND,
     ID_CP_GENERATE,
     ID_CP_COPY_PROMPT,
+    ID_CP_SAVE,
+    ID_CP_OPEN_VIEW,
+    ID_CP_CHAPTER_LIST,
     ID_CP_CAT_LIST,
     ID_CP_ADD_CAT,
     ID_CP_DEL_CAT,
@@ -39,16 +45,20 @@ enum {
 };
 
 wxBEGIN_EVENT_TABLE(CreatePanel, wxPanel)
-    EVT_BUTTON(ID_CP_BROWSE,      CreatePanel::OnBrowse)
-    EVT_LISTBOX(ID_CP_CAT_LIST,   CreatePanel::OnCatSelected)
+    EVT_BUTTON(ID_CP_NEW_PROJECT,    CreatePanel::OnNewProject)
+    EVT_CHOICE(ID_CP_PROJECT_SEL,    CreatePanel::OnProjectSelected)
+    EVT_BUTTON(ID_CP_SAVE,           CreatePanel::OnSave)
+    EVT_LISTBOX(ID_CP_CAT_LIST,      CreatePanel::OnCatSelected)
     EVT_CHECKLISTBOX(ID_CP_CHAR_LIST, CreatePanel::OnCharToggled)
     EVT_BUTTON(ID_CP_ADD_CAT,     CreatePanel::OnAddCategory)
     EVT_BUTTON(ID_CP_DEL_CAT,     CreatePanel::OnDeleteCategory)
     EVT_BUTTON(ID_CP_ADD_CHAR,    CreatePanel::OnAddCharacter)
     EVT_BUTTON(ID_CP_DEL_CHAR,    CreatePanel::OnDeleteCharacter)
     EVT_CHOICE(ID_CP_BACKEND,     CreatePanel::OnBackendChanged)
-    EVT_BUTTON(ID_CP_GENERATE,    CreatePanel::OnGenerate)
-    EVT_BUTTON(ID_CP_COPY_PROMPT, CreatePanel::OnCopyPrompt)
+    EVT_BUTTON(ID_CP_GENERATE,      CreatePanel::OnGenerate)
+    EVT_BUTTON(ID_CP_COPY_PROMPT,   CreatePanel::OnCopyPrompt)
+    EVT_BUTTON(ID_CP_OPEN_VIEW,     CreatePanel::OnOpenInView)
+    EVT_LISTBOX_DCLICK(ID_CP_CHAPTER_LIST, CreatePanel::OnOpenInView)
 wxEND_EVENT_TABLE()
 
 static wxArrayString make_styles() {
@@ -84,18 +94,25 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
     auto* outer = new wxBoxSizer(wxVERTICAL);
     auto* inner = new wxBoxSizer(wxVERTICAL);
 
-    // ── Project folder ────────────────────────────────────────────────────
+    // ── Project selector ──────────────────────────────────────────────────
     {
         auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Project folder:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_projectDir = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                      wxDefaultPosition, wxSize(320, -1));
-        row->Add(m_projectDir, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
-        row->Add(new wxButton(this, ID_CP_BROWSE, "Browse…",
+        row->Add(new wxStaticText(this, wxID_ANY, "Project:"),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        m_projectChoice = new wxChoice(this, ID_CP_PROJECT_SEL,
+                                       wxDefaultPosition, wxSize(240, -1));
+        row->Add(m_projectChoice, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+        row->Add(new wxButton(this, ID_CP_NEW_PROJECT, "New…",
                               wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
                  0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
+
+        m_projectPathLabel = new wxStaticText(this, wxID_ANY, wxEmptyString);
+        wxFont small = m_projectPathLabel->GetFont();
+        small.SetPointSize(small.GetPointSize() - 1);
+        m_projectPathLabel->SetFont(small);
+        m_projectPathLabel->SetForegroundColour(wxColour(100, 100, 100));
+        inner->Add(m_projectPathLabel, 0, wxBOTTOM, 8);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
@@ -208,24 +225,68 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         m_generateBtn = new wxButton(this, ID_CP_GENERATE, "Generate");
         row->Add(m_generateBtn, 0, wxRIGHT, 8);
-        row->Add(new wxButton(this, ID_CP_COPY_PROMPT, "Copy Prompt"), 0);
-        inner->Add(row, 0, wxBOTTOM, 8);
+        row->Add(new wxButton(this, ID_CP_COPY_PROMPT, "Copy Prompt"), 0, wxRIGHT, 8);
+        row->AddStretchSpacer();
+        row->Add(new wxButton(this, ID_CP_SAVE, "Save"), 0);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
+    }
+    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
+
+    // ── Chapter list ──────────────────────────────────────────────────────
+    {
+        inner->Add(new wxStaticText(this, wxID_ANY, "Chapters in project:"),
+                   0, wxBOTTOM, 4);
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        m_chapterListBox = new wxListBox(this, ID_CP_CHAPTER_LIST,
+                                         wxDefaultPosition, wxSize(-1, 100));
+        row->Add(m_chapterListBox, 1, wxEXPAND | wxRIGHT, 6);
+        row->Add(new wxButton(this, ID_CP_OPEN_VIEW, "Open in View",
+                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
+                 0, wxALIGN_TOP);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
 
     // ── Status output ─────────────────────────────────────────────────────
     m_statusCtrl = new wxTextCtrl(this, wxID_ANY, "Ready.",
-                                  wxDefaultPosition, wxSize(-1, 80),
+                                  wxDefaultPosition, wxSize(-1, 60),
                                   wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
     inner->Add(m_statusCtrl, 1, wxEXPAND);
 
     outer->Add(inner, 1, wxEXPAND | wxALL, 14);
     SetSizer(outer);
+
+    // ── Restore last session (all widgets now exist) ───────────────────────
+    {
+        AppConfig cfg = LoadConfig();
+        LoadProjects();
+
+        AppState st = LoadAppState();
+
+        if (!st.currentProject.empty())
+            SelectProject(wxString::FromUTF8(st.currentProject));
+        else if (m_projectChoice->GetCount() > 0)
+            SelectProject(m_projectChoice->GetString(0));
+
+        if (!st.topic.empty())
+            m_topicCtrl->SetValue(wxString::FromUTF8(st.topic));
+        else if (!cfg.defaultPrompt.empty())
+            m_topicCtrl->SetValue(wxString::FromUTF8(cfg.defaultPrompt));
+
+        RestoreFormState(st);
+        LoadChapters();
+    }
+
+    SetBackgroundColour(wxColour(235, 235, 228));
 }
 
 // ---------------------------------------------------------------------------
 void CreatePanel::SetStatus(const wxString& msg) {
     m_statusCtrl->SetValue(msg);
+    std::string s = msg.ToStdString();
+    if (s.find("Error") != std::string::npos || s.find("Cannot") != std::string::npos
+        || s.find("could not") != std::string::npos || s.find("not found") != std::string::npos)
+        Logger::get().log("CreatePanel error: " + s);
 }
 
 void CreatePanel::SetGenerating(bool on) {
@@ -238,15 +299,84 @@ void CreatePanel::UpdateBackendFields() {
     int sel = m_backendChoice->GetSelection();
     m_ollamaSizer->Show(sel == 2);
     m_apiKeySizer->Show(sel == 3);
-    GetSizer()->Layout();
+    if (GetSizer()) GetSizer()->Layout();
 }
 
 // ---------------------------------------------------------------------------
-void CreatePanel::OnBrowse(wxCommandEvent&) {
-    wxDirDialog dlg(this, "Choose project folder", m_projectDir->GetValue(),
-                    wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
-    if (dlg.ShowModal() == wxID_OK)
-        m_projectDir->SetValue(dlg.GetPath());
+void CreatePanel::LoadChapters() {
+    m_chapterListBox->Clear();
+    wxString projPath = CurrentProjectPath();
+    if (projPath.empty()) return;
+    std::error_code ec;
+    std::vector<std::string> files;
+    for (auto& e : fs::directory_iterator(projPath.ToStdString(), ec))
+        if (e.path().extension() == ".md" && e.path().filename().string()[0] != '.')
+            files.push_back(e.path().filename().string());
+    std::sort(files.begin(), files.end());
+    for (auto& f : files)
+        m_chapterListBox->Append(wxString::FromUTF8(f));
+}
+
+void CreatePanel::LoadProjects() {
+    AppConfig cfg = LoadConfig();
+    m_projectChoice->Clear();
+    if (cfg.defaultFolder.empty()) return;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(cfg.defaultFolder, ec)) {
+        if (entry.is_directory(ec))
+            m_projectChoice->Append(wxString::FromUTF8(entry.path().filename().string()));
+    }
+}
+
+void CreatePanel::SelectProject(const wxString& name) {
+    int idx = m_projectChoice->FindString(name);
+    if (idx != wxNOT_FOUND) m_projectChoice->SetSelection(idx);
+
+    wxString path = CurrentProjectPath();
+    m_projectPathLabel->SetLabel(path.empty() ? wxString() : path);
+
+    if (!name.empty()) {
+        AppState st = LoadAppState();
+        st.currentProject = name.ToStdString();
+        SaveAppState(st);
+    }
+}
+
+wxString CreatePanel::CurrentProjectPath() const {
+    AppConfig cfg = LoadConfig();
+    int sel = m_projectChoice->GetSelection();
+    if (cfg.defaultFolder.empty() || sel == wxNOT_FOUND) return wxEmptyString;
+    return wxString::FromUTF8(cfg.defaultFolder) + "/" + m_projectChoice->GetString(sel);
+}
+
+void CreatePanel::OnNewProject(wxCommandEvent&) {
+    wxString name = wxGetTextFromUser(
+        "Enter a name for the new project:", "New Project", "", this).Trim();
+    if (name.empty()) return;
+
+    AppConfig cfg = LoadConfig();
+    if (cfg.defaultFolder.empty()) {
+        SetStatus("Set defaultFolder in ~/.config/story-teller/config first.");
+        return;
+    }
+
+    if (!CreateProject(cfg.defaultFolder, name.ToStdString())) {
+        SetStatus("Could not create project folder.");
+        return;
+    }
+
+    // Refresh list and select the new project.
+    LoadProjects();
+    SelectProject(name);
+}
+
+void CreatePanel::OnProjectSelected(wxCommandEvent&) {
+    int sel = m_projectChoice->GetSelection();
+    if (sel == wxNOT_FOUND) return;
+    SelectProject(m_projectChoice->GetString(sel));
+    LoadChapters();
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +393,7 @@ static const std::map<std::string, std::vector<std::string>>& default_library() 
 }
 
 void CreatePanel::LoadCharLibrary() {
-    wxConfig cfg("MDViewer");
+    wxConfig cfg("StoryTeller");
     cfg.SetPath("/charlib");
 
     wxString catStr;
@@ -292,7 +422,7 @@ void CreatePanel::LoadCharLibrary() {
 }
 
 void CreatePanel::SaveCharLibrary() const {
-    wxConfig cfg("MDViewer");
+    wxConfig cfg("StoryTeller");
     cfg.SetPath("/charlib");
 
     // Build comma-separated category list.
@@ -399,7 +529,7 @@ GenerationRequest CreatePanel::BuildRequest() const {
     req.style = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
     for (auto& ch : m_checkedChars)
         req.characters.push_back(ch);
-    std::string projDir = m_projectDir->GetValue().ToStdString();
+    std::string projDir = CurrentProjectPath().ToStdString();
     fs::path claudeMd = fs::path(projDir) / "claude.md";
     if (fs::exists(claudeMd)) {
         std::ifstream f(claudeMd);
@@ -423,9 +553,9 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     if (m_generating) return;
 
     wxString topic   = m_topicCtrl->GetValue().Trim();
-    wxString projDir = m_projectDir->GetValue().Trim();
+    wxString projDir = CurrentProjectPath();
     if (topic.empty())   { SetStatus("Enter a topic."); return; }
-    if (projDir.empty()) { SetStatus("Choose a project folder."); return; }
+    if (projDir.empty()) { SetStatus("Select or create a project first."); return; }
 
     if (!InitProject(projDir.ToStdString())) {
         SetStatus("Cannot initialise project folder: " + projDir); return;
@@ -454,10 +584,12 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     cfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
     cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
 
+    std::string projDirStr = projDir.ToStdString();
+
     SetGenerating(true);
     SetStatus("Sending to " + m_backendChoice->GetString(bkIdx) + "…");
-
-    std::string projDirStr = projDir.ToStdString();
+    Logger::get().log("Generate: backend=" + m_backendChoice->GetString(bkIdx).ToStdString()
+                      + "  project=" + projDirStr + "  file=" + filename);
     OpenCallback cb = m_openCallback;
 
     std::thread([this, prompt, cfg, projDirStr, filename, chId, cb]() mutable {
@@ -465,7 +597,11 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
 
         wxTheApp->CallAfter([this, res, projDirStr, filename, chId, cb]() mutable {
             SetGenerating(false);
-            if (!res.ok) { SetStatus("Error: " + wxString::FromUTF8(res.error)); return; }
+            if (!res.ok) {
+                Logger::get().log("Generate FAILED: " + res.error);
+                SetStatus("Error: " + wxString::FromUTF8(res.error));
+                return;
+            }
 
             // Stamp each :::tidbit block with a stable <!-- tb:N --> marker.
             std::string content = res.text;
@@ -490,6 +626,10 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
                 ++tbCount;
             }
 
+            // Stamp each ## Chapter N: heading with a <!-- ch:N --> marker.
+            auto [chStamped, chCount] = StampChapters(stamped, 0);
+            stamped = chStamped;
+
             std::string path = SaveChapter(projDirStr, filename, stamped);
             if (path.empty()) { SetStatus("Error: could not save chapter file."); return; }
 
@@ -498,7 +638,65 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
                 RegisterTidbit(projDirStr, chId, i);
 
             SetStatus("Saved: " + wxString::FromUTF8(filename));
+            LoadChapters();
             if (cb) cb(path);
         });
     }).detach();
+}
+
+// ---------------------------------------------------------------------------
+// Form state persistence
+// ---------------------------------------------------------------------------
+void CreatePanel::SaveFormState() const {
+    AppState st = LoadAppState();
+
+    int sel = m_projectChoice->GetSelection();
+    st.currentProject = (sel != wxNOT_FOUND)
+                        ? m_projectChoice->GetString(sel).ToStdString() : "";
+    st.topic   = m_topicCtrl->GetValue().ToStdString();
+    st.style   = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
+    st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
+
+    std::string chars;
+    for (auto& ch : m_checkedChars) {
+        if (!chars.empty()) chars += "|";
+        chars += ch;
+    }
+    st.checkedChars = chars;
+
+    SaveAppState(st);
+    Logger::get().log("Form state saved  project=" + st.currentProject
+                      + "  chars=" + st.checkedChars);
+}
+
+void CreatePanel::RestoreFormState(const AppState& st) {
+    if (!st.style.empty()) {
+        int idx = m_styleChoice->FindString(wxString::FromUTF8(st.style));
+        if (idx != wxNOT_FOUND) m_styleChoice->SetSelection(idx);
+    }
+    if (!st.backend.empty()) {
+        int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
+        if (idx != wxNOT_FOUND) {
+            m_backendChoice->SetSelection(idx);
+            UpdateBackendFields();
+        }
+    }
+    if (!st.checkedChars.empty()) {
+        wxStringTokenizer tok(wxString::FromUTF8(st.checkedChars), "|");
+        while (tok.HasMoreTokens())
+            m_checkedChars.insert(tok.GetNextToken().ToStdString());
+        RefreshCharList();
+    }
+}
+
+void CreatePanel::OnSave(wxCommandEvent&) {
+    SaveFormState();
+    SetStatus("Form saved — will be restored on next launch.");
+}
+
+void CreatePanel::OnOpenInView(wxCommandEvent&) {
+    int sel = m_chapterListBox->GetSelection();
+    if (sel == wxNOT_FOUND) { SetStatus("Select a chapter first."); return; }
+    wxString path = CurrentProjectPath() + "/" + m_chapterListBox->GetString(sel);
+    if (m_openCallback) m_openCallback(path.ToStdString());
 }

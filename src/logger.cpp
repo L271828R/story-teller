@@ -10,9 +10,9 @@ Logger& Logger::get() {
 }
 
 Logger::Logger() {
-    std::string dir = std::string(getenv("HOME") ?: "") + "/Library/Logs/MDViewer";
+    std::string dir = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller";
     ::system(("mkdir -p \"" + dir + "\"").c_str());
-    m_file.open(dir + "/mdviewer.log", std::ios::app);
+    m_file.open(dir + "/story-teller.log", std::ios::app);
 }
 
 void Logger::log(const std::string& msg) {

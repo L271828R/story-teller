@@ -42,6 +42,46 @@ int test_creator() {
         }
     }
 
+    // BuildPrompt explicitly instructs the LLM to use the characters for tidbits.
+    {
+        GenerationRequest req;
+        req.topic      = "black holes";
+        req.style      = "children's book";
+        req.characters = {"Albert Einstein", "Carl Sagan"};
+
+        std::string prompt = BuildPrompt(req, "");
+        bool hasEin       = prompt.find("Albert Einstein") != std::string::npos;
+        bool hasTidbitInstr = prompt.find("tidbit") != std::string::npos
+                           && prompt.find("Albert Einstein") != std::string::npos;
+        if (!hasEin || !hasTidbitInstr) {
+            std::cerr << "FAIL [build-prompt-tidbit-instruction]: "
+                      << "characters should appear alongside tidbit instruction\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-tidbit-instruction]\n";
+        }
+    }
+
+    // BuildPrompt includes a reminder to use the mdviewer/story-teller skill.
+    {
+        GenerationRequest req;
+        req.topic      = "black holes";
+        req.style      = "children's book";
+        req.characters = {};
+
+        std::string prompt = BuildPrompt(req, "");
+        bool hasSkillReminder = prompt.find("skill") != std::string::npos
+                             || prompt.find("mdviewer") != std::string::npos
+                             || prompt.find("StoryTeller") != std::string::npos;
+        if (!hasSkillReminder) {
+            std::cerr << "FAIL [build-prompt-skill-reminder]: "
+                      << "no skill reminder found in prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-skill-reminder]\n";
+        }
+    }
+
     // BuildPrompt embeds the tidbit syntax reference so the LLM knows the format.
     {
         GenerationRequest req;
@@ -94,6 +134,50 @@ int test_creator() {
             ++failures;
         } else {
             std::cout << "PASS [build-patch-prompt]\n";
+        }
+    }
+
+    // BuildPrompt instructs the LLM to divide the story into numbered chapters.
+    {
+        GenerationRequest req;
+        req.topic = "black holes";
+        req.style = "children's book";
+
+        std::string prompt = BuildPrompt(req, "");
+        bool hasChapter   = prompt.find("## Chapter") != std::string::npos
+                         || prompt.find("Chapter N")  != std::string::npos;
+        bool hasChId      = prompt.find("ch:") != std::string::npos
+                         || prompt.find("<!-- ch") != std::string::npos
+                         || prompt.find("chapter id") != std::string::npos
+                         || prompt.find("numbered") != std::string::npos;
+        if (!hasChapter || !hasChId) {
+            std::cerr << "FAIL [build-prompt-chapter-structure]: "
+                      << "chapter=" << hasChapter << " id=" << hasChId << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-chapter-structure]\n";
+        }
+    }
+
+    // StampChapters injects <!-- ch:N --> markers before ## Chapter headings.
+    {
+        std::string content =
+            "# My Story\n\n"
+            "## Chapter 1: The Start\n\nSome text.\n\n"
+            "## Chapter 2: The End\n\nMore text.\n";
+
+        auto [stamped, count] = StampChapters(content, 0);
+        bool hasCh0   = stamped.find("<!-- ch:0 -->") != std::string::npos;
+        bool hasCh1   = stamped.find("<!-- ch:1 -->") != std::string::npos;
+        bool countOk  = count == 2;
+        bool orderOk  = stamped.find("<!-- ch:0 -->") < stamped.find("## Chapter 1");
+        if (!hasCh0 || !hasCh1 || !countOk || !orderOk) {
+            std::cerr << "FAIL [stamp-chapters]: ch0=" << hasCh0
+                      << " ch1=" << hasCh1 << " count=" << count
+                      << " order=" << orderOk << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [stamp-chapters]\n";
         }
     }
 
