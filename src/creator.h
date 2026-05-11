@@ -13,6 +13,19 @@ struct GenerationRequest {
 // llmReadme is injected from GetLLMReadme(); callers may pass "" in tests.
 std::string BuildPrompt(const GenerationRequest& req, const std::string& llmReadme);
 
+struct ValidationResult {
+    bool ok;
+    std::string error;
+};
+
+// Checks that generated content has the minimum structure StoryTeller needs
+// before it is stamped and saved.
+ValidationResult ValidateGeneratedStory(const std::string& content);
+
+// Builds a follow-up prompt after a generated story failed validation.
+std::string BuildRepairPrompt(const std::string& originalPrompt,
+                              const std::string& validationError);
+
 // Builds a patch prompt asking the LLM to rewrite a single block per the instruction.
 // chapterContext: the full chapter text — gives the LLM story context for the rewrite.
 std::string BuildPatchPrompt(const std::string& originalBlock,

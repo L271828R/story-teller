@@ -6,6 +6,7 @@
 #include <vector>
 #include <wx/wx.h>
 #include <wx/checklst.h>
+#include <wx/combobox.h>
 #include "config.h"
 #include "creator.h"
 
@@ -38,7 +39,7 @@ private:
     wxChoice*        m_backendChoice;
     wxTextCtrl*      m_apiKeyCtrl;
     wxSizerItem*     m_apiKeySizer  = nullptr;
-    wxTextCtrl*      m_ollamaModel;
+    wxComboBox*      m_ollamaModel;
     wxSizerItem*     m_ollamaSizer  = nullptr;
 
     wxButton*        m_generateBtn;

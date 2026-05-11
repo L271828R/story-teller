@@ -181,6 +181,95 @@ int test_creator() {
         }
     }
 
+    // StampChapters also supports localized level-2 chapter headings.
+    {
+        std::string content =
+            "# 我的故事\n\n"
+            "## 一章：开始\n\n正文。\n\n"
+            "## 二章：结束\n\n更多正文。\n";
+
+        auto [stamped, count] = StampChapters(content, 4);
+        bool hasCh4 = stamped.find("<!-- ch:4 -->\n## 一章") != std::string::npos;
+        bool hasCh5 = stamped.find("<!-- ch:5 -->\n## 二章") != std::string::npos;
+        if (!hasCh4 || !hasCh5 || count != 2) {
+            std::cerr << "FAIL [stamp-localized-chapters]: ch4=" << hasCh4
+                      << " ch5=" << hasCh5 << " count=" << count << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [stamp-localized-chapters]\n";
+        }
+    }
+
+    // ValidateGeneratedStory rejects incomplete generations before saving.
+    {
+        auto bad = ValidateGeneratedStory("# Title\n\nToo short.\n");
+        std::string goodContent =
+            "# Story\n\n"
+            "## Chapter 1: Start\n\n"
+            "This is a reasonably long generated chapter with enough text to look like a real story. "
+            "It keeps going for a while so the length guard does not mistake it for a tiny fragment. "
+            "The characters learn something useful and the section has enough material to be edited later by the app. "
+            "A fourth sentence adds more detail about the setting and the people in it. "
+            "A fifth sentence makes the chapter substantial enough for saving.\n\n"
+            ":::tidbit[Charles Darwin]\n"
+            "A complete observation deserves a complete note.\n"
+            ":::\n\n"
+            "## Chapter 2: More\n\n"
+            "Another paragraph continues the narrative with more details. "
+            "The characters compare notes and decide what to do next. "
+            "Their plan becomes clearer with each observation. "
+            "The story gives the reader enough context to follow along. "
+            "The chapter now has five complete sentences.\n\n"
+            ":::tidbit[Sherlock Holmes]\n"
+            "The structure is the clue.\n"
+            ":::\n";
+        auto good = ValidateGeneratedStory(goodContent);
+        std::string localizedContent =
+            "# 故事\n\n"
+            "## 一章：开始\n\n"
+            "这是一段足够长的中文故事内容。"
+            "它用来确认验证器接受本地化的二级章节标题。"
+            "故事继续发展，人物一起学习并发现新的知识。"
+            "文本长度足够通过片段检查。"
+            "这里还有更多叙述，让章节看起来完整。\n\n"
+            ":::tidbit[李白]\n"
+            "诗意也可以帮助孩子理解科学。\n"
+            ":::\n\n"
+            "## 二章：发现\n\n"
+            "第二章继续讲述他们如何观察。"
+            "他们认真讨论每一个问题。"
+            "他们也进行简单的实验。"
+            "复杂的概念被变成容易理解的故事。"
+            "这一段确保内容不是很短的残缺回答。\n\n"
+            ":::tidbit[李小龙]\n"
+            "保持好奇，也保持行动。\n"
+            ":::\n";
+        auto localized = ValidateGeneratedStory(localizedContent);
+        if (bad.ok || !good.ok || !localized.ok) {
+            std::cerr << "FAIL [validate-generated-story]: bad=" << bad.ok
+                      << " good=" << good.ok << " localized=" << localized.ok
+                      << " error='" << good.error << localized.error << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [validate-generated-story]\n";
+        }
+    }
+
+    // BuildRepairPrompt carries the original request and the validation failure.
+    {
+        std::string prompt = BuildRepairPrompt("Write about vaccines.",
+                                               "chapter 3 had fewer than five sentences");
+        bool hasOriginal = prompt.find("Write about vaccines") != std::string::npos;
+        bool hasError = prompt.find("chapter 3") != std::string::npos;
+        bool hasReplacement = prompt.find("complete replacement") != std::string::npos;
+        if (!hasOriginal || !hasError || !hasReplacement) {
+            std::cerr << "FAIL [build-repair-prompt]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-repair-prompt]\n";
+        }
+    }
+
     // ChapterFilename produces a slug from the topic with a chapter number prefix.
     {
         std::string name = ChapterFilename("Black Holes & Neutron Stars", 3);

@@ -159,7 +159,10 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── Create page ───────────────────────────────────────────────────────
     auto* createPage = new CreatePanel(m_notebook,
-        [this](const std::string& path) { LoadFile(path); });
+        [this](const std::string& path) {
+            LoadFile(path);
+            if (m_editPage) m_editPage->RefreshChapters();
+        });
     m_notebook->AddPage(createPage, "Create");
 
     // ── Edit page ─────────────────────────────────────────────────────────
@@ -169,6 +172,11 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── View page (last) ──────────────────────────────────────────────────
     m_notebook->AddPage(m_viewPage, "View");
+    m_notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& evt) {
+        evt.Skip();
+        if (m_editPage && m_notebook->GetPage(evt.GetSelection()) == m_editPage)
+            m_editPage->RefreshChapters();
+    });
 
     // ── Frame layout ─────────────────────────────────────────────────────
     auto* sizer = new wxBoxSizer(wxVERTICAL);
@@ -241,7 +249,7 @@ void MDViewerFrame::LoadAndRender() {
 // Menu handlers
 // ---------------------------------------------------------------------------
 void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
-    const std::string logPath = std::string(getenv("HOME") ?: "") + "/Library/Logs/MDViewer/mdviewer.log";
+    const std::string logPath = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller/story-teller.log";
     std::string html = BuildLogsHTML(ReadFile(logPath), logPath, m_darkMode);
     m_webView->SetPage(wxString::FromUTF8(html), "");
     SetStatusText("Viewing logs — use View > View Document to return");
@@ -250,6 +258,7 @@ void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
 void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
     SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
+    if (m_editPage) m_editPage->RefreshChapters();
     // View is the last tab (index 2: Create=0, Edit=1, View=2).
     m_notebook->SetSelection(2);
     LoadAndRender();

@@ -37,5 +37,21 @@ int test_config() {
         }
     }
 
+    // ParseState reads apiKey and ollamaModel.
+    {
+        AppState st = ParseState("backend = Anthropic API\napiKey = sk-test\nollamaModel = llama3\n");
+        bool ok = st.backend == "Anthropic API"
+               && st.apiKey == "sk-test"
+               && st.ollamaModel == "llama3";
+        if (!ok) {
+            std::cerr << "FAIL [parse-state-llm-config]: backend='" << st.backend
+                      << "' apiKey='" << st.apiKey
+                      << "' ollamaModel='" << st.ollamaModel << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-state-llm-config]\n";
+        }
+    }
+
     return failures;
 }

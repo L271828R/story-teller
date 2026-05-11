@@ -1,9 +1,12 @@
 #include "llm.h"
+#include "llm_error.h"
+#include "llm_response.h"
 #include "logger.h"
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sys/wait.h>
 #include <wx/clipbrd.h>
 #include <wx/dataobj.h>
 
@@ -13,6 +16,16 @@ static std::string temp_prompt_path() {
     auto ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
     return (fs::temp_directory_path() / ("story-teller_prompt_" + std::to_string(ns) + ".txt"))
            .string();
+}
+
+static std::string shell_quote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else           out += c;
+    }
+    out += "'";
+    return out;
 }
 
 static LLMResult run_shell(const std::string& cmd) {
@@ -25,45 +38,30 @@ static LLMResult run_shell(const std::string& cmd) {
     std::string out;
     char buf[4096];
     while (fgets(buf, sizeof(buf), pipe)) out += buf;
-    int rc = pclose(pipe);
+    int status = pclose(pipe);
+    int exitCode = status;
+    if (WIFEXITED(status)) {
+        exitCode = WEXITSTATUS(status);
+    }
     std::string preview = out.size() > 300 ? out.substr(0, 300) + "…" : out;
-    Logger::get().log("run_shell exit=" + std::to_string(rc)
+    Logger::get().log("run_shell exit=" + std::to_string(exitCode)
+                      + "  status=" + std::to_string(status)
                       + "  output_len=" + std::to_string(out.size())
                       + "  preview=" + preview);
-    if (rc != 0) return {false, out, "command failed (exit " + std::to_string(rc) + ")"};
+    if (status != 0) {
+        std::string summary;
+        if (WIFSIGNALED(status)) {
+            summary = "command failed (signal " + std::to_string(WTERMSIG(status)) + ")";
+        } else {
+            summary = "command failed (exit " + std::to_string(exitCode) + ")";
+        }
+        return {false, out, FormatLLMError(summary, out)};
+    }
     return {true, out, ""};
 }
 
-// Extract the value of a JSON string field (simple, no full parser needed).
-static std::string extract_json_string(const std::string& json, const std::string& key) {
-    std::string needle = "\"" + key + "\":\"";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos) return "";
-    pos += needle.size();
-    std::string val;
-    bool esc = false;
-    for (std::size_t i = pos; i < json.size(); ++i) {
-        if (esc) {
-            switch (json[i]) {
-                case 'n': val += '\n'; break;
-                case 't': val += '\t'; break;
-                case 'r': val += '\r'; break;
-                default:  val += json[i]; break;
-            }
-            esc = false;
-        } else if (json[i] == '\\') {
-            esc = true;
-        } else if (json[i] == '"') {
-            break;
-        } else {
-            val += json[i];
-        }
-    }
-    return val;
-}
-
 LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
-    static const char* kBackendNames[] = {"ClaudeP", "Ollama", "API", "Clipboard"};
+    static const char* kBackendNames[] = {"ClaudeP", "CodexCLI", "Ollama", "API", "Clipboard"};
     int backendIdx = static_cast<int>(cfg.backend);
     Logger::get().log("InvokeLLM backend=" + std::string(kBackendNames[backendIdx])
                       + "  prompt_len=" + std::to_string(prompt.size()));
@@ -88,10 +86,36 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
 
     if (cfg.backend == LLMBackend::ClaudeP) {
         // Use login shell so ~/.nvm, Homebrew, etc. are on PATH.
-        std::string cmd = "bash -l -c 'claude -p < \"" + tmpFile + "\"' 2>&1";
+        std::string inner = "claude -p < " + shell_quote(tmpFile);
+        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
         result = run_shell(cmd);
         if (!result.ok && result.text.find("not found") != std::string::npos)
             result.error = "claude CLI not found — check PATH or use Clipboard mode";
+    }
+    else if (cfg.backend == LLMBackend::CodexCLI) {
+        std::string outFile = tmpFile + ".codex.md";
+        std::string inner =
+            "codex --ask-for-approval never exec --sandbox read-only "
+            "--skip-git-repo-check --output-last-message " + shell_quote(outFile) +
+            " - < " + shell_quote(tmpFile);
+        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
+        auto raw = run_shell(cmd);
+        if (!raw.ok) {
+            fs::remove(outFile);
+            return raw;
+        }
+
+        std::ifstream f(outFile);
+        if (!f) {
+            fs::remove(outFile);
+            return {false, raw.text,
+                    FormatLLMError("Codex did not write an output file", raw.text)};
+        }
+        std::string text(std::istreambuf_iterator<char>(f), {});
+        fs::remove(outFile);
+        if (text.empty())
+            return {false, raw.text, FormatLLMError("Codex returned an empty response", raw.text)};
+        result = {true, text, ""};
     }
     else if (cfg.backend == LLMBackend::Ollama) {
         // Write JSON body to a second temp file to avoid shell quoting issues.
@@ -101,18 +125,11 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
             // Escape the prompt for JSON by re-using the file content via @.
             // We use --data-binary @file to avoid any shell interpolation.
             // Build a minimal JSON object around the raw prompt.
-            jf << "{\"model\":\"" << cfg.ollamaModel << "\","
+            std::string structuredPrompt = BuildOllamaStructuredPrompt(prompt);
+            jf << "{\"model\":\"" << JsonEscape(cfg.ollamaModel) << "\","
                << "\"stream\":false,"
-               << "\"prompt\":\"";
-            for (char c : prompt) {
-                if      (c == '"')  jf << "\\\"";
-                else if (c == '\\') jf << "\\\\";
-                else if (c == '\n') jf << "\\n";
-                else if (c == '\r') jf << "\\r";
-                else if (c == '\t') jf << "\\t";
-                else                jf << c;
-            }
-            jf << "\"}";
+               << "\"format\":\"json\","
+               << "\"prompt\":\"" << JsonEscape(structuredPrompt) << "\"}";
         }
         std::string cmd = "curl -s -X POST \"" + cfg.ollamaUrl + "/api/generate\""
                           " -H 'Content-Type: application/json'"
@@ -120,7 +137,7 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         auto raw = run_shell(cmd);
         fs::remove(jsonFile);
         if (!raw.ok) return raw;
-        std::string text = extract_json_string(raw.text, "response");
+        std::string text = ExtractOllamaMarkdown(raw.text);
         if (text.empty())
             return {false, "", "Ollama returned unexpected JSON: " + raw.text.substr(0, 200)};
         result = {true, text, ""};
@@ -130,16 +147,8 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         {
             std::ofstream jf(jsonFile);
             jf << "{\"model\":\"claude-sonnet-4-6\",\"max_tokens\":8096,"
-               << "\"messages\":[{\"role\":\"user\",\"content\":\"";
-            for (char c : prompt) {
-                if      (c == '"')  jf << "\\\"";
-                else if (c == '\\') jf << "\\\\";
-                else if (c == '\n') jf << "\\n";
-                else if (c == '\r') jf << "\\r";
-                else if (c == '\t') jf << "\\t";
-                else                jf << c;
-            }
-            jf << "\"}]}";
+               << "\"messages\":[{\"role\":\"user\",\"content\":\""
+               << JsonEscape(prompt) << "\"}]}";
         }
         std::string cmd =
             "curl -s -X POST https://api.anthropic.com/v1/messages"
@@ -150,7 +159,7 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         auto raw = run_shell(cmd);
         fs::remove(jsonFile);
         if (!raw.ok) return raw;
-        std::string text = extract_json_string(raw.text, "text");
+        std::string text = ExtractJSONString(raw.text, "text");
         if (text.empty())
             return {false, "", "API returned unexpected JSON: " + raw.text.substr(0, 200)};
         result = {true, text, ""};

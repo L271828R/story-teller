@@ -10,6 +10,9 @@ int test_mdviewer();
 int test_project();
 int test_creator();
 int test_editor();
+int test_git_ops();
+int test_llm_error();
+int test_llm_response();
 
 int main() {
     int failures = 0;
@@ -20,6 +23,9 @@ int main() {
     failures += test_project();
     failures += test_creator();
     failures += test_editor();
+    failures += test_git_ops();
+    failures += test_llm_error();
+    failures += test_llm_response();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

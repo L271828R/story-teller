@@ -138,10 +138,16 @@ bool ApplyChapterPatch(const std::string& filepath,
     auto next = content.find("<!-- ch:", mpos + marker.size());
     std::size_t block_end = (next == std::string::npos) ? content.size() : next;
 
+    // If the LLM stripped the marker from its response, re-add it so the
+    // splice point survives future rewrites.
+    std::string block = newBlock;
+    if (block.rfind(marker, 0) != 0)
+        block = marker + "\n" + block;
+
     std::string result;
     result.reserve(content.size());
     result += content.substr(0, mpos);
-    result += newBlock;
+    result += block;
     result += '\n';
     if (next != std::string::npos)
         result += content.substr(block_end);

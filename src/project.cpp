@@ -1,4 +1,5 @@
 #include "project.h"
+#include "git_ops.h"
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -62,7 +63,9 @@ bool CreateProject(const std::string& baseDir, const std::string& name) {
     std::error_code ec;
     fs::create_directories(proj, ec);
     if (ec && !fs::exists(proj)) return false;
-    return write_stub_files(proj, name);
+    if (!write_stub_files(proj, name)) return false;
+    GitInit(proj.string());
+    return true;
 }
 
 bool InitProject(const std::string& projectDir) {

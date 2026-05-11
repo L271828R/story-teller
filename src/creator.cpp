@@ -6,8 +6,52 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 namespace fs = std::filesystem;
+
+static bool starts_with_h2(const std::string& line) {
+    return line.rfind("## ", 0) == 0 && line.rfind("### ", 0) != 0;
+}
+
+static bool has_h2_heading(const std::string& content) {
+    if (starts_with_h2(content)) return true;
+    return content.find("\n## ") != std::string::npos;
+}
+
+static int sentence_count(const std::string& text) {
+    int count = 0;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        char c = text[i];
+        if (c == '.' || c == '!' || c == '?' || c == ';') ++count;
+        if (text.compare(i, 3, "。") == 0 ||
+            text.compare(i, 3, "！") == 0 ||
+            text.compare(i, 3, "？") == 0) {
+            ++count;
+            i += 2;
+        }
+    }
+    return count;
+}
+
+static std::vector<std::string> chapter_blocks(const std::string& content) {
+    std::vector<std::string> blocks;
+    std::istringstream in(content);
+    std::string line;
+    std::string current;
+    bool inChapter = false;
+    while (std::getline(in, line)) {
+        if (starts_with_h2(line)) {
+            if (inChapter && !current.empty()) blocks.push_back(current);
+            current = line + "\n";
+            inChapter = true;
+        } else if (inChapter) {
+            current += line + "\n";
+        }
+    }
+    if (inChapter && !current.empty()) blocks.push_back(current);
+    return blocks;
+}
 
 static std::string slugify(const std::string& s) {
     std::string out;
@@ -43,12 +87,14 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
         out << "\n";
     }
 
-    out << "## Story structure\n\n"
+        out << "## Story structure\n\n"
         << "Divide the story into numbered chapters. Each chapter **must** start with a "
            "level-2 heading in exactly this format:\n\n"
            "```\n## Chapter N: Title\n```\n\n"
            "where N is a sequential integer starting at 1. "
            "Keep chapters in order with no gaps. "
+           "Each chapter must contain at least five complete sentences of story text, "
+           "not counting tidbit content. "
            "Every chapter must contain at least one `:::tidbit` block.\n\n";
 
     out << "## Skill reminder\n\n"
@@ -60,6 +106,39 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
     std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
     out << "## MDViewer syntax reference\n\n" << ref;
 
+    return out.str();
+}
+
+ValidationResult ValidateGeneratedStory(const std::string& content) {
+    if (content.size() < 500) {
+        return {false, "LLM output was too short to be a complete story."};
+    }
+    if (!has_h2_heading(content)) {
+        return {false, "LLM output did not contain any level-2 chapter headings."};
+    }
+    if (content.find(":::tidbit[") == std::string::npos) {
+        return {false, "LLM output did not contain any :::tidbit[...] blocks."};
+    }
+    auto chapters = chapter_blocks(content);
+    for (std::size_t i = 0; i < chapters.size(); ++i) {
+        if (sentence_count(chapters[i]) < 5) {
+            return {false, "LLM output chapter " + std::to_string(i + 1)
+                           + " had fewer than five sentences."};
+        }
+    }
+    return {true, ""};
+}
+
+std::string BuildRepairPrompt(const std::string& originalPrompt,
+                              const std::string& validationError) {
+    std::ostringstream out;
+    out << originalPrompt
+        << "\n\n## Previous output rejected\n\n"
+        << validationError << "\n\n"
+        << "Generate a complete replacement from scratch. Do not summarize. "
+           "Do not return a partial fix. Ensure every chapter has at least five "
+           "complete sentences of story text, includes a tidbit block, and follows "
+           "the requested language.\n";
     return out.str();
 }
 
@@ -93,21 +172,19 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
 StampResult StampChapters(const std::string& content, int baseId) {
     std::string stamped;
     int count = 0;
-    std::size_t pos = 0;
-    const std::string needle = "\n## Chapter ";
 
-    // Handle content that begins with a chapter heading (no leading newline).
-    if (content.rfind("## Chapter ", 0) == 0) {
-        stamped += "<!-- ch:" + std::to_string(baseId + count++) + " -->\n";
+    std::istringstream in(content);
+    std::string line;
+    bool first = true;
+    while (std::getline(in, line)) {
+        if (!first) stamped += "\n";
+        first = false;
+        if (starts_with_h2(line)) {
+            stamped += "<!-- ch:" + std::to_string(baseId + count++) + " -->\n";
+        }
+        stamped += line;
     }
-
-    while (pos < content.size()) {
-        auto found = content.find(needle, pos);
-        if (found == std::string::npos) { stamped += content.substr(pos); break; }
-        stamped += content.substr(pos, found + 1 - pos); // include the \n before ##
-        stamped += "<!-- ch:" + std::to_string(baseId + count++) + " -->\n";
-        pos = found + 1; // resume from ## (skip past the \n we already appended)
-    }
+    if (!content.empty() && content.back() == '\n') stamped += "\n";
     return {stamped, count};
 }
 

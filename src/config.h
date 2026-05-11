@@ -22,6 +22,10 @@ struct AppState {
     std::string style;
     std::string backend;
     std::string checkedChars; // pipe-separated, e.g. "Einstein|Curie"
+
+    // Backend credentials (not secret — stored in plain-text state file)
+    std::string apiKey;
+    std::string ollamaModel;
 };
 
 AppState ParseState(const std::string& content);

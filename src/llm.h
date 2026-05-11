@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-enum class LLMBackend { ClaudeP, Ollama, API, Clipboard };
+enum class LLMBackend { ClaudeP, CodexCLI, Ollama, API, Clipboard };
 
 struct LLMConfig {
     LLMBackend  backend     = LLMBackend::Clipboard;

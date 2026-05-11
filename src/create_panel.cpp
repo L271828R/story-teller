@@ -3,15 +3,18 @@
 #include "logger.h"
 #include "creator.h"
 #include "llm.h"
+#include "llm_response.h"
 #include "markdown.h"
 #include "project.h"
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <thread>
 #include <wx/button.h>
 #include <wx/checklst.h>
 #include <wx/choice.h>
+#include <wx/combobox.h>
 #include <wx/clipbrd.h>
 #include <wx/config.h>
 #include <wx/dataobj.h>
@@ -31,6 +34,7 @@ enum {
     ID_CP_NEW_PROJECT = wxID_HIGHEST + 200,
     ID_CP_PROJECT_SEL,
     ID_CP_BACKEND,
+    ID_CP_REFRESH_OLLAMA,
     ID_CP_GENERATE,
     ID_CP_COPY_PROMPT,
     ID_CP_SAVE,
@@ -72,18 +76,51 @@ static wxArrayString make_styles() {
 
 static wxArrayString make_backends() {
     wxArrayString s;
-    for (auto* n : {"Clipboard (manual)", "claude -p", "Ollama (local)", "Anthropic API"})
+    for (auto* n : {"Clipboard (manual)", "claude -p", "Codex CLI", "Ollama (local)", "Anthropic API"})
         s.Add(n);
     return s;
 }
 
-static LLMBackend backend_from_index(int i) {
-    switch (i) {
-        case 1:  return LLMBackend::ClaudeP;
-        case 2:  return LLMBackend::Ollama;
-        case 3:  return LLMBackend::API;
-        default: return LLMBackend::Clipboard;
-    }
+static LLMBackend backend_from_label(const std::string& label) {
+    if (label == "claude -p")      return LLMBackend::ClaudeP;
+    if (label == "Codex CLI")      return LLMBackend::CodexCLI;
+    if (label == "Ollama (local)") return LLMBackend::Ollama;
+    if (label == "Anthropic API")  return LLMBackend::API;
+    return LLMBackend::Clipboard;
+}
+
+static std::vector<std::string> load_ollama_models() {
+    FILE* pipe = popen("curl -s --max-time 1 http://localhost:11434/api/tags 2>/dev/null", "r");
+    if (!pipe) return {};
+    std::string out;
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), pipe)) out += buf;
+    pclose(pipe);
+    return ParseOllamaTags(out);
+}
+
+static std::string trim_copy(const std::string& s) {
+    const std::string ws = " \t\r\n";
+    auto start = s.find_first_not_of(ws);
+    if (start == std::string::npos) return "";
+    auto end = s.find_last_not_of(ws);
+    return s.substr(start, end - start + 1);
+}
+
+static std::string truncate_for_log(const std::string& s, std::size_t maxLen = 240) {
+    return s.size() <= maxLen ? s : s.substr(0, maxLen) + "...";
+}
+
+static std::string language_from_topic(const std::string& topic) {
+    std::string lower = topic;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    std::string needle = "language:";
+    auto pos = lower.find(needle);
+    if (pos == std::string::npos) return "(not specified)";
+    pos += needle.size();
+    auto end = topic.find_first_of(".\n\r", pos);
+    return trim_copy(topic.substr(pos, end == std::string::npos ? std::string::npos : end - pos));
 }
 
 // ---------------------------------------------------------------------------
@@ -212,9 +249,27 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
         auto* ollamaRow = new wxBoxSizer(wxHORIZONTAL);
         ollamaRow->Add(new wxStaticText(this, wxID_ANY, "Ollama model:"),
                        0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_ollamaModel = new wxTextCtrl(this, wxID_ANY, "llama3",
-                                       wxDefaultPosition, wxSize(160, -1));
+        m_ollamaModel = new wxComboBox(this, wxID_ANY, "llama3",
+                                       wxDefaultPosition, wxSize(220, -1),
+                                       0, nullptr, wxCB_DROPDOWN);
         ollamaRow->Add(m_ollamaModel, 0, wxALIGN_CENTER_VERTICAL);
+        ollamaRow->AddSpacer(6);
+        auto* refreshBtn = new wxButton(this, ID_CP_REFRESH_OLLAMA, "Refresh",
+                                        wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        refreshBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            wxString current = m_ollamaModel->GetValue();
+            m_ollamaModel->Clear();
+            for (auto& name : load_ollama_models())
+                m_ollamaModel->Append(wxString::FromUTF8(name));
+            if (!current.empty())
+                m_ollamaModel->SetValue(current);
+            else if (m_ollamaModel->GetCount() > 0)
+                m_ollamaModel->SetSelection(0);
+            SetStatus(m_ollamaModel->GetCount() > 0
+                      ? "Loaded Ollama models."
+                      : "No Ollama models found at localhost:11434.");
+        });
+        ollamaRow->Add(refreshBtn, 0, wxALIGN_CENTER_VERTICAL);
         m_ollamaSizer = inner->Add(ollamaRow, 0, wxBOTTOM, 8);
         m_ollamaSizer->Show(false);
     }
@@ -296,9 +351,9 @@ void CreatePanel::SetGenerating(bool on) {
 }
 
 void CreatePanel::UpdateBackendFields() {
-    int sel = m_backendChoice->GetSelection();
-    m_ollamaSizer->Show(sel == 2);
-    m_apiKeySizer->Show(sel == 3);
+    std::string label = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
+    m_ollamaSizer->Show(label == "Ollama (local)");
+    m_apiKeySizer->Show(label == "Anthropic API");
     if (GetSizer()) GetSizer()->Layout();
 }
 
@@ -520,7 +575,18 @@ void CreatePanel::OnDeleteCharacter(wxCommandEvent&) {
     SaveCharLibrary();
 }
 
-void CreatePanel::OnBackendChanged(wxCommandEvent&) { UpdateBackendFields(); }
+void CreatePanel::OnBackendChanged(wxCommandEvent&) {
+    UpdateBackendFields();
+    if (m_backendChoice->GetString(m_backendChoice->GetSelection()) == "Ollama (local)"
+        && m_ollamaModel->GetCount() == 0) {
+        for (auto& name : load_ollama_models())
+            m_ollamaModel->Append(wxString::FromUTF8(name));
+    }
+    // Auto-persist the backend selection so the Edit tab can pick it up immediately.
+    AppState st = LoadAppState();
+    st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
+    SaveAppState(st);
+}
 
 // Build a GenerationRequest from the current form state.
 GenerationRequest CreatePanel::BuildRequest() const {
@@ -566,7 +632,8 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     std::string       filename = ChapterFilename(req.topic, chId);
     std::string       prompt  = BuildPrompt(req, GetLLMReadme());
     int               bkIdx   = m_backendChoice->GetSelection();
-    LLMBackend        backend  = backend_from_index(bkIdx);
+    std::string       bkLabel = m_backendChoice->GetString(bkIdx).ToStdString();
+    LLMBackend        backend  = backend_from_label(bkLabel);
 
     // Clipboard — copy and return immediately.
     if (backend == LLMBackend::Clipboard) {
@@ -588,8 +655,12 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
 
     SetGenerating(true);
     SetStatus("Sending to " + m_backendChoice->GetString(bkIdx) + "…");
-    Logger::get().log("Generate: backend=" + m_backendChoice->GetString(bkIdx).ToStdString()
-                      + "  project=" + projDirStr + "  file=" + filename);
+    Logger::get().log("Generate: backend=" + bkLabel
+                      + "  project=" + projDirStr
+                      + "  file=" + filename
+                      + "  model=" + (backend == LLMBackend::Ollama ? cfg.ollamaModel : "(n/a)")
+                      + "  language=" + language_from_topic(req.topic)
+                      + "  topic=" + truncate_for_log(req.topic));
     OpenCallback cb = m_openCallback;
 
     std::thread([this, prompt, cfg, projDirStr, filename, chId, cb]() mutable {
@@ -662,7 +733,9 @@ void CreatePanel::SaveFormState() const {
         if (!chars.empty()) chars += "|";
         chars += ch;
     }
-    st.checkedChars = chars;
+    st.checkedChars  = chars;
+    st.apiKey        = m_apiKeyCtrl->GetValue().ToStdString();
+    st.ollamaModel   = m_ollamaModel->GetValue().ToStdString();
 
     SaveAppState(st);
     Logger::get().log("Form state saved  project=" + st.currentProject
@@ -687,6 +760,10 @@ void CreatePanel::RestoreFormState(const AppState& st) {
             m_checkedChars.insert(tok.GetNextToken().ToStdString());
         RefreshCharList();
     }
+    if (!st.apiKey.empty())
+        m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
+    if (!st.ollamaModel.empty())
+        m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
 }
 
 void CreatePanel::OnSave(wxCommandEvent&) {

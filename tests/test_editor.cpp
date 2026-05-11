@@ -185,6 +185,40 @@ int test_editor() {
         fs::remove_all(tmp);
     }
 
+    // ApplyChapterPatch re-adds the marker if the LLM stripped it.
+    {
+        auto tmp = make_temp_dir();
+        fs::path filepath = tmp / "story.md";
+        {
+            std::ofstream f(filepath);
+            f << "# Story\n\n"
+                 "<!-- ch:0 -->\n## Chapter 1: Start\n\nOld text.\n\n"
+                 "<!-- ch:1 -->\n## Chapter 2: End\n\nKeep this.\n";
+        }
+
+        // Pass newBlock WITHOUT the marker — simulates LLM stripping it.
+        bool ok = ApplyChapterPatch(filepath.string(), 0,
+                                    "## Chapter 1: Start\n\nNew text without marker.\n\n");
+        std::string onDisk;
+        { std::ifstream f(filepath);
+          onDisk.assign(std::istreambuf_iterator<char>(f), {}); }
+
+        bool hasMarker = onDisk.find("<!-- ch:0 -->") != std::string::npos;
+        bool hasNew    = onDisk.find("New text without marker") != std::string::npos;
+        bool hasKeep   = onDisk.find("Keep this") != std::string::npos;
+
+        if (!ok || !hasMarker || !hasNew || !hasKeep) {
+            std::cerr << "FAIL [apply-chapter-patch-restores-marker]: ok=" << ok
+                      << " hasMarker=" << hasMarker
+                      << " hasNew=" << hasNew
+                      << " hasKeep=" << hasKeep << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [apply-chapter-patch-restores-marker]\n";
+        }
+        fs::remove_all(tmp);
+    }
+
     // ReplaceChapter writes entirely new content to a file.
     {
         auto tmp = make_temp_dir();
