@@ -21,12 +21,16 @@ private:
     wxListBox*        m_chapterList;
     wxStaticText*     m_rightLabel;
     wxListBox*        m_tidbitList;
+    wxRadioButton*    m_radioOpenView;
+    wxRadioButton*    m_radioOpenVim;
     wxRadioButton*    m_radioTidbit;
     wxRadioButton*    m_radioChapter;
 
     // ── Rewrite ───────────────────────────────────────────────────────────
     wxTextCtrl*       m_instructCtrl;
     wxButton*         m_rewriteBtn;
+    wxTextCtrl*       m_translateLangCtrl;
+    wxButton*         m_translateBtn;
 
     // ── Git version history ───────────────────────────────────────────────
     wxListBox*        m_historyList;   // git log of selected file
@@ -55,11 +59,14 @@ private:
     void        LoadSections();
     void        ReloadRightList();
     void        LoadHistory();
+    void        OpenCurrentFileInVim();
 
     void OnRefresh(wxCommandEvent&);
     void OnChapterSelected(wxCommandEvent&);
+    void OnChapterActivated(wxCommandEvent&);
     void OnTargetChanged(wxCommandEvent&);
     void OnRewrite(wxCommandEvent&);
+    void OnTranslate(wxCommandEvent&);
     void OnCommit(wxCommandEvent&);
     void OnViewVersion(wxCommandEvent&);
     void OnDiff(wxCommandEvent&);

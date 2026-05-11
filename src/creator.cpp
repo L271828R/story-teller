@@ -1,5 +1,6 @@
 #include "creator.h"
 #include "markdown.h"
+#include "llm_response.h"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -64,6 +65,61 @@ static std::string slugify(const std::string& s) {
     }
     while (!out.empty() && out.back() == '_') out.pop_back();
     return out;
+}
+
+static std::string trim_copy(const std::string& s) {
+    const std::string ws = " \t\r\n";
+    auto start = s.find_first_not_of(ws);
+    if (start == std::string::npos) return "";
+    auto end = s.find_last_not_of(ws);
+    return s.substr(start, end - start + 1);
+}
+
+static std::size_t first_document_line(const std::string& s) {
+    std::istringstream in(s);
+    std::string line;
+    std::size_t offset = 0;
+    while (std::getline(in, line)) {
+        if (line.rfind("# ", 0) == 0 ||
+            line.rfind("## ", 0) == 0 ||
+            line.rfind("<!-- ch:", 0) == 0) {
+            return offset;
+        }
+        offset += line.size() + 1;
+    }
+    return std::string::npos;
+}
+
+std::string CleanMarkdownResponse(const std::string& response) {
+    std::string text = trim_copy(response);
+
+    if (!text.empty() && text.front() == '{') {
+        std::string markdown = ExtractJSONString(text, "markdown");
+        if (markdown.empty()) markdown = ExtractJSONString(text, "content");
+        if (!markdown.empty()) text = trim_copy(markdown);
+    }
+
+    if (text.rfind("```", 0) == 0) {
+        auto firstLineEnd = text.find('\n');
+        if (firstLineEnd != std::string::npos) {
+            std::string fence = text.substr(0, firstLineEnd);
+            if (fence == "```" || fence == "```markdown" || fence == "```md") {
+                text = text.substr(firstLineEnd + 1);
+                std::string trimmed = trim_copy(text);
+                if (trimmed.size() >= 3 && trimmed.compare(trimmed.size() - 3, 3, "```") == 0) {
+                    trimmed = trim_copy(trimmed.substr(0, trimmed.size() - 3));
+                }
+                text = trimmed;
+            }
+        }
+    }
+
+    auto start = first_document_line(text);
+    if (start != std::string::npos && start > 0) {
+        text = text.substr(start);
+    }
+
+    return trim_copy(text) + "\n";
 }
 
 std::string BuildPrompt(const GenerationRequest& req, const std::string& llmReadme) {
@@ -166,6 +222,29 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
     std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
     out << "## MDViewer syntax reference\n\n" << ref;
 
+    return out.str();
+}
+
+std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
+                                   const std::string& targetLanguage,
+                                   const std::string& llmReadme) {
+    std::ostringstream out;
+    out << "## Translation request\n\n"
+        << "Translate the following complete StoryTeller markdown document into "
+        << targetLanguage << ".\n\n"
+        << "Preserve the markdown structure, heading levels, fenced code blocks, image/link URLs, "
+           "and HTML comment markers such as `<!-- ch:N -->` and `<!-- tb:N -->`. "
+           "Translate visible prose and chapter titles. For `:::tidbit[...]` blocks, "
+           "adapt the joke, aside, idiom, voice, and cultural reference so it feels natural, "
+           "authentic, and culturally relevant in the target language instead of literal. "
+           "Keep the tidbit block syntax valid and keep the same speaker name unless the "
+           "source name has a standard target-language rendering. "
+           "Return only the translated markdown document with no prose before or after.\n\n"
+        << "## Source markdown\n\n"
+        << "```markdown\n" << sourceMarkdown << "\n```\n\n";
+
+    std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
+    out << "## MDViewer syntax reference\n\n" << ref;
     return out.str();
 }
 

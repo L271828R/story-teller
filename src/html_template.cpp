@@ -112,6 +112,7 @@ body{
   font-size:)HTML" + fsPx + R"HTML(;line-height:1.65;
   color:var(--text);background:var(--bg);
   padding:32px 24px;max-width:960px;margin:0 auto;
+  overflow-wrap:anywhere;word-break:break-word;
 }
 
 /* ── Typography ─────────────────────────────────────────────────────────── */
@@ -120,7 +121,7 @@ h1{font-size:2em;  border-bottom:1px solid var(--border);padding-bottom:.3em}
 h2{font-size:1.5em;border-bottom:1px solid var(--border);padding-bottom:.3em}
 h3{font-size:1.25em}
 h4{font-size:1em}
-p{margin-bottom:16px}
+p{margin-bottom:16px;overflow-wrap:anywhere;word-break:break-word}
 a{color:var(--link);text-decoration:none}
 a:hover{color:var(--link-hover);text-decoration:underline}
 strong{font-weight:600}
@@ -175,6 +176,7 @@ details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 /* ── Lists ──────────────────────────────────────────────────────────────── */
 ul,ol{padding-left:2em;margin-bottom:16px}
 li{margin:4px 0;color:var(--text)}
+li,summary,.tidbit-body{overflow-wrap:anywhere;word-break:break-word}
 
 /* ── Media ──────────────────────────────────────────────────────────────── */
 img{max-width:100%;height:auto;border-radius:4px}

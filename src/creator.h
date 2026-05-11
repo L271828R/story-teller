@@ -33,6 +33,14 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
                              const std::string& llmReadme,
                              const std::string& chapterContext = "");
 
+std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
+                                   const std::string& targetLanguage,
+                                   const std::string& llmReadme);
+
+// Removes common LLM wrappers around returned markdown, such as an outer
+// ```markdown fence and short prose before the actual document begins.
+std::string CleanMarkdownResponse(const std::string& response);
+
 // Injects <!-- ch:N --> markers before each "## Chapter N:" heading.
 // Returns the stamped text and the count of chapters found.
 struct StampResult { std::string text; int count; };

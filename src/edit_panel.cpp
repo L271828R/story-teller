@@ -10,6 +10,8 @@
 #include <fstream>
 #include <sstream>
 #include <thread>
+#include <chrono>
+#include <cctype>
 #include <wx/button.h>
 #include <wx/clipbrd.h>
 #include <wx/choice.h>
@@ -20,13 +22,59 @@
 #include <wx/statline.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/utils.h>
 
 namespace fs = std::filesystem;
+
+static std::string shell_quote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') out += "'\\''";
+        else           out += c;
+    }
+    out += "'";
+    return out;
+}
+
+static std::string applescript_string(const std::string& s) {
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '\\' || c == '"') out += '\\';
+        out += c;
+    }
+    out += "\"";
+    return out;
+}
+
+static LLMConfig llm_config_from_state(const AppState& st) {
+    LLMConfig cfg;
+    cfg.backend = LLMBackend::Clipboard;
+    if      (st.backend == "claude -p")      cfg.backend = LLMBackend::ClaudeP;
+    else if (st.backend == "Codex CLI")      cfg.backend = LLMBackend::CodexCLI;
+    else if (st.backend == "Ollama (local)") cfg.backend = LLMBackend::Ollama;
+    else if (st.backend == "Anthropic API")  cfg.backend = LLMBackend::API;
+    if (!st.apiKey.empty())      cfg.apiKey      = st.apiKey;
+    if (!st.ollamaModel.empty()) cfg.ollamaModel = st.ollamaModel;
+    return cfg;
+}
+
+static std::string language_suffix(const std::string& language) {
+    std::string out;
+    for (unsigned char c : language) {
+        if (std::isalnum(c)) out += (char)std::tolower(c);
+        else if (!out.empty() && out.back() != '_') out += '_';
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out.empty() ? "translated" : out;
+}
 
 enum {
     ID_EP_REFRESH        = wxID_HIGHEST + 300,
     ID_EP_CHAPTER,
+    ID_EP_OPEN_VIEW,
+    ID_EP_OPEN_VIM,
     ID_EP_REWRITE,
+    ID_EP_TRANSLATE,
     ID_EP_RADIO_TIDBIT,
     ID_EP_RADIO_CHAPTER,
     ID_EP_COMMIT,
@@ -38,9 +86,11 @@ enum {
 wxBEGIN_EVENT_TABLE(EditPanel, wxPanel)
     EVT_BUTTON(ID_EP_REFRESH,           EditPanel::OnRefresh)
     EVT_LISTBOX(ID_EP_CHAPTER,          EditPanel::OnChapterSelected)
+    EVT_LISTBOX_DCLICK(ID_EP_CHAPTER,   EditPanel::OnChapterActivated)
     EVT_RADIOBUTTON(ID_EP_RADIO_TIDBIT,  EditPanel::OnTargetChanged)
     EVT_RADIOBUTTON(ID_EP_RADIO_CHAPTER, EditPanel::OnTargetChanged)
     EVT_BUTTON(ID_EP_REWRITE,           EditPanel::OnRewrite)
+    EVT_BUTTON(ID_EP_TRANSLATE,         EditPanel::OnTranslate)
     EVT_BUTTON(ID_EP_COMMIT,            EditPanel::OnCommit)
     EVT_BUTTON(ID_EP_VIEW_VER,          EditPanel::OnViewVersion)
     EVT_BUTTON(ID_EP_DIFF,              EditPanel::OnDiff)
@@ -63,6 +113,18 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         m_chapterList = new wxListBox(this, ID_EP_CHAPTER,
                                       wxDefaultPosition, wxSize(200, 140));
         leftCol->Add(m_chapterList, 1, wxEXPAND);
+
+        auto* openRow = new wxBoxSizer(wxHORIZONTAL);
+        openRow->Add(new wxStaticText(this, wxID_ANY, "Open:"),
+                     0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+        m_radioOpenView = new wxRadioButton(this, ID_EP_OPEN_VIEW, "View tab",
+                                            wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
+        m_radioOpenVim  = new wxRadioButton(this, ID_EP_OPEN_VIM, "Vim");
+        m_radioOpenView->SetValue(true);
+        openRow->Add(m_radioOpenView, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        openRow->Add(m_radioOpenVim,  0, wxALIGN_CENTER_VERTICAL);
+        leftCol->Add(openRow, 0, wxTOP, 6);
+
         cols->Add(leftCol, 0, wxEXPAND | wxRIGHT, 12);
 
         auto* rightCol = new wxBoxSizer(wxVERTICAL);
@@ -107,6 +169,22 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
 
     m_rewriteBtn = new wxButton(this, ID_EP_REWRITE, "Rewrite");
     inner->Add(m_rewriteBtn, 0, wxBOTTOM, 10);
+    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
+
+    // ── Translate selected file ───────────────────────────────────────────
+    {
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY, "Translate file to:"),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        m_translateLangCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
+                                             wxDefaultPosition, wxSize(180, -1));
+        m_translateLangCtrl->SetHint("e.g. Spanish, Chinese");
+        row->Add(m_translateLangCtrl, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        m_translateBtn = new wxButton(this, ID_EP_TRANSLATE, "Translate file",
+                                      wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        row->Add(m_translateBtn, 0, wxALIGN_CENTER_VERTICAL);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 10);
+    }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
     // ── Git version history ───────────────────────────────────────────────
@@ -317,16 +395,57 @@ void EditPanel::LoadHistory() {
     }
 }
 
+void EditPanel::OpenCurrentFileInVim() {
+    std::string path = CurrentChapterPath();
+    if (path.empty()) { SetStatus("Select a file first."); return; }
+
+    std::string vimCmd = "vim " + shell_quote(path);
+    std::string itermScript =
+        "tell application \"iTerm2\"\n"
+        "  activate\n"
+        "  create window with default profile\n"
+        "  tell current session of current window\n"
+        "    write text " + applescript_string(vimCmd) + "\n"
+        "  end tell\n"
+        "end tell";
+    std::string terminalScript =
+        "tell application \"Terminal\" to activate\n"
+        "tell application \"Terminal\" to do script \"vim \" & quoted form of "
+        + applescript_string(path);
+
+    std::string cmd = "osascript -e " + shell_quote(itermScript)
+                    + " || osascript -e " + shell_quote(terminalScript);
+    long pid = wxExecute(wxString::FromUTF8(cmd), wxEXEC_ASYNC);
+    if (pid == 0) {
+        SetStatus("Could not open Terminal with Vim.");
+        Logger::get().log("Open Vim failed: " + path);
+        return;
+    }
+    SetStatus("Opening in Vim: " + wxString::FromUTF8(fs::path(path).filename().string()));
+    Logger::get().log("Open Vim: " + path);
+}
+
 // ---------------------------------------------------------------------------
 
 void EditPanel::OnRefresh(wxCommandEvent&)         { RefreshChapters(); }
 void EditPanel::OnChapterSelected(wxCommandEvent&) { ReloadRightList(); LoadHistory(); }
+void EditPanel::OnChapterActivated(wxCommandEvent&) {
+    if (m_radioOpenVim->GetValue()) {
+        OpenCurrentFileInVim();
+        return;
+    }
+    std::string path = CurrentChapterPath();
+    if (path.empty()) { SetStatus("Select a file first."); return; }
+    if (m_openCallback) m_openCallback(path);
+    SetStatus("Opened in View tab: " + wxString::FromUTF8(fs::path(path).filename().string()));
+}
 void EditPanel::OnTargetChanged(wxCommandEvent&)   { ReloadRightList(); }
 
 void EditPanel::SetStatus(const wxString& msg) { m_statusCtrl->SetValue(msg); }
 void EditPanel::SetBusy(bool on) {
     m_rewriteBtn->Enable(!on);
     m_rewriteBtn->SetLabel(on ? "Rewriting…" : "Rewrite");
+    m_translateBtn->Enable(!on);
     m_commitBtn->Enable(!on);
 }
 
@@ -374,14 +493,7 @@ void EditPanel::OnRewrite(wxCommandEvent&) {
     }
 
     AppState st = LoadAppState();
-    LLMConfig cfg;
-    cfg.backend = LLMBackend::Clipboard;
-    if      (st.backend == "claude -p")      cfg.backend = LLMBackend::ClaudeP;
-    else if (st.backend == "Codex CLI")      cfg.backend = LLMBackend::CodexCLI;
-    else if (st.backend == "Ollama (local)") cfg.backend = LLMBackend::Ollama;
-    else if (st.backend == "Anthropic API")  cfg.backend = LLMBackend::API;
-    if (!st.apiKey.empty())      cfg.apiKey      = st.apiKey;
-    if (!st.ollamaModel.empty()) cfg.ollamaModel = st.ollamaModel;
+    LLMConfig cfg = llm_config_from_state(st);
 
     // Clipboard mode: copy the prompt so the user can paste it into any LLM manually.
     if (cfg.backend == LLMBackend::Clipboard) {
@@ -435,6 +547,80 @@ void EditPanel::OnRewrite(wxCommandEvent&) {
     }).detach();
 }
 
+void EditPanel::OnTranslate(wxCommandEvent&) {
+    wxString lang = m_translateLangCtrl->GetValue().Trim();
+    if (lang.empty()) { SetStatus("Enter a target language first."); return; }
+
+    std::string sourcePath = CurrentChapterPath();
+    if (sourcePath.empty()) { SetStatus("Select a file first."); return; }
+
+    std::string sourceContent;
+    wxArrayInt selectedVersions;
+    m_historyList->GetSelections(selectedVersions);
+    if (selectedVersions.size() == 1) {
+        int idx = selectedVersions[0];
+        if (idx < 0 || idx >= (int)m_commits.size()) return;
+        std::string proj = CurrentProjectPath();
+        std::string relPath = fs::path(sourcePath).filename().string();
+        sourceContent = GitShowFile(proj, m_commits[idx].hash, relPath);
+        if (sourceContent.empty()) { SetStatus("Could not read selected version."); return; }
+    } else {
+        std::ifstream f(sourcePath);
+        if (!f) { SetStatus("Cannot read selected file."); return; }
+        sourceContent.assign(std::istreambuf_iterator<char>(f), {});
+    }
+
+    AppState st = LoadAppState();
+    LLMConfig cfg = llm_config_from_state(st);
+    std::string prompt = BuildTranslationPrompt(sourceContent, lang.ToStdString(), "");
+
+    if (cfg.backend == LLMBackend::Clipboard) {
+        if (wxTheClipboard->Open()) {
+            wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
+            wxTheClipboard->Close();
+        }
+        SetStatus("Translation prompt copied to clipboard.\n\n"
+                  "Paste it into any LLM, then save the translated markdown as a new file.");
+        return;
+    }
+
+    fs::path src(sourcePath);
+    std::string suffix = language_suffix(lang.ToStdString());
+    fs::path outPath = src.parent_path() / (src.stem().string() + "_" + suffix + src.extension().string());
+    OpenCallback cb = m_openCallback;
+    std::string backendLabel = st.backend.empty() ? "LLM" : st.backend;
+
+    Logger::get().log("EditPanel translate: file=" + sourcePath
+                      + "  target=" + lang.ToStdString()
+                      + "  backend=" + backendLabel);
+
+    SetBusy(true);
+    SetStatus("Translating to " + lang + " with " + wxString::FromUTF8(backendLabel) + "…");
+
+    std::thread([this, prompt, cfg, outPath, cb]() mutable {
+        LLMResult res = InvokeLLM(prompt, cfg);
+        wxTheApp->CallAfter([this, res, outPath, cb]() mutable {
+            SetBusy(false);
+            if (!res.ok) {
+                Logger::get().log("EditPanel translate FAILED: " + res.error);
+                SetStatus("Error: " + wxString::FromUTF8(res.error));
+                return;
+            }
+            {
+                std::ofstream f(outPath);
+                f << CleanMarkdownResponse(res.text);
+                if (!f.good()) {
+                    SetStatus("Translation failed — could not write file.");
+                    return;
+                }
+            }
+            RefreshChapters();
+            SetStatus("Translated file saved: " + wxString::FromUTF8(outPath.filename().string()));
+            if (cb) cb(outPath.string());
+        });
+    }).detach();
+}
+
 // ── Git operations ────────────────────────────────────────────────────────────
 
 void EditPanel::OnCommit(wxCommandEvent&) {
@@ -453,6 +639,10 @@ void EditPanel::OnCommit(wxCommandEvent&) {
     }
     m_commitMsgCtrl->Clear();
     LoadHistory();
+    std::thread([this]() {
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        wxTheApp->CallAfter([this]() { LoadHistory(); });
+    }).detach();
     SetStatus("Committed: " + msg);
     Logger::get().log("EditPanel committed: " + relPath + " — " + msg.ToStdString());
 }

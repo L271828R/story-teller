@@ -137,6 +137,63 @@ int test_creator() {
         }
     }
 
+    // BuildTranslationPrompt preserves structure and names the target language.
+    {
+        std::string prompt = BuildTranslationPrompt("<!-- ch:0 -->\n## Chapter 1: Hello\n", "Spanish", "");
+        bool hasLang = prompt.find("Spanish") != std::string::npos;
+        bool hasMarker = prompt.find("ch:N") != std::string::npos
+                      || prompt.find("<!-- ch:0 -->") != std::string::npos;
+        bool hasSource = prompt.find("Chapter 1") != std::string::npos;
+        bool hasAdapt = prompt.find("culturally relevant") != std::string::npos
+                     && prompt.find("instead of literal") != std::string::npos;
+        if (!hasLang || !hasMarker || !hasSource || !hasAdapt) {
+            std::cerr << "FAIL [build-translation-prompt]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-translation-prompt]\n";
+        }
+    }
+
+    // CleanMarkdownResponse removes common LLM translation wrappers.
+    {
+        std::string wrapped =
+            "```markdown\n"
+            "技能文件无法访问，但请求中已包含完整的语法参考。\n\n"
+            "---\n\n"
+            "# 第一支疫苗的故事\n\n"
+            "<!-- ch:0 -->\n"
+            "## 第一章：可怕的天花\n\n"
+            "正文。\n"
+            "```";
+        std::string cleaned = CleanMarkdownResponse(wrapped);
+        bool noFence = cleaned.find("```markdown") == std::string::npos;
+        bool noPreface = cleaned.find("技能文件") == std::string::npos;
+        bool startsDoc = cleaned.rfind("# 第一支疫苗", 0) == 0;
+        if (!noFence || !noPreface || !startsDoc) {
+            std::cerr << "FAIL [clean-markdown-response]: cleaned='" << cleaned << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [clean-markdown-response]\n";
+        }
+    }
+
+    {
+        std::string jsonWrapped =
+            "{\n"
+            "  \"markdown\": \"# 标题\\n\\n<!-- ch:0 -->\\n## 第一章：开始\\n\\n正文。\"\n"
+            "}";
+        std::string cleaned = CleanMarkdownResponse(jsonWrapped);
+        bool startsDoc = cleaned.rfind("# 标题", 0) == 0;
+        bool noJson = cleaned.find("\"markdown\"") == std::string::npos;
+        bool hasMarker = cleaned.find("<!-- ch:0 -->") != std::string::npos;
+        if (!startsDoc || !noJson || !hasMarker) {
+            std::cerr << "FAIL [clean-json-markdown-response]: cleaned='" << cleaned << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [clean-json-markdown-response]\n";
+        }
+    }
+
     // BuildPrompt instructs the LLM to divide the story into numbered chapters.
     {
         GenerationRequest req;
