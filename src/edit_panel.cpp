@@ -68,11 +68,21 @@ static std::string language_suffix(const std::string& language) {
     return out.empty() ? "translated" : out;
 }
 
+static wxString preview_label(const char* prefix, int id, const std::string& preview) {
+    wxString text = wxString::FromUTF8(preview);
+    if (text.length() > 80) text = text.Left(80) + "...";
+    return wxString::Format("%s:%d  ", prefix, id) + text;
+}
+
 enum {
     ID_EP_REFRESH        = wxID_HIGHEST + 300,
     ID_EP_CHAPTER,
     ID_EP_OPEN_VIEW,
     ID_EP_OPEN_VIM,
+    ID_EP_MOVE_UP,
+    ID_EP_MOVE_DOWN,
+    ID_EP_RENAME_FILE,
+    ID_EP_DELETE_FILE,
     ID_EP_REWRITE,
     ID_EP_TRANSLATE,
     ID_EP_RADIO_TIDBIT,
@@ -87,6 +97,10 @@ wxBEGIN_EVENT_TABLE(EditPanel, wxPanel)
     EVT_BUTTON(ID_EP_REFRESH,           EditPanel::OnRefresh)
     EVT_LISTBOX(ID_EP_CHAPTER,          EditPanel::OnChapterSelected)
     EVT_LISTBOX_DCLICK(ID_EP_CHAPTER,   EditPanel::OnChapterActivated)
+    EVT_BUTTON(ID_EP_MOVE_UP,           EditPanel::OnMoveFileUp)
+    EVT_BUTTON(ID_EP_MOVE_DOWN,         EditPanel::OnMoveFileDown)
+    EVT_BUTTON(ID_EP_RENAME_FILE,       EditPanel::OnRenameFile)
+    EVT_BUTTON(ID_EP_DELETE_FILE,       EditPanel::OnDeleteFile)
     EVT_RADIOBUTTON(ID_EP_RADIO_TIDBIT,  EditPanel::OnTargetChanged)
     EVT_RADIOBUTTON(ID_EP_RADIO_CHAPTER, EditPanel::OnTargetChanged)
     EVT_BUTTON(ID_EP_REWRITE,           EditPanel::OnRewrite)
@@ -111,8 +125,17 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         auto* leftCol = new wxBoxSizer(wxVERTICAL);
         leftCol->Add(new wxStaticText(this, wxID_ANY, "File:"), 0, wxBOTTOM, 4);
         m_chapterList = new wxListBox(this, ID_EP_CHAPTER,
-                                      wxDefaultPosition, wxSize(200, 140));
+                                      wxDefaultPosition, wxSize(310, 190));
         leftCol->Add(m_chapterList, 1, wxEXPAND);
+
+        auto* orderRow = new wxBoxSizer(wxHORIZONTAL);
+        m_moveUpBtn = new wxButton(this, ID_EP_MOVE_UP, "↑",
+                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        m_moveDownBtn = new wxButton(this, ID_EP_MOVE_DOWN, "↓",
+                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        orderRow->Add(m_moveUpBtn, 0, wxRIGHT, 6);
+        orderRow->Add(m_moveDownBtn, 0);
+        leftCol->Add(orderRow, 0, wxTOP, 6);
 
         auto* openRow = new wxBoxSizer(wxHORIZONTAL);
         openRow->Add(new wxStaticText(this, wxID_ANY, "Open:"),
@@ -125,13 +148,22 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         openRow->Add(m_radioOpenVim,  0, wxALIGN_CENTER_VERTICAL);
         leftCol->Add(openRow, 0, wxTOP, 6);
 
+        auto* fileBtnRow = new wxBoxSizer(wxHORIZONTAL);
+        m_renameFileBtn = new wxButton(this, ID_EP_RENAME_FILE, "Rename",
+                                       wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        m_deleteFileBtn = new wxButton(this, ID_EP_DELETE_FILE, "Delete",
+                                       wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        fileBtnRow->Add(m_renameFileBtn, 0, wxRIGHT, 6);
+        fileBtnRow->Add(m_deleteFileBtn, 0);
+        leftCol->Add(fileBtnRow, 0, wxTOP, 6);
+
         cols->Add(leftCol, 0, wxEXPAND | wxRIGHT, 12);
 
         auto* rightCol = new wxBoxSizer(wxVERTICAL);
         m_rightLabel = new wxStaticText(this, wxID_ANY, "Tidbits:");
         rightCol->Add(m_rightLabel, 0, wxBOTTOM, 4);
         m_tidbitList = new wxListBox(this, wxID_ANY,
-                                     wxDefaultPosition, wxSize(-1, 140));
+                                     wxDefaultPosition, wxSize(-1, 110));
         rightCol->Add(m_tidbitList, 1, wxEXPAND);
         cols->Add(rightCol, 1, wxEXPAND);
 
@@ -273,6 +305,7 @@ void EditPanel::RefreshChapters() {
         if (e.path().extension() == ".md" && e.path().filename().string()[0] != '.')
             files.push_back(e.path().filename().string());
     std::sort(files.begin(), files.end());
+    files = ApplyFileOrder(files, LoadFileOrder(proj));
 
     for (auto& f : files)
         m_chapterList->Append(wxString::FromUTF8(f));
@@ -284,6 +317,16 @@ void EditPanel::RefreshChapters() {
     } else {
         SetStatus("No files yet — generate one in the Create tab.");
     }
+}
+
+void EditPanel::SaveCurrentFileOrder() const {
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+
+    std::vector<std::string> files;
+    for (unsigned int i = 0; i < m_chapterList->GetCount(); ++i)
+        files.push_back(m_chapterList->GetString(i).ToStdString());
+    SaveFileOrder(proj, files);
 }
 
 // Reload the right list based on the active radio button.
@@ -325,11 +368,10 @@ void EditPanel::LoadTidbits() {
             std::string line;
             while (std::getline(ss, line))
                 if (!line.empty() && line.substr(0, 3) != ":::") { preview = line; break; }
-            if (preview.size() > 80) preview = preview.substr(0, 80) + "…";
         }
 
         m_tidbits.push_back({id, preview});
-        m_tidbitList->Append(wxString::Format("tb:%d  %s", id, wxString::FromUTF8(preview)));
+        m_tidbitList->Append(preview_label("tb", id, preview));
         pos = end;
     }
 
@@ -365,11 +407,10 @@ void EditPanel::LoadSections() {
             std::string line;
             while (std::getline(ss, line))
                 if (line.rfind("## ", 0) == 0) { preview = line.substr(3); break; }
-            if (preview.size() > 80) preview = preview.substr(0, 80) + "…";
         }
 
         m_sections.push_back({id, preview});
-        m_tidbitList->Append(wxString::Format("ch:%d  %s", id, wxString::FromUTF8(preview)));
+        m_tidbitList->Append(preview_label("ch", id, preview));
         pos = end;
     }
 
@@ -439,6 +480,99 @@ void EditPanel::OnChapterActivated(wxCommandEvent&) {
     if (m_openCallback) m_openCallback(path);
     SetStatus("Opened in View tab: " + wxString::FromUTF8(fs::path(path).filename().string()));
 }
+void EditPanel::OnMoveFileUp(wxCommandEvent&) {
+    int sel = m_chapterList->GetSelection();
+    if (sel == wxNOT_FOUND || sel == 0) return;
+    wxString name = m_chapterList->GetString(sel);
+    m_chapterList->Delete((unsigned int)sel);
+    m_chapterList->Insert(name, (unsigned int)(sel - 1));
+    m_chapterList->SetSelection(sel - 1);
+    SaveCurrentFileOrder();
+    ReloadRightList();
+    LoadHistory();
+}
+void EditPanel::OnMoveFileDown(wxCommandEvent&) {
+    int sel = m_chapterList->GetSelection();
+    if (sel == wxNOT_FOUND || sel >= (int)m_chapterList->GetCount() - 1) return;
+    wxString name = m_chapterList->GetString(sel);
+    m_chapterList->Delete((unsigned int)sel);
+    m_chapterList->Insert(name, (unsigned int)(sel + 1));
+    m_chapterList->SetSelection(sel + 1);
+    SaveCurrentFileOrder();
+    ReloadRightList();
+    LoadHistory();
+}
+void EditPanel::OnRenameFile(wxCommandEvent&) {
+    std::string oldPath = CurrentChapterPath();
+    if (oldPath.empty()) { SetStatus("Select a file first."); return; }
+
+    fs::path oldFs(oldPath);
+    wxString oldName = wxString::FromUTF8(oldFs.filename().string());
+    wxString newName = wxGetTextFromUser("New filename:", "Rename File", oldName, this).Trim();
+    if (newName.empty() || newName == oldName) return;
+
+    fs::path newFs(newName.ToStdString());
+    if (newFs.has_parent_path()) {
+        SetStatus("Rename failed: enter a filename only, not a path.");
+        return;
+    }
+    if (newFs.extension().empty()) {
+        newFs += ".md";
+    }
+    if (newFs.extension() != ".md") {
+        SetStatus("Rename failed: filename must end in .md.");
+        return;
+    }
+
+    fs::path target = oldFs.parent_path() / newFs;
+    if (fs::exists(target)) {
+        SetStatus("Rename failed: target file already exists.");
+        return;
+    }
+
+    std::error_code ec;
+    fs::rename(oldFs, target, ec);
+    if (ec) {
+        SetStatus("Rename failed: " + wxString::FromUTF8(ec.message()));
+        Logger::get().log("EditPanel rename FAILED: " + oldPath + " -> " + target.string()
+                          + "  " + ec.message());
+        return;
+    }
+
+    Logger::get().log("EditPanel renamed file: " + oldPath + " -> " + target.string());
+    RefreshChapters();
+    int idx = m_chapterList->FindString(wxString::FromUTF8(target.filename().string()));
+    if (idx != wxNOT_FOUND) {
+        m_chapterList->SetSelection(idx);
+        ReloadRightList();
+        LoadHistory();
+        SaveCurrentFileOrder();
+    }
+    SetStatus("Renamed to: " + wxString::FromUTF8(target.filename().string()));
+}
+void EditPanel::OnDeleteFile(wxCommandEvent&) {
+    std::string path = CurrentChapterPath();
+    if (path.empty()) { SetStatus("Select a file first."); return; }
+
+    std::string filename = fs::path(path).filename().string();
+    wxString question = "Delete '" + wxString::FromUTF8(filename) + "'?\n\n"
+                        "This removes the file from disk. Git history may still contain older committed versions.";
+    if (wxMessageBox(question, "Confirm delete", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
+        return;
+
+    std::error_code ec;
+    bool removed = fs::remove(path, ec);
+    if (!removed || ec) {
+        SetStatus("Delete failed: " + wxString::FromUTF8(ec ? ec.message() : "file was not removed"));
+        Logger::get().log("EditPanel delete FAILED: " + path + "  " + (ec ? ec.message() : "not removed"));
+        return;
+    }
+
+    Logger::get().log("EditPanel deleted file: " + path);
+    RefreshChapters();
+    SaveCurrentFileOrder();
+    SetStatus("Deleted: " + wxString::FromUTF8(filename));
+}
 void EditPanel::OnTargetChanged(wxCommandEvent&)   { ReloadRightList(); }
 
 void EditPanel::SetStatus(const wxString& msg) { m_statusCtrl->SetValue(msg); }
@@ -447,6 +581,10 @@ void EditPanel::SetBusy(bool on) {
     m_rewriteBtn->SetLabel(on ? "Rewriting…" : "Rewrite");
     m_translateBtn->Enable(!on);
     m_commitBtn->Enable(!on);
+    m_moveUpBtn->Enable(!on);
+    m_moveDownBtn->Enable(!on);
+    m_renameFileBtn->Enable(!on);
+    m_deleteFileBtn->Enable(!on);
 }
 
 // ── Rewrite via LLM ──────────────────────────────────────────────────────────

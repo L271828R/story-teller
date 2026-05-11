@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 // Returns the :::tidbit...:::  block that follows the <!-- tb:N --> marker
 // in fileContent. Returns "" if the marker is not found.
@@ -31,3 +32,13 @@ std::string ExtractChapter(const std::string& fileContent, int chapterId);
 bool ApplyChapterPatch(const std::string& filepath,
                        int chapterId,
                        const std::string& newBlock);
+
+// Sorts project files using a persisted order list first, then appends new files
+// alphabetically. Missing files are ignored.
+std::vector<std::string> ApplyFileOrder(const std::vector<std::string>& files,
+                                        const std::vector<std::string>& savedOrder);
+
+// Reads/writes <projectDir>/.file_order, one filename per line.
+std::vector<std::string> LoadFileOrder(const std::string& projectDir);
+bool SaveFileOrder(const std::string& projectDir,
+                   const std::vector<std::string>& files);

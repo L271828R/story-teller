@@ -19,6 +19,10 @@ private:
 
     // ── Content navigation ────────────────────────────────────────────────
     wxListBox*        m_chapterList;
+    wxButton*         m_moveUpBtn;
+    wxButton*         m_moveDownBtn;
+    wxButton*         m_renameFileBtn;
+    wxButton*         m_deleteFileBtn;
     wxStaticText*     m_rightLabel;
     wxListBox*        m_tidbitList;
     wxRadioButton*    m_radioOpenView;
@@ -60,10 +64,15 @@ private:
     void        ReloadRightList();
     void        LoadHistory();
     void        OpenCurrentFileInVim();
+    void        SaveCurrentFileOrder() const;
 
     void OnRefresh(wxCommandEvent&);
     void OnChapterSelected(wxCommandEvent&);
     void OnChapterActivated(wxCommandEvent&);
+    void OnMoveFileUp(wxCommandEvent&);
+    void OnMoveFileDown(wxCommandEvent&);
+    void OnRenameFile(wxCommandEvent&);
+    void OnDeleteFile(wxCommandEvent&);
     void OnTargetChanged(wxCommandEvent&);
     void OnRewrite(wxCommandEvent&);
     void OnTranslate(wxCommandEvent&);

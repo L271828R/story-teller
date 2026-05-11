@@ -61,6 +61,25 @@ int test_editor() {
         }
     }
 
+    // ExtractTidbit tolerates translated LLM output with indented or overlong fences.
+    {
+        std::string content =
+            "# 中文故事\n\n"
+            "<!-- tb:10 -->\n"
+            "  ::::tidbit[李白]\n"
+            "诗也可以解释科学。\n"
+            "  ::::\n";
+        std::string block = ExtractTidbit(content, 10);
+        bool hasOpen = block.find("::::tidbit[李白]") != std::string::npos;
+        bool hasText = block.find("诗也可以解释科学") != std::string::npos;
+        if (!hasOpen || !hasText) {
+            std::cerr << "FAIL [extract-tidbit-loose-fences]: got '" << block << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [extract-tidbit-loose-fences]\n";
+        }
+    }
+
     // PatchTidbit replaces the target block and preserves surrounding content.
     {
         std::string replacement =
@@ -239,6 +258,40 @@ int test_editor() {
             ++failures;
         } else {
             std::cout << "PASS [replace-chapter]\n";
+        }
+        fs::remove_all(tmp);
+    }
+
+    // ApplyFileOrder uses saved order first and appends new files alphabetically.
+    {
+        std::vector<std::string> files = {"b.md", "a.md", "c.md", "d.md"};
+        std::vector<std::string> saved = {"c.md", "missing.md", "a.md"};
+        auto ordered = ApplyFileOrder(files, saved);
+        bool ok = ordered.size() == 4
+               && ordered[0] == "c.md"
+               && ordered[1] == "a.md"
+               && ordered[2] == "b.md"
+               && ordered[3] == "d.md";
+        if (!ok) {
+            std::cerr << "FAIL [apply-file-order]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [apply-file-order]\n";
+        }
+    }
+
+    // SaveFileOrder and LoadFileOrder persist a per-project order file.
+    {
+        auto tmp = make_temp_dir();
+        std::vector<std::string> files = {"first.md", "second.md"};
+        bool saved = SaveFileOrder(tmp.string(), files);
+        auto loaded = LoadFileOrder(tmp.string());
+        bool ok = saved && loaded == files && fs::exists(tmp / ".file_order");
+        if (!ok) {
+            std::cerr << "FAIL [file-order-roundtrip]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [file-order-roundtrip]\n";
         }
         fs::remove_all(tmp);
     }

@@ -90,6 +90,34 @@ static std::size_t first_document_line(const std::string& s) {
     return std::string::npos;
 }
 
+static std::string normalize_tidbit_fences(const std::string& s) {
+    std::istringstream in(s);
+    std::ostringstream out;
+    std::string line;
+    bool first = true;
+    while (std::getline(in, line)) {
+        if (!first) out << "\n";
+        first = false;
+
+        std::size_t start = line.find_first_not_of(" \t");
+        std::string indent = start == std::string::npos ? "" : line.substr(0, start);
+        std::string trimmed = start == std::string::npos ? "" : line.substr(start);
+        while (!trimmed.empty() && trimmed.back() == '\r') trimmed.pop_back();
+
+        std::size_t colons = 0;
+        while (colons < trimmed.size() && trimmed[colons] == ':') ++colons;
+        if (colons >= 3 && trimmed.compare(colons, 6, "tidbit") == 0) {
+            out << indent << ":::" << trimmed.substr(colons);
+        } else if (colons >= 3 && trimmed.find_first_not_of(':') == std::string::npos) {
+            out << indent << ":::";
+        } else {
+            out << line;
+        }
+    }
+    if (!s.empty() && s.back() == '\n') out << "\n";
+    return out.str();
+}
+
 std::string CleanMarkdownResponse(const std::string& response) {
     std::string text = trim_copy(response);
 
@@ -119,6 +147,7 @@ std::string CleanMarkdownResponse(const std::string& response) {
         text = text.substr(start);
     }
 
+    text = normalize_tidbit_fences(text);
     return trim_copy(text) + "\n";
 }
 

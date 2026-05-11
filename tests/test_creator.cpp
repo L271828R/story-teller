@@ -146,7 +146,8 @@ int test_creator() {
         bool hasSource = prompt.find("Chapter 1") != std::string::npos;
         bool hasAdapt = prompt.find("culturally relevant") != std::string::npos
                      && prompt.find("instead of literal") != std::string::npos;
-        if (!hasLang || !hasMarker || !hasSource || !hasAdapt) {
+        bool hasNewFile = prompt.find("translated markdown document") != std::string::npos;
+        if (!hasLang || !hasMarker || !hasSource || !hasAdapt || !hasNewFile) {
             std::cerr << "FAIL [build-translation-prompt]\n";
             ++failures;
         } else {
@@ -191,6 +192,42 @@ int test_creator() {
             ++failures;
         } else {
             std::cout << "PASS [clean-json-markdown-response]\n";
+        }
+    }
+
+    {
+        std::string response =
+            "The translation is below:\n\n"
+            "<!-- ch:0 -->\n"
+            "## 第一章：开始\n\n"
+            "正文。\n";
+        std::string cleaned = CleanMarkdownResponse(response);
+        bool startsMarker = cleaned.rfind("<!-- ch:0 -->", 0) == 0;
+        bool noPreface = cleaned.find("translation is below") == std::string::npos;
+        if (!startsMarker || !noPreface) {
+            std::cerr << "FAIL [clean-preface-to-marker]: cleaned='" << cleaned << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [clean-preface-to-marker]\n";
+        }
+    }
+
+    {
+        std::string response =
+            "# 标题\n\n"
+            "<!-- tb:8 -->\n"
+            "::::tidbit[李白]\n"
+            "诗句也能讲科学。\n"
+            "::::\n";
+        std::string cleaned = CleanMarkdownResponse(response);
+        bool hasOpen = cleaned.find(":::tidbit[李白]") != std::string::npos;
+        bool hasClose = cleaned.find("\n:::\n") != std::string::npos;
+        bool noLongFence = cleaned.find("::::") == std::string::npos;
+        if (!hasOpen || !hasClose || !noLongFence) {
+            std::cerr << "FAIL [clean-tidbit-fences]: cleaned='" << cleaned << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [clean-tidbit-fences]\n";
         }
     }
 

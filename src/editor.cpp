@@ -1,25 +1,70 @@
 #include "editor.h"
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <set>
+
+namespace fs = std::filesystem;
 
 static std::string marker_for(int id) {
     return "<!-- tb:" + std::to_string(id) + " -->";
+}
+
+static std::string trim_line(std::string line) {
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t'))
+        line.pop_back();
+    std::size_t start = 0;
+    while (start < line.size() && (line[start] == ' ' || line[start] == '\t'))
+        ++start;
+    return line.substr(start);
+}
+
+static bool is_tidbit_opener(const std::string& line) {
+    std::string trimmed = trim_line(line);
+    std::size_t colons = 0;
+    while (colons < trimmed.size() && trimmed[colons] == ':') ++colons;
+    return colons >= 3 && trimmed.compare(colons, 6, "tidbit") == 0;
+}
+
+static bool is_tidbit_closer(const std::string& line) {
+    std::string trimmed = trim_line(line);
+    if (trimmed.size() < 3) return false;
+    return trimmed.find_first_not_of(':') == std::string::npos;
+}
+
+static std::size_t find_tidbit_opener(const std::string& s, std::size_t start) {
+    std::size_t p = start;
+    while (p < s.size()) {
+        std::size_t nl = s.find('\n', p);
+        std::string line = (nl == std::string::npos)
+                           ? s.substr(p)
+                           : s.substr(p, nl - p);
+        if (!trim_line(line).empty()) {
+            return is_tidbit_opener(line) ? p : std::string::npos;
+        }
+        p = (nl == std::string::npos) ? s.size() : nl + 1;
+    }
+    return std::string::npos;
 }
 
 // Returns the position just past the end of the :::tidbit...:::  block
 // that starts at `start` in `s`. Returns std::string::npos if not well-formed.
 static std::size_t tidbit_end(const std::string& s, std::size_t start) {
     std::size_t p = start;
-    // Skip to the closing line that is exactly ":::" (possibly followed by \n).
+    bool first_line = true;
+    // Skip to the closing fence. Accept indentation and overlong fences because
+    // translated LLM output sometimes emits ::::tidbit / ::::.
     while (p < s.size()) {
         std::size_t nl = s.find('\n', p);
         std::string line = (nl == std::string::npos)
                            ? s.substr(p)
                            : s.substr(p, nl - p);
-        if (line == ":::") {
+        if (!first_line && is_tidbit_closer(line)) {
             return (nl == std::string::npos) ? s.size() : nl + 1;
         }
+        first_line = false;
         p = (nl == std::string::npos) ? s.size() : nl + 1;
     }
     return std::string::npos;
@@ -36,11 +81,8 @@ std::string ExtractTidbit(const std::string& fileContent, int tidbitId) {
     after_marker += 1;
 
     // Skip blank lines to find :::tidbit[...].
-    std::size_t block_start = after_marker;
-    while (block_start < fileContent.size() && fileContent[block_start] == '\n')
-        ++block_start;
-
-    if (fileContent.compare(block_start, 9, ":::tidbit") != 0) return "";
+    std::size_t block_start = find_tidbit_opener(fileContent, after_marker);
+    if (block_start == std::string::npos) return "";
 
     auto block_end = tidbit_end(fileContent, block_start);
     if (block_end == std::string::npos) return "";
@@ -63,11 +105,8 @@ std::string PatchTidbit(const std::string& fileContent,
     after_marker += 1;
 
     // Find start of tidbit block (skip blank lines).
-    std::size_t block_start = after_marker;
-    while (block_start < fileContent.size() && fileContent[block_start] == '\n')
-        ++block_start;
-
-    if (fileContent.compare(block_start, 9, ":::tidbit") != 0) return fileContent;
+    std::size_t block_start = find_tidbit_opener(fileContent, after_marker);
+    if (block_start == std::string::npos) return fileContent;
 
     auto block_end = tidbit_end(fileContent, block_start);
     if (block_end == std::string::npos) return fileContent;
@@ -154,5 +193,44 @@ bool ApplyChapterPatch(const std::string& filepath,
 
     std::ofstream f(filepath, std::ios::trunc);
     f << result;
+    return f.good();
+}
+
+std::vector<std::string> ApplyFileOrder(const std::vector<std::string>& files,
+                                        const std::vector<std::string>& savedOrder) {
+    std::set<std::string> present(files.begin(), files.end());
+    std::set<std::string> used;
+    std::vector<std::string> ordered;
+
+    for (const auto& name : savedOrder) {
+        if (present.count(name) && !used.count(name)) {
+            ordered.push_back(name);
+            used.insert(name);
+        }
+    }
+
+    std::vector<std::string> remaining;
+    for (const auto& name : files) {
+        if (!used.count(name)) remaining.push_back(name);
+    }
+    std::sort(remaining.begin(), remaining.end());
+    ordered.insert(ordered.end(), remaining.begin(), remaining.end());
+    return ordered;
+}
+
+std::vector<std::string> LoadFileOrder(const std::string& projectDir) {
+    std::ifstream f(fs::path(projectDir) / ".file_order");
+    std::vector<std::string> order;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty()) order.push_back(line);
+    }
+    return order;
+}
+
+bool SaveFileOrder(const std::string& projectDir,
+                   const std::vector<std::string>& files) {
+    std::ofstream f(fs::path(projectDir) / ".file_order", std::ios::trunc);
+    for (const auto& name : files) f << name << "\n";
     return f.good();
 }

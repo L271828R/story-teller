@@ -150,5 +150,18 @@ int test_html_template() {
         }
     }
 
+    // Long CJK/no-space text should wrap inside the document column.
+    {
+        std::string html = BuildHTML("<p>很长很长很长很长很长很长很长很长很长很长</p>", "wrap", false, 100);
+        bool bodyWrap = html.find("overflow-wrap:anywhere") != std::string::npos;
+        bool wordBreak = html.find("word-break:break-word") != std::string::npos;
+        if (!bodyWrap || !wordBreak) {
+            std::cerr << "FAIL [cjk-wrap-css]: wrap CSS missing\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [cjk-wrap-css]\n";
+        }
+    }
+
     return failures;
 }
