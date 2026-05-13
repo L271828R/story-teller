@@ -38,6 +38,11 @@ bool ApplyChapterPatch(const std::string& filepath,
 std::vector<std::string> ApplyFileOrder(const std::vector<std::string>& files,
                                         const std::vector<std::string>& savedOrder);
 
+// Returns the file index to select after refreshing the file list.
+// Keeps the previous filename selected when it is still present.
+int RefreshedFileSelectionIndex(const std::vector<std::string>& files,
+                                const std::string& previousFile);
+
 // Reads/writes <projectDir>/.file_order, one filename per line.
 std::vector<std::string> LoadFileOrder(const std::string& projectDir);
 bool SaveFileOrder(const std::string& projectDir,

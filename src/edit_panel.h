@@ -43,6 +43,9 @@ private:
     wxButton*         m_viewVerBtn;
     wxButton*         m_diffBtn;
     wxButton*         m_restoreBtn;
+    wxButton*         m_checkoutBtn;
+    wxButton*         m_stashBtn;
+    wxButton*         m_unstashBtn;
 
     // ── Status ────────────────────────────────────────────────────────────
     wxTextCtrl*       m_statusCtrl;
@@ -80,6 +83,9 @@ private:
     void OnViewVersion(wxCommandEvent&);
     void OnDiff(wxCommandEvent&);
     void OnRestore(wxCommandEvent&);
+    void OnCheckout(wxCommandEvent&);
+    void OnStash(wxCommandEvent&);
+    void OnUnstash(wxCommandEvent&);
     void SetStatus(const wxString& msg);
     void SetBusy(bool on);
 

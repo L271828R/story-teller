@@ -218,6 +218,15 @@ std::vector<std::string> ApplyFileOrder(const std::vector<std::string>& files,
     return ordered;
 }
 
+int RefreshedFileSelectionIndex(const std::vector<std::string>& files,
+                                const std::string& previousFile) {
+    if (files.empty()) return -1;
+    auto it = std::find(files.begin(), files.end(), previousFile);
+    if (it != files.end())
+        return static_cast<int>(std::distance(files.begin(), it));
+    return 0;
+}
+
 std::vector<std::string> LoadFileOrder(const std::string& projectDir) {
     std::ifstream f(fs::path(projectDir) / ".file_order");
     std::vector<std::string> order;

@@ -39,25 +39,9 @@ static CmdResult run_git(const std::string& args, const std::string& dir) {
     return {out, WEXITSTATUS(status)};
 }
 
-// ── public API ────────────────────────────────────────────────────────────────
-
-bool GitInit(const std::string& dir) {
-    return run_git("init", dir).rc == 0;
-}
-
-bool GitCommitFile(const std::string& projectDir, const std::string& relPath,
-                   const std::string& message) {
-    if (run_git("add " + shell_quote(relPath), projectDir).rc != 0) return false;
-    return run_git("commit -m " + shell_quote(message), projectDir).rc == 0;
-}
-
-std::vector<GitCommit> GitLogFile(const std::string& projectDir,
-                                  const std::string& relPath) {
-    // Use unit separator (\x1F) as field delimiter to handle | in subjects.
-    auto r = run_git("log --format=%H%x1F%h%x1F%as%x1F%s -- " + shell_quote(relPath),
-                     projectDir);
+static std::vector<GitCommit> parse_git_log(const std::string& output) {
     std::vector<GitCommit> commits;
-    std::istringstream ss(r.output);
+    std::istringstream ss(output);
     std::string line;
     while (std::getline(ss, line)) {
         if (line.empty()) continue;
@@ -77,6 +61,32 @@ std::vector<GitCommit> GitLogFile(const std::string& projectDir,
     return commits;
 }
 
+// ── public API ────────────────────────────────────────────────────────────────
+
+bool GitInit(const std::string& dir) {
+    return run_git("init", dir).rc == 0;
+}
+
+bool GitCommitFile(const std::string& projectDir, const std::string& relPath,
+                   const std::string& message) {
+    if (run_git("add " + shell_quote(relPath), projectDir).rc != 0) return false;
+    return run_git("commit -m " + shell_quote(message), projectDir).rc == 0;
+}
+
+std::vector<GitCommit> GitLogFile(const std::string& projectDir,
+                                  const std::string& relPath) {
+    // Use unit separator (\x1F) as field delimiter to handle | in subjects.
+    auto r = run_git("log --format=%H%x1F%h%x1F%as%x1F%s -- " + shell_quote(relPath),
+                     projectDir);
+    return parse_git_log(r.output);
+}
+
+std::vector<GitCommit> GitLogProject(const std::string& projectDir) {
+    // Use unit separator (\x1F) as field delimiter to handle | in subjects.
+    auto r = run_git("log --all --format=%H%x1F%h%x1F%as%x1F%s", projectDir);
+    return parse_git_log(r.output);
+}
+
 std::string GitShowFile(const std::string& projectDir, const std::string& hash,
                         const std::string& relPath) {
     auto r = run_git("show " + hash + ":" + shell_quote(relPath), projectDir);
@@ -86,6 +96,19 @@ std::string GitShowFile(const std::string& projectDir, const std::string& hash,
 bool GitRestoreFile(const std::string& projectDir, const std::string& hash,
                     const std::string& relPath) {
     return run_git("checkout " + hash + " -- " + shell_quote(relPath), projectDir).rc == 0;
+}
+
+bool GitCheckoutCommit(const std::string& projectDir, const std::string& hash) {
+    return run_git("checkout " + shell_quote(hash), projectDir).rc == 0;
+}
+
+bool GitStashProject(const std::string& projectDir, const std::string& message) {
+    auto r = run_git("stash push -u -m " + shell_quote(message), projectDir);
+    return r.rc == 0;
+}
+
+bool GitUnstashProject(const std::string& projectDir) {
+    return run_git("stash pop", projectDir).rc == 0;
 }
 
 std::string GitDiffHTML(const std::string& projectDir,

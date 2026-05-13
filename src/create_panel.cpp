@@ -76,17 +76,13 @@ static wxArrayString make_styles() {
 
 static wxArrayString make_backends() {
     wxArrayString s;
-    for (auto* n : {"Clipboard (manual)", "claude -p", "Codex CLI", "Ollama (local)", "Anthropic API"})
+    for (auto* n : {"Clipboard (manual)", "claude -p", "Codex CLI", "Gemini CLI", "Ollama (local)", "Anthropic API"})
         s.Add(n);
     return s;
 }
 
 static LLMBackend backend_from_label(const std::string& label) {
-    if (label == "claude -p")      return LLMBackend::ClaudeP;
-    if (label == "Codex CLI")      return LLMBackend::CodexCLI;
-    if (label == "Ollama (local)") return LLMBackend::Ollama;
-    if (label == "Anthropic API")  return LLMBackend::API;
-    return LLMBackend::Clipboard;
+    return BackendFromLabel(label);
 }
 
 static std::vector<std::string> load_ollama_models() {

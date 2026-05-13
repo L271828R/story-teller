@@ -1,3 +1,4 @@
+#include "llm.h"
 #include "llm_response.h"
 #include <iostream>
 #include <string>
@@ -71,6 +72,17 @@ int test_llm_response() {
             ++failures;
         } else {
             std::cout << "PASS [ollama-structured-prompt]\n";
+        }
+    }
+
+    {
+        bool ok = BackendFromLabel("Gemini CLI") == LLMBackend::GeminiCLI
+               && BackendLabel(LLMBackend::GeminiCLI) == "Gemini CLI";
+        if (!ok) {
+            std::cerr << "FAIL [backend-gemini-mapping]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [backend-gemini-mapping]\n";
         }
     }
 

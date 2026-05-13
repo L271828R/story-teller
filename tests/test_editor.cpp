@@ -296,5 +296,22 @@ int test_editor() {
         fs::remove_all(tmp);
     }
 
+    // Refresh selection keeps the same file selected so version history remains visible.
+    {
+        std::vector<std::string> files = {"a.md", "b.md", "c.md"};
+        int kept = RefreshedFileSelectionIndex(files, "c.md");
+        int fallback = RefreshedFileSelectionIndex(files, "missing.md");
+        int none = RefreshedFileSelectionIndex({}, "c.md");
+        bool ok = kept == 2 && fallback == 0 && none == -1;
+        if (!ok) {
+            std::cerr << "FAIL [refresh-selection-index]: kept=" << kept
+                      << " fallback=" << fallback
+                      << " none=" << none << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [refresh-selection-index]\n";
+        }
+    }
+
     return failures;
 }

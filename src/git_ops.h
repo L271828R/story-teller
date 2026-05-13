@@ -20,6 +20,9 @@ bool GitCommitFile(const std::string& projectDir, const std::string& relPath,
 std::vector<GitCommit> GitLogFile(const std::string& projectDir,
                                   const std::string& relPath);
 
+// Return git log for the whole project (newest first).
+std::vector<GitCommit> GitLogProject(const std::string& projectDir);
+
 // Return the content of relPath at the given commit hash.
 std::string GitShowFile(const std::string& projectDir, const std::string& hash,
                         const std::string& relPath);
@@ -27,6 +30,13 @@ std::string GitShowFile(const std::string& projectDir, const std::string& hash,
 // Overwrite the working copy of relPath with its state at hash.
 bool GitRestoreFile(const std::string& projectDir, const std::string& hash,
                     const std::string& relPath);
+
+// Checkout the whole project folder at hash. This can detach HEAD.
+bool GitCheckoutCommit(const std::string& projectDir, const std::string& hash);
+
+// Stash/un-stash local project-folder changes, including untracked files.
+bool GitStashProject(const std::string& projectDir, const std::string& message);
+bool GitUnstashProject(const std::string& projectDir);
 
 // Return an HTML page showing the diff of relPath between hash1 and hash2.
 // Pass "" for hash2 to diff against the current working file.

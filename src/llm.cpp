@@ -61,7 +61,7 @@ static LLMResult run_shell(const std::string& cmd) {
 }
 
 LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
-    static const char* kBackendNames[] = {"ClaudeP", "CodexCLI", "Ollama", "API", "Clipboard"};
+    static const char* kBackendNames[] = {"ClaudeP", "CodexCLI", "GeminiCLI", "Ollama", "API", "Clipboard"};
     int backendIdx = static_cast<int>(cfg.backend);
     Logger::get().log("InvokeLLM backend=" + std::string(kBackendNames[backendIdx])
                       + "  prompt_len=" + std::to_string(prompt.size()));
@@ -116,6 +116,13 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         if (text.empty())
             return {false, raw.text, FormatLLMError("Codex returned an empty response", raw.text)};
         result = {true, text, ""};
+    }
+    else if (cfg.backend == LLMBackend::GeminiCLI) {
+        std::string inner = "gemini -p < " + shell_quote(tmpFile);
+        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
+        result = run_shell(cmd);
+        if (!result.ok && result.text.find("not found") != std::string::npos)
+            result.error = "gemini CLI not found — check PATH or use Clipboard mode";
     }
     else if (cfg.backend == LLMBackend::Ollama) {
         // Write JSON body to a second temp file to avoid shell quoting issues.

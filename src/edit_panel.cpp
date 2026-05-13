@@ -49,10 +49,7 @@ static std::string applescript_string(const std::string& s) {
 static LLMConfig llm_config_from_state(const AppState& st) {
     LLMConfig cfg;
     cfg.backend = LLMBackend::Clipboard;
-    if      (st.backend == "claude -p")      cfg.backend = LLMBackend::ClaudeP;
-    else if (st.backend == "Codex CLI")      cfg.backend = LLMBackend::CodexCLI;
-    else if (st.backend == "Ollama (local)") cfg.backend = LLMBackend::Ollama;
-    else if (st.backend == "Anthropic API")  cfg.backend = LLMBackend::API;
+    cfg.backend = BackendFromLabel(st.backend);
     if (!st.apiKey.empty())      cfg.apiKey      = st.apiKey;
     if (!st.ollamaModel.empty()) cfg.ollamaModel = st.ollamaModel;
     return cfg;
@@ -91,6 +88,9 @@ enum {
     ID_EP_VIEW_VER,
     ID_EP_DIFF,
     ID_EP_RESTORE,
+    ID_EP_CHECKOUT,
+    ID_EP_STASH,
+    ID_EP_UNSTASH,
 };
 
 wxBEGIN_EVENT_TABLE(EditPanel, wxPanel)
@@ -109,6 +109,9 @@ wxBEGIN_EVENT_TABLE(EditPanel, wxPanel)
     EVT_BUTTON(ID_EP_VIEW_VER,          EditPanel::OnViewVersion)
     EVT_BUTTON(ID_EP_DIFF,              EditPanel::OnDiff)
     EVT_BUTTON(ID_EP_RESTORE,           EditPanel::OnRestore)
+    EVT_BUTTON(ID_EP_CHECKOUT,          EditPanel::OnCheckout)
+    EVT_BUTTON(ID_EP_STASH,             EditPanel::OnStash)
+    EVT_BUTTON(ID_EP_UNSTASH,           EditPanel::OnUnstash)
 wxEND_EVENT_TABLE()
 
 EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
@@ -125,7 +128,7 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         auto* leftCol = new wxBoxSizer(wxVERTICAL);
         leftCol->Add(new wxStaticText(this, wxID_ANY, "File:"), 0, wxBOTTOM, 4);
         m_chapterList = new wxListBox(this, ID_EP_CHAPTER,
-                                      wxDefaultPosition, wxSize(310, 190));
+                                      wxDefaultPosition, wxSize(310, 110));
         leftCol->Add(m_chapterList, 1, wxEXPAND);
 
         auto* orderRow = new wxBoxSizer(wxHORIZONTAL);
@@ -163,8 +166,8 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         m_rightLabel = new wxStaticText(this, wxID_ANY, "Tidbits:");
         rightCol->Add(m_rightLabel, 0, wxBOTTOM, 4);
         m_tidbitList = new wxListBox(this, wxID_ANY,
-                                     wxDefaultPosition, wxSize(-1, 110));
-        rightCol->Add(m_tidbitList, 1, wxEXPAND);
+                                     wxDefaultPosition, wxSize(-1, 70));
+        rightCol->Add(m_tidbitList, 0, wxEXPAND);
         cols->Add(rightCol, 1, wxEXPAND);
 
         inner->Add(cols, 0, wxEXPAND | wxBOTTOM, 6);
@@ -220,7 +223,7 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
     // ── Git version history ───────────────────────────────────────────────
-    inner->Add(new wxStaticText(this, wxID_ANY, "Version history (select 1 or 2):"),
+    inner->Add(new wxStaticText(this, wxID_ANY, "Version history for this project folder (select 1 or 2):"),
                0, wxBOTTOM, 4);
 
     // History list — LB_EXTENDED lets user ctrl/shift-click two items.
@@ -230,7 +233,7 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
     inner->Add(m_historyList, 0, wxEXPAND | wxBOTTOM, 6);
 
     {
-        // Commit row: message field + Commit button
+        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Commit");
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         m_commitMsgCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
                                          wxDefaultPosition, wxDefaultSize, 0);
@@ -239,11 +242,12 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
         m_commitBtn = new wxButton(this, ID_EP_COMMIT, "Save to git",
                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
         row->Add(m_commitBtn, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 6);
+        box->Add(row, 0, wxEXPAND | wxALL, 6);
+        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 8);
     }
 
     {
-        // Action buttons: View version | Diff | Restore
+        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Version");
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         m_viewVerBtn = new wxButton(this, ID_EP_VIEW_VER, "View version",
                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
@@ -251,10 +255,27 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
         m_restoreBtn = new wxButton(this, ID_EP_RESTORE, "Restore",
                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        m_checkoutBtn = new wxButton(this, ID_EP_CHECKOUT, "Checkout",
+                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
         row->Add(m_viewVerBtn, 0, wxRIGHT, 8);
         row->Add(m_diffBtn,    0, wxRIGHT, 8);
-        row->Add(m_restoreBtn, 0);
-        inner->Add(row, 0, wxBOTTOM, 10);
+        row->Add(m_restoreBtn, 0, wxRIGHT, 8);
+        row->Add(m_checkoutBtn, 0);
+        box->Add(row, 0, wxEXPAND | wxALL, 6);
+        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 8);
+    }
+
+    {
+        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Stash");
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        m_stashBtn = new wxButton(this, ID_EP_STASH, "Stash changes",
+                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        m_unstashBtn = new wxButton(this, ID_EP_UNSTASH, "Unstash latest",
+                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        row->Add(m_stashBtn, 0, wxRIGHT, 8);
+        row->Add(m_unstashBtn, 0);
+        box->Add(row, 0, wxEXPAND | wxALL, 6);
+        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 10);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
 
@@ -289,6 +310,11 @@ std::string EditPanel::CurrentChapterPath() const {
 }
 
 void EditPanel::RefreshChapters() {
+    std::string previousFile;
+    int previousSelection = m_chapterList->GetSelection();
+    if (previousSelection != wxNOT_FOUND)
+        previousFile = m_chapterList->GetString(previousSelection).ToStdString();
+
     m_chapterList->Clear();
     m_tidbitList->Clear();
     m_historyList->Clear();
@@ -311,7 +337,9 @@ void EditPanel::RefreshChapters() {
         m_chapterList->Append(wxString::FromUTF8(f));
 
     if (m_chapterList->GetCount() > 0) {
-        m_chapterList->SetSelection(0);
+        int selection = RefreshedFileSelectionIndex(files, previousFile);
+        if (selection < 0 || selection >= (int)m_chapterList->GetCount()) selection = 0;
+        m_chapterList->SetSelection(selection);
         ReloadRightList();
         LoadHistory();
     } else {
@@ -424,16 +452,17 @@ void EditPanel::LoadHistory() {
     m_commits.clear();
 
     std::string proj = CurrentProjectPath();
-    std::string path = CurrentChapterPath();
-    if (proj.empty() || path.empty()) return;
+    if (proj.empty()) return;
 
-    std::string relPath = fs::path(path).filename().string();
-    auto log = GitLogFile(proj, relPath);
+    auto log = GitLogProject(proj);
     for (auto& c : log) {
         m_historyList->Append(wxString::FromUTF8(
             c.date + "  " + c.shortHash + "  " + c.subject));
         m_commits.push_back({c.hash, c.shortHash, c.date, c.subject});
     }
+
+    if (m_commits.empty())
+        SetStatus("No commits found for this project.");
 }
 
 void EditPanel::OpenCurrentFileInVim() {
@@ -585,6 +614,9 @@ void EditPanel::SetBusy(bool on) {
     m_moveDownBtn->Enable(!on);
     m_renameFileBtn->Enable(!on);
     m_deleteFileBtn->Enable(!on);
+    m_checkoutBtn->Enable(!on);
+    m_stashBtn->Enable(!on);
+    m_unstashBtn->Enable(!on);
 }
 
 // ── Rewrite via LLM ──────────────────────────────────────────────────────────
@@ -888,9 +920,67 @@ void EditPanel::OnRestore(wxCommandEvent&) {
     bool ok = GitRestoreFile(proj, m_commits[idx].hash, relPath);
     if (!ok) { SetStatus("Restore failed."); return; }
 
-    ReloadRightList();
-    LoadHistory();
+    RefreshChapters();
     if (m_openCallback) m_openCallback(path);
     SetStatus("Restored to " + m_commits[idx].shortHash + ": " + m_commits[idx].subject);
     Logger::get().log("EditPanel restored: " + relPath + " to " + m_commits[idx].hash);
+}
+
+void EditPanel::OnCheckout(wxCommandEvent&) {
+    wxArrayInt sel;
+    m_historyList->GetSelections(sel);
+    if (sel.size() != 1) { SetStatus("Select exactly one commit to checkout."); return; }
+
+    int idx = sel[0];
+    if (idx < 0 || idx >= (int)m_commits.size()) return;
+
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+
+    wxString question = wxString::Format(
+        "Checkout the whole project folder to version %s (%s)?\n\n"
+        "This affects every file in this story folder and may leave git in detached HEAD.\n"
+        "Use Stash first if you have local changes you want to keep.",
+        m_commits[idx].shortHash, m_commits[idx].subject);
+    if (wxMessageBox(question, "Confirm checkout", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
+        return;
+
+    std::string hash = m_commits[idx].hash;
+    std::string shortHash = m_commits[idx].shortHash;
+    std::string subject = m_commits[idx].subject;
+    bool ok = GitCheckoutCommit(proj, hash);
+    if (!ok) {
+        SetStatus("Checkout failed. Stash or commit local changes, then try again.");
+        return;
+    }
+
+    RefreshChapters();
+    std::string path = CurrentChapterPath();
+    if (!path.empty() && m_openCallback) m_openCallback(path);
+    SetStatus("Checked out project folder at " + shortHash + ": " + subject);
+    Logger::get().log("EditPanel checkout: " + proj + " to " + hash);
+}
+
+void EditPanel::OnStash(wxCommandEvent&) {
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+
+    bool ok = GitStashProject(proj, "StoryTeller stash");
+    RefreshChapters();
+    SetStatus(ok ? "Stashed local project-folder changes."
+                 : "Stash failed or there were no changes to stash.");
+    Logger::get().log(std::string("EditPanel stash ") + (ok ? "OK: " : "FAILED: ") + proj);
+}
+
+void EditPanel::OnUnstash(wxCommandEvent&) {
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+
+    bool ok = GitUnstashProject(proj);
+    RefreshChapters();
+    std::string path = CurrentChapterPath();
+    if (!path.empty() && m_openCallback) m_openCallback(path);
+    SetStatus(ok ? "Unstashed latest project-folder changes."
+                 : "Unstash failed. There may be no stash, or there may be conflicts.");
+    Logger::get().log(std::string("EditPanel unstash ") + (ok ? "OK: " : "FAILED: ") + proj);
 }
