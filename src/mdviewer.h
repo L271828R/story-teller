@@ -8,6 +8,8 @@
 #include <string>
 #include "logger.h"
 #include "edit_panel.h"
+#include "create_panel.h"
+#include "project_panel.h"
 
 enum {
     ID_RELOAD       = wxID_HIGHEST + 1,
@@ -32,6 +34,8 @@ private:
     wxNotebook*   m_notebook    = nullptr;
     wxPanel*      m_viewPage    = nullptr;
     EditPanel*    m_editPage    = nullptr;
+    CreatePanel*  m_createPage  = nullptr;
+    ProjectPanel* m_projectPage = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;

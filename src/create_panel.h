@@ -16,6 +16,7 @@ class CreatePanel : public wxPanel {
 public:
     using OpenCallback = std::function<void(const std::string& filepath)>;
     CreatePanel(wxWindow* parent, OpenCallback onFileGenerated);
+    void SyncProject();
 
 private:
     OpenCallback   m_openCallback;

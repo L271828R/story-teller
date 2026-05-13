@@ -87,6 +87,7 @@ set(SOURCES
     src/mdviewer.cpp
     src/create_panel.cpp
     src/edit_panel.cpp
+    src/project_panel.cpp
     src/llm.cpp
     src/markdown.cpp
     src/html_template.cpp

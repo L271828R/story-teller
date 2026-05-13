@@ -1,6 +1,7 @@
 #include "mdviewer.h"
 #include "create_panel.h"
 #include "edit_panel.h"
+#include "project_panel.h"
 #include "markdown.h"
 #include "html_template.h"
 #include "inspector.h"
@@ -157,13 +158,18 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         else evt.Skip();
     });
 
+    // ── Projects page ─────────────────────────────────────────────────────
+    m_projectPage = new ProjectPanel(m_notebook,
+        [this](const std::string& path) { LoadFile(path); });
+    m_notebook->AddPage(m_projectPage, "Projects");
+
     // ── Create page ───────────────────────────────────────────────────────
-    auto* createPage = new CreatePanel(m_notebook,
+    m_createPage = new CreatePanel(m_notebook,
         [this](const std::string& path) {
             LoadFile(path);
             if (m_editPage) m_editPage->RefreshChapters();
         });
-    m_notebook->AddPage(createPage, "Create");
+    m_notebook->AddPage(m_createPage, "Create");
 
     // ── Edit page ─────────────────────────────────────────────────────────
     m_editPage = new EditPanel(m_notebook,
@@ -174,8 +180,11 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_notebook->AddPage(m_viewPage, "View");
     m_notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& evt) {
         evt.Skip();
-        if (m_editPage && m_notebook->GetPage(evt.GetSelection()) == m_editPage)
+        wxWindow* page = m_notebook->GetPage(evt.GetSelection());
+        if (m_editPage && page == m_editPage)
             m_editPage->RefreshChapters();
+        else if (m_projectPage && page == m_projectPage)
+            m_projectPage->RefreshProjects();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────
@@ -259,8 +268,9 @@ void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
     SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
     if (m_editPage) m_editPage->RefreshChapters();
-    // View is the last tab (index 2: Create=0, Edit=1, View=2).
-    m_notebook->SetSelection(2);
+    if (m_createPage) m_createPage->SyncProject();
+    // View is the last tab (index 3: Projects=0, Create=1, Edit=2, View=3).
+    m_notebook->SetSelection(3);
     LoadAndRender();
 }
 

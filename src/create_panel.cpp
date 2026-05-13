@@ -430,6 +430,14 @@ void CreatePanel::OnProjectSelected(wxCommandEvent&) {
     LoadChapters();
 }
 
+void CreatePanel::SyncProject() {
+    AppState st = LoadAppState();
+    if (!st.currentProject.empty()) {
+        SelectProject(wxString::FromUTF8(st.currentProject));
+        LoadChapters();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Character library — persist to wxConfig
 // ---------------------------------------------------------------------------
