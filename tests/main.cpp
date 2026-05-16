@@ -13,6 +13,7 @@ int test_editor();
 int test_git_ops();
 int test_llm_error();
 int test_llm_response();
+int test_conversation();
 
 int main() {
     int failures = 0;
@@ -26,6 +27,7 @@ int main() {
     failures += test_git_ops();
     failures += test_llm_error();
     failures += test_llm_response();
+    failures += test_conversation();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

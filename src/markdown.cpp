@@ -202,6 +202,12 @@ std::string RenderMarkdown(const std::string& md) {
     std::string tidbitSpeaker;
     std::string tidbitBuf;
 
+    bool inConversation = false;
+    std::string convTitle;
+    std::string convBuf;
+
+    int pendingChId = -1;
+
     bool inUL = false;
     bool inOL = false;
     bool inBQ = false;
@@ -262,6 +268,76 @@ std::string RenderMarkdown(const std::string& md) {
             } else {
                 tidbitBuf += raw + "\n";
             }
+            continue;
+        }
+
+        // :::conversation[Title] ... ::: block
+        if (!inConversation && raw.size() > 16 && raw.substr(0, 16) == ":::conversation[") {
+            size_t close = raw.find(']', 16);
+            if (close != std::string::npos) {
+                flushParagraph(); closeLists(); closeBlockquote(); closeTable();
+                convTitle = raw.substr(16, close - 16);
+                convBuf.clear();
+                inConversation = true;
+                continue;
+            }
+        }
+        if (inConversation) {
+            if (raw == ":::") {
+                // Parse Q:/A: pairs and render as collapsed details
+                std::vector<std::pair<std::string,std::string>> qas;
+                {
+                    std::istringstream bss(convBuf);
+                    std::string bline;
+                    std::string curQ, curA;
+                    bool inA = false;
+                    while (std::getline(bss, bline)) {
+                        if (!bline.empty() && bline.back() == '\r') bline.pop_back();
+                        if (bline.rfind("Q: ", 0) == 0) {
+                            if (!curQ.empty()) qas.push_back({curQ, curA});
+                            curQ = bline.substr(3); curA = ""; inA = false;
+                        } else if (bline.rfind("A: ", 0) == 0) {
+                            curA = bline.substr(3); inA = true;
+                        } else if (inA && !bline.empty()) {
+                            curA += "\n" + bline;
+                        }
+                    }
+                    if (!curQ.empty()) qas.push_back({curQ, curA});
+                }
+                std::string summary = "\xf0\x9f\x92\xac " + std::to_string(qas.size()) + " question";
+                if (qas.size() != 1) summary += "s";
+                summary += " \xe2\x80\x94 " + EscapeHTML(convTitle);
+                html += "<details class=\"conversation\">\n"
+                        "<summary>" + summary + "</summary>\n"
+                        "<div class=\"conversation-body\">\n";
+                for (auto& [q, a] : qas) {
+                    html += "<div class=\"qa-turn\">"
+                            "<div class=\"qa-q\">" + ProcessInline(q) + "</div>"
+                            "<div class=\"qa-a\">" + ProcessInline(a) + "</div>"
+                            "</div>\n";
+                }
+                html += "</div>\n</details>\n";
+                inConversation = false;
+                convBuf.clear();
+                convTitle.clear();
+            } else {
+                convBuf += raw + "\n";
+            }
+            continue;
+        }
+
+        // Strip internal markers (<!-- ch:N -->, <!-- tb:N -->, <!-- qa:N -->)
+        // and capture chapter ID for data-ch-id injection on the next <h2>.
+        if (raw.rfind("<!-- ch:", 0) == 0) {
+            size_t end = raw.find(" -->", 8);
+            if (end != std::string::npos) {
+                try { pendingChId = std::stoi(raw.substr(8, end - 8)); } catch (...) {}
+            }
+            flushParagraph();
+            continue;
+        }
+        if (raw.rfind("<!-- tb:", 0) == 0 || raw.rfind("<!-- qa:", 0) == 0) {
+            flushParagraph();
             continue;
         }
 
@@ -345,7 +421,12 @@ std::string RenderMarkdown(const std::string& md) {
                     size_t p = heading.find_last_not_of("# ");
                     if (p != std::string::npos) heading = heading.substr(0, p + 1);
                 }
-                html += "<h" + std::to_string(lvl) + ">"
+                std::string attrs;
+                if (lvl == 2 && pendingChId >= 0) {
+                    attrs = " data-ch-id=\"" + std::to_string(pendingChId) + "\"";
+                    pendingChId = -1;
+                }
+                html += "<h" + std::to_string(lvl) + attrs + ">"
                       + ProcessInline(heading)
                       + "</h" + std::to_string(lvl) + ">\n";
                 continue;

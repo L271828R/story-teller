@@ -10,6 +10,7 @@
 #include "edit_panel.h"
 #include "create_panel.h"
 #include "project_panel.h"
+#include "chat_frame.h"
 
 enum {
     ID_RELOAD       = wxID_HIGHEST + 1,
@@ -24,6 +25,7 @@ enum {
     ID_FIND_PREV,
     ID_FIND_CLOSE,
     ID_SAVE_HTML,
+    ID_CHAT_OPEN,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -47,6 +49,7 @@ private:
     wxString      m_findTerm;
     int           m_findTotal   = 0;
     int           m_findCurrent = 0;
+    ChatFrame*    m_chatFrame   = nullptr;
 
     void LoadAndRender();
     std::string ReadFile(const std::string& path);
@@ -74,6 +77,7 @@ private:
     void OnFindPrev(wxCommandEvent& evt);
     void OnFindClose(wxCommandEvent& evt);
     void OnSaveHTML(wxCommandEvent& evt);
+    void OpenChat(int chId, const std::string& chTitle);
 
     wxDECLARE_EVENT_TABLE();
 };

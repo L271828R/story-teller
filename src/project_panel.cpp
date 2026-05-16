@@ -142,21 +142,24 @@ void ProjectPanel::ActivateSelectedProject() {
 
     Logger::get().log("Activating project: " + projectName);
 
-    // Find a file to open. Try claude.md first.
-    std::string fileToOpen = projectPath + "/claude.md";
-    if (!fs::exists(fileToOpen)) {
-        // Find the first .md file
-        fileToOpen = "";
+    // Find a file to open: prefer story chapters over claude.md.
+    std::string fileToOpen;
+    {
         std::error_code ec;
         std::vector<std::string> mdFiles;
         for (auto& entry : fs::directory_iterator(projectPath, ec)) {
-            if (entry.is_regular_file(ec) && entry.path().extension() == ".md") {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".md"
+                    && entry.path().filename() != "claude.md") {
                 mdFiles.push_back(entry.path().string());
             }
         }
+        std::sort(mdFiles.begin(), mdFiles.end());
         if (!mdFiles.empty()) {
-            std::sort(mdFiles.begin(), mdFiles.end());
             fileToOpen = mdFiles[0];
+        } else {
+            // Fall back to claude.md if it's the only file present
+            std::string claudePath = projectPath + "/claude.md";
+            if (fs::exists(claudePath)) fileToOpen = claudePath;
         }
     }
 

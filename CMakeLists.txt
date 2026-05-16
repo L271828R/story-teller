@@ -94,6 +94,8 @@ set(SOURCES
     src/config.cpp
     src/project.cpp
     src/creator.cpp
+    src/conversation.cpp
+    src/chat_frame.cpp
     src/editor.cpp
     src/git_ops.cpp
     src/llm_error.cpp
@@ -120,11 +122,13 @@ add_executable(test_story-teller
     tests/test_git_ops.cpp
     tests/test_llm_error.cpp
     tests/test_llm_response.cpp
+    tests/test_conversation.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
     src/project.cpp
     src/creator.cpp
+    src/conversation.cpp
     src/editor.cpp
     src/git_ops.cpp
     src/llm_error.cpp

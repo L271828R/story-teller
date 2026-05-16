@@ -173,6 +173,31 @@ details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 .tidbit-body{padding:12px 16px}
 .tidbit-body p:last-child{margin-bottom:0}
 
+/* ── Conversation ───────────────────────────────────────────────────────── */
+details.conversation{
+  border:1px solid var(--border);border-radius:6px;
+  margin-bottom:16px;background:var(--surface);
+}
+details.conversation summary{
+  padding:10px 14px;cursor:pointer;font-style:italic;
+  color:var(--text-muted);user-select:none;list-style:none;
+}
+details.conversation summary::-webkit-details-marker{display:none}
+details.conversation[open] summary{border-bottom:1px solid var(--border)}
+.conversation-body{padding:12px 16px}
+.qa-turn{margin-bottom:16px}
+.qa-turn:last-child{margin-bottom:0}
+.qa-q{background:var(--surface2);border-radius:6px 6px 6px 2px;
+  padding:8px 12px;margin-bottom:6px;font-weight:500;color:var(--text)}
+.qa-a{background:var(--bg);border:1px solid var(--border);
+  border-radius:2px 6px 6px 6px;padding:8px 12px;color:var(--text)}
+.chat-btn{
+  margin-left:10px;background:none;border:none;cursor:pointer;
+  font-size:0.85em;opacity:0.4;transition:opacity .15s;vertical-align:middle;
+  padding:0 4px;color:inherit;
+}
+h2:hover .chat-btn{opacity:1}
+
 /* ── Lists ──────────────────────────────────────────────────────────────── */
 ul,ol{padding-left:2em;margin-bottom:16px}
 li{margin:4px 0;color:var(--text)}
@@ -284,6 +309,22 @@ document.querySelectorAll('pre code').forEach(function(block) {
 
 // ── Mermaid init (theme set by C++ based on current mode) ────────────────
 mermaid.initialize({startOnLoad:true, theme:')HTML" + mermaidTheme + R"HTML(', securityLevel:'loose'});
+
+// ── Chapter chat buttons ─────────────────────────────────────────────────
+document.querySelectorAll('h2[data-ch-id]').forEach(function(h2) {
+  var btn = document.createElement('button');
+  btn.className = 'chat-btn';
+  btn.textContent = '💬';
+  btn.title = 'Ask about this chapter';
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var id = h2.getAttribute('data-ch-id');
+    var title = h2.textContent.replace('💬','').trim();
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.chat)
+      window.webkit.messageHandlers.chat.postMessage(id + '|' + title);
+  });
+  h2.appendChild(btn);
+});
 
 // ── Zoom state ───────────────────────────────────────────────────────────
 let zmScale = 1, zmTX = 0, zmTY = 0;

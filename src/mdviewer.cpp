@@ -5,6 +5,8 @@
 #include "markdown.h"
 #include "html_template.h"
 #include "inspector.h"
+#include "chat_frame.h"
+#include "config.h"
 #include <wx/notebook.h>
 #include <wx/webview.h>
 #include <wx/filedlg.h>
@@ -113,6 +115,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_webView  = wxWebView::New(m_viewPage, wxID_ANY, "about:blank");
     m_webView->AddScriptMessageHandler("fontSizeChange");
     m_webView->AddScriptMessageHandler("clipboardCopy");
+    m_webView->AddScriptMessageHandler("chat");
     EnableWebInspector(m_webView);
 
     auto* viewSizer = new wxBoxSizer(wxVERTICAL);
@@ -340,6 +343,41 @@ void MDViewerFrame::OnSaveHTML(wxCommandEvent&) {
     SetStatusText("Saved HTML: " + dlg.GetPath());
 }
 
+void MDViewerFrame::OpenChat(int chId, const std::string& chTitle) {
+    if (m_filePath.empty()) return;
+
+    // Build LLM config from saved app state
+    AppState st = LoadAppState();
+    LLMConfig cfg;
+    cfg.backend     = BackendFromLabel(st.backend);
+    cfg.apiKey      = st.apiKey;
+    cfg.ollamaModel = st.ollamaModel;
+
+    // Close existing chat window if open
+    if (m_chatFrame) {
+        m_chatFrame->Close(true);
+        m_chatFrame = nullptr;
+    }
+
+    m_chatFrame = new ChatFrame(
+        this,
+        m_filePath.ToStdString(),
+        chId,
+        chTitle,
+        cfg,
+        m_darkMode,
+        [this]() {
+            // Called after each turn is saved — re-render the document
+            CallAfter([this]() { LoadAndRender(); });
+        }
+    );
+    // ChatFrame calls Show() in its constructor.
+    m_chatFrame->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
+        m_chatFrame = nullptr;
+        e.Skip();
+    });
+}
+
 void MDViewerFrame::OnExit(wxCommandEvent&)   { Close(true); }
 
 void MDViewerFrame::OnClose(wxCloseEvent& evt) {
@@ -477,6 +515,17 @@ void MDViewerFrame::DoFind(bool forward) {
 
 // ---------------------------------------------------------------------------
 void MDViewerFrame::OnScriptMessage(wxWebViewEvent& evt) {
+    if (evt.GetMessageHandler() == "chat") {
+        wxString payload = evt.GetString();
+        int sep = payload.Find('|');
+        if (sep != wxNOT_FOUND) {
+            long chId = 0;
+            payload.Left(sep).ToLong(&chId);
+            std::string chTitle = payload.Mid(sep + 1).ToStdString();
+            OpenChat((int)chId, chTitle);
+        }
+        return;
+    }
     if (evt.GetMessageHandler() == "clipboardCopy") {
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(evt.GetString()));
