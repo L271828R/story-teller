@@ -3,10 +3,15 @@
 #include "llm.h"
 #include "markdown.h"
 #include "config.h"
+#include "meta.h"
+#include <chrono>
+#include <filesystem>
 #include <thread>
 #include <fstream>
 #include <wx/sizer.h>
 #include <wx/webview.h>
+
+namespace fs = std::filesystem;
 
 enum { ID_CF_SEND = wxID_HIGHEST + 500 };
 
@@ -186,7 +191,14 @@ void ChatFrame::OnSend(wxCommandEvent&) {
     std::string prompt = BuildQAPrompt(docMarkdown, chTitle, history, question);
 
     std::thread([this, prompt, cfg, filePath, chId, chTitle, question]() mutable {
+        auto started = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
+        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started).count();
+        if (res.ok) {
+            RecordLLMTiming(fs::path(filePath).parent_path().string(),
+                            "chat", chTitle, durationSeconds);
+        }
 
         wxTheApp->CallAfter([this, res, filePath, chId, chTitle, question]() {
             m_busy = false;

@@ -5,6 +5,7 @@
 #include "git_ops.h"
 #include "llm.h"
 #include "logger.h"
+#include "meta.h"
 #include "project.h"
 #include <filesystem>
 #include <fstream>
@@ -693,7 +694,16 @@ void EditPanel::OnRewrite(wxCommandEvent&) {
     SetStatus("Sending to " + wxString::FromUTF8(backendLabel) + "…");
 
     std::thread([this, prompt, cfg, chapPath, chapterMode, tidbitId, sectionId, cb]() mutable {
+        auto started = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
+        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started).count();
+        if (res.ok) {
+            std::string topic = (chapterMode ? "chapter " : "tidbit ")
+                              + std::to_string(chapterMode ? sectionId : tidbitId);
+            RecordLLMTiming(fs::path(chapPath).parent_path().string(),
+                            "patch", topic, durationSeconds);
+        }
 
         wxTheApp->CallAfter([this, res, chapPath, chapterMode, tidbitId, sectionId, cb]() mutable {
             SetBusy(false);
@@ -772,7 +782,14 @@ void EditPanel::OnTranslate(wxCommandEvent&) {
     SetStatus("Translating to " + lang + " with " + wxString::FromUTF8(backendLabel) + "…");
 
     std::thread([this, prompt, cfg, outPath, cb]() mutable {
+        auto started = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
+        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started).count();
+        if (res.ok) {
+            RecordLLMTiming(outPath.parent_path().string(),
+                            "translate", outPath.filename().string(), durationSeconds);
+        }
         wxTheApp->CallAfter([this, res, outPath, cb]() mutable {
             SetBusy(false);
             if (!res.ok) {

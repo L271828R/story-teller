@@ -24,6 +24,7 @@ private:
 
     wxListBox*    m_projectList;
     wxStaticText* m_projectPathLabel;
+    wxStaticText* m_statsLabel;
     wxButton*     m_activateBtn;
     OpenCallback  m_openCallback;
 

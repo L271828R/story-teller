@@ -6,6 +6,7 @@
 #include "html_template.h"
 #include "inspector.h"
 #include "chat_frame.h"
+#include "creator.h"
 #include "config.h"
 #include <wx/notebook.h>
 #include <wx/webview.h>
@@ -249,7 +250,24 @@ void MDViewerFrame::LoadAndRender() {
         return;
     }
 
-    std::string raw  = ReadFile(m_filePath.ToStdString());
+    std::string raw = ReadFile(m_filePath.ToStdString());
+
+    // Auto-stamp chapter markers so the chat buttons work on legacy documents.
+    // Only runs once: if headings exist but no <!-- ch: --> markers are present.
+    if (raw.find("<!-- ch:") == std::string::npos &&
+        (raw.find("\n## ") != std::string::npos || raw.rfind("## ", 0) == 0)) {
+        auto stamped = StampChapters(raw, 0);
+        if (stamped.count > 0) {
+            std::ofstream f(m_filePath.ToStdString());
+            if (f) {
+                f << stamped.text;
+                raw = stamped.text;
+                Logger::get().log("Auto-stamped " + std::to_string(stamped.count)
+                                  + " chapters in: " + m_filePath.ToStdString());
+            }
+        }
+    }
+
     std::string body = RenderMarkdown(raw);
     std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
     std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent);

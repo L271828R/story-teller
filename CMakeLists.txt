@@ -101,6 +101,7 @@ set(SOURCES
     src/llm_error.cpp
     src/llm_response.cpp
     src/logger.cpp
+    src/meta.cpp
     src/inspector.mm
 )
 add_executable(story-teller ${SOURCES})
@@ -123,6 +124,7 @@ add_executable(test_story-teller
     tests/test_llm_error.cpp
     tests/test_llm_response.cpp
     tests/test_conversation.cpp
+    tests/test_meta.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -133,6 +135,7 @@ add_executable(test_story-teller
     src/git_ops.cpp
     src/llm_error.cpp
     src/llm_response.cpp
+    src/meta.cpp
 )
 add_dependencies(test_story-teller gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})

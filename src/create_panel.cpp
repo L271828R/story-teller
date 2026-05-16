@@ -5,8 +5,10 @@
 #include "llm.h"
 #include "llm_response.h"
 #include "markdown.h"
+#include "meta.h"
 #include "project.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -657,6 +659,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
 
     std::string projDirStr = projDir.ToStdString();
+    std::string topicStr = req.topic;
 
     SetGenerating(true);
     SetStatus("Sending to " + m_backendChoice->GetString(bkIdx) + "…");
@@ -668,8 +671,12 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
                       + "  topic=" + truncate_for_log(req.topic));
     OpenCallback cb = m_openCallback;
 
-    std::thread([this, prompt, cfg, projDirStr, filename, chId, cb]() mutable {
+    std::thread([this, prompt, cfg, projDirStr, filename, chId, topicStr, cb]() mutable {
+        auto started = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
+        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started).count();
+        if (res.ok) RecordLLMTiming(projDirStr, "generate", topicStr, durationSeconds);
 
         wxTheApp->CallAfter([this, res, projDirStr, filename, chId, cb]() mutable {
             SetGenerating(false);

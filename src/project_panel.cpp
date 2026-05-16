@@ -2,6 +2,7 @@
 #include "config.h"
 #include "project.h"
 #include "logger.h"
+#include "meta.h"
 #include <filesystem>
 #include <algorithm>
 #include <wx/sizer.h>
@@ -40,7 +41,12 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
     small.SetPointSize(small.GetPointSize() - 1);
     m_projectPathLabel->SetFont(small);
     m_projectPathLabel->SetForegroundColour(wxColour(100, 100, 100));
-    inner->Add(m_projectPathLabel, 0, wxBOTTOM, 10);
+    inner->Add(m_projectPathLabel, 0, wxBOTTOM, 4);
+
+    m_statsLabel = new wxStaticText(this, wxID_ANY, wxEmptyString);
+    m_statsLabel->SetFont(small);
+    m_statsLabel->SetForegroundColour(wxColour(80, 100, 130));
+    inner->Add(m_statsLabel, 0, wxBOTTOM, 10);
 
     auto* btnRow = new wxBoxSizer(wxHORIZONTAL);
     m_activateBtn = new wxButton(this, ID_PP_ACTIVATE, "Activate Project");
@@ -58,19 +64,48 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
     RefreshProjects();
 }
 
+static std::string fmtTs(const std::string& ts) {
+    // "2026-05-16T14:23:00" → "2026-05-16 14:23"
+    if (ts.size() < 16) return ts;
+    return ts.substr(0, 10) + " " + ts.substr(11, 5);
+}
+
+static std::string fmtSecs(int s) {
+    if (s < 60) return std::to_string(s) + "s";
+    return std::to_string(s / 60) + "m " + std::to_string(s % 60) + "s";
+}
+
+static std::string buildStats(const std::string& projectPath) {
+    auto meta = LoadProjectMeta(projectPath);
+    if (meta.lastOpened.empty() && meta.timings.empty()) return "";
+    std::string out;
+    if (!meta.lastOpened.empty())
+        out += "Opened: " + fmtTs(meta.lastOpened);
+    if (!meta.timings.empty()) {
+        const auto& last = meta.timings.back();
+        if (!out.empty()) out += "   ";
+        out += "Last " + last.operation + ": " + fmtSecs(last.durationSeconds);
+        if (!last.topic.empty()) out += " \xe2\x80\x94 " + last.topic;
+    }
+    return out;
+}
+
 void ProjectPanel::RefreshProjects() {
     m_projectList->Clear();
     m_activateBtn->Disable();
     m_projectPathLabel->SetLabel("Select a project to see its path.");
+    m_statsLabel->SetLabel(wxEmptyString);
 
     AppConfig cfg = LoadConfig();
     if (cfg.defaultFolder.empty()) {
         m_projectPathLabel->SetLabel("Error: defaultFolder not set in config.");
+        m_statsLabel->SetLabel(wxEmptyString);
         return;
     }
 
     if (!fs::exists(cfg.defaultFolder)) {
         m_projectPathLabel->SetLabel("Error: defaultFolder does not exist: " + cfg.defaultFolder);
+        m_statsLabel->SetLabel(wxEmptyString);
         return;
     }
 
@@ -97,7 +132,9 @@ void ProjectPanel::RefreshProjects() {
         if (idx != wxNOT_FOUND) {
             m_projectList->SetSelection(idx);
             m_activateBtn->Enable();
-            m_projectPathLabel->SetLabel(cfg.defaultFolder + "/" + st.currentProject);
+            std::string projectPath = cfg.defaultFolder + "/" + st.currentProject;
+            m_projectPathLabel->SetLabel(projectPath);
+            m_statsLabel->SetLabel(wxString::FromUTF8(buildStats(projectPath)));
         }
     }
 }
@@ -107,12 +144,16 @@ void ProjectPanel::OnProjectSelected(wxCommandEvent&) {
     if (sel == wxNOT_FOUND) {
         m_activateBtn->Disable();
         m_projectPathLabel->SetLabel("Select a project to see its path.");
+        m_statsLabel->SetLabel(wxEmptyString);
         return;
     }
 
     m_activateBtn->Enable();
     AppConfig cfg = LoadConfig();
-    m_projectPathLabel->SetLabel(cfg.defaultFolder + "/" + m_projectList->GetString(sel));
+    std::string projectPath = cfg.defaultFolder + "/" + m_projectList->GetString(sel).ToStdString();
+    m_projectPathLabel->SetLabel(projectPath);
+    m_statsLabel->SetLabel(wxString::FromUTF8(buildStats(projectPath)));
+    Layout();
 }
 
 void ProjectPanel::OnProjectActivated(wxCommandEvent&) {
@@ -141,6 +182,7 @@ void ProjectPanel::ActivateSelectedProject() {
     SaveAppState(st);
 
     Logger::get().log("Activating project: " + projectName);
+    RecordOpen(projectPath);
 
     // Find a file to open: prefer story chapters over claude.md.
     std::string fileToOpen;
