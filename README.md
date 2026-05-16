@@ -4,15 +4,13 @@ A desktop story authoring and Markdown reading app for macOS, built with C++ and
 
 The viewer still works fully offline for Markdown rendering: syntax-highlighted code, [Mermaid](https://mermaid.js.org) diagrams, collapsible tidbits, and light/dark mode are embedded into the app at build time.
 
-![StoryTeller screenshot](screenshot.png)
-
 ## Features
 
 - **Project browser** — manage generated story projects from the Projects tab and reopen the active project quickly
 - **Project metadata** — records last-opened time and recent successful LLM operation timings in each project's `.storyteller.json`
 - **LLM generation** — create chapter files from a topic, style, and character selections
 - **LLM editing** — rewrite chapters or tidbits, translate files, and preserve stable chapter/tidbit markers
-- **Chapter chat** — ask questions about a chapter; saved Q/A turns are embedded in the Markdown as `:::conversation[...]` blocks
+- **Personality conversations** — ask questions about the topic you generated and continue the discussion with personality-driven voices saved in the Markdown as `:::conversation[...]` blocks
 - **Markdown rendering** — headings, bold, italic, strikethrough, inline code, links, images, blockquotes, ordered/unordered lists, tables, horizontal rules, hard line breaks
 - **Syntax highlighting** — fenced code blocks highlighted by [highlight.js](https://highlightjs.org), supporting 180+ languages (cpp, python, js, rust, go, sql, …)
 - **Mermaid diagrams** — flowcharts, sequence diagrams, class diagrams, Gantt charts, and more — rendered as SVG
@@ -137,7 +135,7 @@ This renders as a collapsed `<details>` widget labelled with the speaker's name.
 
 ### Conversations
 
-Chapter chat history is stored directly in the Markdown document in a `:::conversation[...]` block associated with a chapter marker.
+Conversation history is stored directly in the Markdown document in a `:::conversation[...]` block associated with a chapter marker. Use it to ask follow-up questions about the topic you generated, request references, or continue the discussion in a specific personality or voice.
 
 ```markdown
 <!-- ch:1 -->
@@ -147,12 +145,12 @@ Chapter chat history is stored directly in the Markdown document in a `:::conver
 Q: What does the opening imply?
 A: It suggests the character is entering a place they already fear.
 
-Q: From above, can you provide a reference?
+Q: Answer as an old lighthouse keeper. From above, can you provide a reference?
 A: ...
 :::
 ```
 
-When you ask a new chat question, StoryTeller sends the full document plus the saved Q/A turns for the current chapter. The LLM can answer follow-ups like "from above" when the reference appears in that chapter's saved conversation or in the document. It does not automatically know unrelated app sessions or prior conversations unless StoryTeller includes them in the prompt.
+When you ask a new chat question, StoryTeller sends the full document plus the saved Q/A turns for the current chapter. The LLM can answer follow-ups like "from above" when the reference appears in that chapter's saved conversation or in the document, and it can adopt the personality or perspective you ask for in the prompt. It does not automatically know unrelated app sessions or prior conversations unless StoryTeller includes them in the prompt.
 
 ## LLM authoring
 
