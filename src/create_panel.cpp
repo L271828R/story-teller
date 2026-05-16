@@ -420,6 +420,10 @@ void CreatePanel::OnNewProject(wxCommandEvent&) {
         SetStatus("Could not create project folder.");
         return;
     }
+    std::string backendLabel =
+        m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
+    RecordProjectSource((fs::path(cfg.defaultFolder) / name.ToStdString()).string(),
+                        backendLabel);
 
     // Refresh list and select the new project.
     LoadProjects();
@@ -676,7 +680,15 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
         LLMResult res = InvokeLLM(prompt, cfg);
         int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - started).count();
-        if (res.ok) RecordLLMTiming(projDirStr, "generate", topicStr, durationSeconds);
+        if (res.ok) {
+            RecordProjectSource(projDirStr, cfg.backend == LLMBackend::ClaudeP ? "Claude -p" :
+                                           cfg.backend == LLMBackend::CodexCLI ? "Codex CLI" :
+                                           cfg.backend == LLMBackend::GeminiCLI ? "Gemini CLI" :
+                                           cfg.backend == LLMBackend::Ollama ? "Ollama (local)" :
+                                           cfg.backend == LLMBackend::API ? "Anthropic API" :
+                                           "Clipboard");
+            RecordLLMTiming(projDirStr, "generate", topicStr, durationSeconds);
+        }
 
         wxTheApp->CallAfter([this, res, projDirStr, filename, chId, cb]() mutable {
             SetGenerating(false);

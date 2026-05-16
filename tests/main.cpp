@@ -15,6 +15,7 @@ int test_llm_error();
 int test_llm_response();
 int test_conversation();
 int test_meta();
+int test_project_search();
 
 int main() {
     int failures = 0;
@@ -30,6 +31,7 @@ int main() {
     failures += test_llm_response();
     failures += test_conversation();
     failures += test_meta();
+    failures += test_project_search();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

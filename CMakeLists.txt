@@ -93,6 +93,7 @@ set(SOURCES
     src/html_template.cpp
     src/config.cpp
     src/project.cpp
+    src/project_search.cpp
     src/creator.cpp
     src/conversation.cpp
     src/chat_frame.cpp
@@ -125,10 +126,12 @@ add_executable(test_story-teller
     tests/test_llm_response.cpp
     tests/test_conversation.cpp
     tests/test_meta.cpp
+    tests/test_project_search.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
     src/project.cpp
+    src/project_search.cpp
     src/creator.cpp
     src/conversation.cpp
     src/editor.cpp

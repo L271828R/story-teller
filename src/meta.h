@@ -10,7 +10,9 @@ struct LLMTiming {
 };
 
 struct ProjectMeta {
+    std::string            created;
     std::string            lastOpened;
+    std::string            source;
     std::vector<LLMTiming> timings;
 };
 
@@ -23,6 +25,12 @@ void        SaveProjectMeta(const std::string& projectDir, const ProjectMeta& me
 
 // Update lastOpened to now.
 void RecordOpen(const std::string& projectDir);
+
+// Populate stable project metadata when first seen.
+void EnsureProjectMeta(const std::string& projectDir, const std::string& source = "");
+
+// Record the LLM/backend source associated with the project.
+void RecordProjectSource(const std::string& projectDir, const std::string& source);
 
 // Append one LLM timing entry; keeps the most recent 100.
 void RecordLLMTiming(const std::string& projectDir,

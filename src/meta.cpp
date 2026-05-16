@@ -2,8 +2,14 @@
 #include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
+#ifdef __APPLE__
+#include <sys/stat.h>
+#endif
+
+namespace fs = std::filesystem;
 
 static std::string metaFilePath(const std::string& projectDir) {
     return projectDir + "/.storyteller.json";
@@ -73,6 +79,30 @@ std::string MetaNow() {
     return buf;
 }
 
+static std::string timeToMeta(std::time_t t) {
+    std::tm tm{};
+    localtime_r(&t, &tm);
+    char buf[20];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
+    return buf;
+}
+
+static std::string fallbackCreatedTime(const std::string& projectDir) {
+#ifdef __APPLE__
+    struct stat st {};
+    if (stat(projectDir.c_str(), &st) == 0 && st.st_birthtimespec.tv_sec > 0)
+        return timeToMeta(st.st_birthtimespec.tv_sec);
+#endif
+
+    std::error_code ec;
+    auto ft = fs::last_write_time(projectDir, ec);
+    if (ec) return MetaNow();
+
+    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+        ft - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+    return timeToMeta(std::chrono::system_clock::to_time_t(sctp));
+}
+
 // ---------------------------------------------------------------------------
 ProjectMeta LoadProjectMeta(const std::string& projectDir) {
     ProjectMeta meta;
@@ -81,8 +111,12 @@ ProjectMeta LoadProjectMeta(const std::string& projectDir) {
 
     std::string line;
     while (std::getline(f, line)) {
-        if (line.find("\"lastOpened\"") != std::string::npos) {
+        if (line.find("\"created\"") != std::string::npos) {
+            meta.created = extractStr(line, "created");
+        } else if (line.find("\"lastOpened\"") != std::string::npos) {
             meta.lastOpened = extractStr(line, "lastOpened");
+        } else if (line.find("\"source\"") != std::string::npos) {
+            meta.source = extractStr(line, "source");
         }
         // Timing entries are written one per line and contain both "ts" and "op".
         if (line.find("\"ts\"") != std::string::npos &&
@@ -104,7 +138,9 @@ void SaveProjectMeta(const std::string& projectDir, const ProjectMeta& meta) {
     if (!f) return;
 
     f << "{\n";
+    f << "  \"created\": \"" << jsonEscape(meta.created) << "\",\n";
     f << "  \"lastOpened\": \"" << jsonEscape(meta.lastOpened) << "\",\n";
+    f << "  \"source\": \"" << jsonEscape(meta.source) << "\",\n";
     f << "  \"timings\": [\n";
     for (std::size_t i = 0; i < meta.timings.size(); ++i) {
         const auto& t = meta.timings[i];
@@ -121,7 +157,31 @@ void SaveProjectMeta(const std::string& projectDir, const ProjectMeta& meta) {
 // ---------------------------------------------------------------------------
 void RecordOpen(const std::string& projectDir) {
     auto meta = LoadProjectMeta(projectDir);
+    if (meta.created.empty()) meta.created = fallbackCreatedTime(projectDir);
     meta.lastOpened = MetaNow();
+    SaveProjectMeta(projectDir, meta);
+}
+
+// ---------------------------------------------------------------------------
+void EnsureProjectMeta(const std::string& projectDir, const std::string& source) {
+    auto meta = LoadProjectMeta(projectDir);
+    bool changed = false;
+    if (meta.created.empty()) {
+        meta.created = fallbackCreatedTime(projectDir);
+        changed = true;
+    }
+    if (meta.source.empty() && !source.empty()) {
+        meta.source = source;
+        changed = true;
+    }
+    if (changed) SaveProjectMeta(projectDir, meta);
+}
+
+// ---------------------------------------------------------------------------
+void RecordProjectSource(const std::string& projectDir, const std::string& source) {
+    auto meta = LoadProjectMeta(projectDir);
+    if (meta.created.empty()) meta.created = fallbackCreatedTime(projectDir);
+    meta.source = source;
     SaveProjectMeta(projectDir, meta);
 }
 
@@ -131,6 +191,7 @@ void RecordLLMTiming(const std::string& projectDir,
                      const std::string& topic,
                      int durationSeconds) {
     auto meta = LoadProjectMeta(projectDir);
+    if (meta.created.empty()) meta.created = fallbackCreatedTime(projectDir);
     LLMTiming t;
     t.timestamp       = MetaNow();
     t.operation       = operation;
