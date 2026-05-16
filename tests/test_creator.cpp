@@ -71,12 +71,14 @@ int test_creator() {
         req.characters = {};
 
         std::string prompt = BuildPrompt(req, "");
-        bool hasSkillReminder = prompt.find("skill") != std::string::npos
-                             || prompt.find("mdviewer") != std::string::npos
-                             || prompt.find("StoryTeller") != std::string::npos;
-        if (!hasSkillReminder) {
+        bool hasOutputFormat = prompt.find("Output format") != std::string::npos
+                            || prompt.find("no prose") != std::string::npos
+                            || prompt.find("no explanation") != std::string::npos;
+        bool noSkillInvocation = prompt.find("use your") == std::string::npos
+                              && prompt.find("mdviewer skill") == std::string::npos;
+        if (!hasOutputFormat || !noSkillInvocation) {
             std::cerr << "FAIL [build-prompt-skill-reminder]: "
-                      << "no skill reminder found in prompt\n";
+                      << "output format instruction missing or skill invocation present\n";
             ++failures;
         } else {
             std::cout << "PASS [build-prompt-skill-reminder]\n";

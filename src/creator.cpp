@@ -216,10 +216,10 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
            "not counting tidbit content. "
            "Every chapter must contain at least one `:::tidbit` block.\n\n";
 
-    out << "## Skill reminder\n\n"
-        << "Use your **mdviewer skill** before generating — it contains the full syntax "
-           "reference for the markdown this app renders. "
-           "Return only valid mdviewer markdown with no prose before or after the document. "
+    out << "## Output format\n\n"
+        << "Return ONLY the raw MDViewer markdown document — no explanation, preamble, "
+           "or commentary before or after it. Do not wrap the output in a markdown code "
+           "fence (no ```markdown wrapper). "
            "Every tidbit must have content; do not emit empty tidbits.\n\n";
 
     std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
@@ -278,9 +278,9 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
         << instruction << "\n\n"
         << "## Original block\n\n"
         << "```\n" << originalBlock << "\n```\n\n"
-        << "## Skill reminder\n\n"
-        << "Use your **mdviewer skill** for the syntax reference. "
-           "Return only the rewritten block — no prose before or after.\n\n";
+        << "## Output format\n\n"
+        << "Return ONLY the rewritten block — no prose before or after, "
+           "no markdown code fence wrapper.\n\n";
 
     std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
     out << "## MDViewer syntax reference\n\n" << ref;
