@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "meta.h"
 #include "project_search.h"
+#include <wx/choice.h>
 #include <wx/dirdlg.h>
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
@@ -26,6 +27,7 @@ namespace fs = std::filesystem;
 enum {
     ID_PP_TREE        = wxID_HIGHEST + 400,
     ID_PP_SEARCH,
+    ID_PP_SORT,
     ID_PP_ACTIVATE,
     ID_PP_RENAME,
     ID_PP_REFRESH,
@@ -33,8 +35,11 @@ enum {
     ID_PP_NEW_SUBFOLDER
 };
 
+enum class SortOrder { Name, Created, Modified };
+
 wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
     EVT_TEXT(ID_PP_SEARCH,                  ProjectPanel::OnSearchChanged)
+    EVT_CHOICE(ID_PP_SORT,                  ProjectPanel::OnSortChanged)
     EVT_BUTTON(ID_PP_ACTIVATE,              ProjectPanel::OnActivateBtn)
     EVT_BUTTON(ID_PP_RENAME,               ProjectPanel::OnRenameBtn)
     EVT_BUTTON(ID_PP_NEW_SUBFOLDER,         ProjectPanel::OnNewSubfolder)
@@ -140,11 +145,26 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
 
     inner->Add(new wxStaticText(this, wxID_ANY, "Available Projects:"), 0, wxBOTTOM, 6);
 
-    m_searchCtrl = new wxTextCtrl(this, ID_PP_SEARCH, wxEmptyString,
-                                  wxDefaultPosition, wxDefaultSize,
-                                  wxTE_PROCESS_ENTER);
-    m_searchCtrl->SetHint("Search projects...");
-    inner->Add(m_searchCtrl, 0, wxEXPAND | wxBOTTOM, 8);
+    {
+        auto* searchRow = new wxBoxSizer(wxHORIZONTAL);
+        m_searchCtrl = new wxTextCtrl(this, ID_PP_SEARCH, wxEmptyString,
+                                      wxDefaultPosition, wxDefaultSize,
+                                      wxTE_PROCESS_ENTER);
+        m_searchCtrl->SetHint("Search projects...");
+        searchRow->Add(m_searchCtrl, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+
+        searchRow->Add(new wxStaticText(this, wxID_ANY, "Sort:"),
+                       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+        wxArrayString sortLabels;
+        sortLabels.Add("Name");
+        sortLabels.Add("Created");
+        sortLabels.Add("Modified");
+        m_sortChoice = new wxChoice(this, ID_PP_SORT, wxDefaultPosition,
+                                    wxDefaultSize, sortLabels);
+        m_sortChoice->SetSelection(0);
+        searchRow->Add(m_sortChoice, 0, wxALIGN_CENTER_VERTICAL);
+        inner->Add(searchRow, 0, wxEXPAND | wxBOTTOM, 8);
+    }
 
     m_treeCtrl = new wxTreeCtrl(this, ID_PP_TREE,
                                 wxDefaultPosition, wxDefaultSize,
@@ -198,7 +218,8 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
 bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
                                 const std::string& dirPath,
                                 int depth,
-                                const std::string& query)
+                                const std::string& query,
+                                int sortOrder)
 {
     if (depth <= 0) return false;
 
@@ -207,9 +228,20 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
     for (auto& e : fs::directory_iterator(dirPath, ec))
         entries.push_back(e);
 
-    // Sort entries alphabetically by filename.
     std::sort(entries.begin(), entries.end(),
-              [](const fs::directory_entry& a, const fs::directory_entry& b) {
+              [&](const fs::directory_entry& a, const fs::directory_entry& b) {
+                  if (sortOrder == 1) {
+                      // Created: use meta timestamp, fall back to name.
+                      auto ma = LoadProjectMeta(a.path().string());
+                      auto mb = LoadProjectMeta(b.path().string());
+                      if (ma.created != mb.created) return ma.created < mb.created;
+                  } else if (sortOrder == 2) {
+                      // Modified: filesystem mtime.
+                      std::error_code e1, e2;
+                      auto ta = fs::last_write_time(a.path(), e1);
+                      auto tb = fs::last_write_time(b.path(), e2);
+                      if (!e1 && !e2 && ta != tb) return ta < tb;
+                  }
                   return a.path().filename() < b.path().filename();
               });
 
@@ -229,13 +261,21 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
 
             std::string source = sourceFromConfig(childPath);
             EnsureProjectMeta(childPath, source);
+            ProjectMeta meta = LoadProjectMeta(childPath);
+
+            // Append a date annotation to the label based on sort order.
+            std::string dateStr;
+            if (sortOrder == 1 && !meta.created.empty())
+                dateStr = "  [" + fmtTs(meta.created) + "]";
+            else if (sortOrder == 2)
+                dateStr = "  [" + modifiedTime(childPath) + "]";
 
             auto* data = new TreeNode();
             data->kind = TreeNode::Kind::Project;
             data->path = childPath;
             data->name = childName;
 
-            wxString label = wxString::FromUTF8("\U0001F4C4 " + childName);
+            wxString label = wxString::FromUTF8("\U0001F4C4 " + childName + dateStr);
             m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
             anyAdded = true;
         } else {
@@ -251,7 +291,7 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
             wxString label = wxString::FromUTF8("\U0001F4C1 " + childName);
             wxTreeItemId folderId = m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
 
-            bool childAdded = PopulateTree(folderId, childPath, depth - 1, query);
+            bool childAdded = PopulateTree(folderId, childPath, depth - 1, query, sortOrder);
             if (!childAdded && !query.empty()) {
                 // No matching descendants — hide the folder during search.
                 m_treeCtrl->Delete(folderId);
@@ -301,7 +341,8 @@ void ProjectPanel::RefreshProjects() {
     wxTreeItemId root = m_treeCtrl->AddRoot("root");
 
     std::string query = m_searchCtrl ? m_searchCtrl->GetValue().ToStdString() : "";
-    bool anyAdded = PopulateTree(root, cfg.defaultFolder, 4, query);
+    int sortOrder = m_sortChoice ? m_sortChoice->GetSelection() : 0;
+    bool anyAdded = PopulateTree(root, cfg.defaultFolder, 4, query, sortOrder);
 
     // "New Subfolder…" is always usable once a root folder is configured.
     m_newSubfolderBtn->Enable(true);
@@ -476,6 +517,10 @@ void ProjectPanel::OnTreeEndDrag(wxTreeEvent& evt) {
 // ===========================================================================
 
 void ProjectPanel::OnSearchChanged(wxCommandEvent&) {
+    RefreshProjects();
+}
+
+void ProjectPanel::OnSortChanged(wxCommandEvent&) {
     RefreshProjects();
 }
 

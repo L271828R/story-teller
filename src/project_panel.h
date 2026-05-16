@@ -3,6 +3,7 @@
 #include <wx/treectrl.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
+#include <wx/choice.h>
 #include <wx/button.h>
 #include <functional>
 #include <set>
@@ -35,7 +36,8 @@ private:
     bool PopulateTree(wxTreeItemId parentId,
                       const std::string& dirPath,
                       int depth,
-                      const std::string& query);
+                      const std::string& query,
+                      int sortOrder);   // 0=Name 1=Created 2=Modified
 
     // ---- selection / activation ---------------------------------------------
     TreeNode* SelectedNode() const;
@@ -43,6 +45,7 @@ private:
 
     // ---- event handlers -----------------------------------------------------
     void OnSearchChanged(wxCommandEvent& evt);
+    void OnSortChanged(wxCommandEvent& evt);
     void OnActivateBtn(wxCommandEvent& evt);
     void OnRenameBtn(wxCommandEvent& evt);
     void OnNewSubfolder(wxCommandEvent& evt);
@@ -58,6 +61,7 @@ private:
 
     // ---- widgets ------------------------------------------------------------
     wxTextCtrl*   m_searchCtrl;
+    wxChoice*     m_sortChoice;
     wxTreeCtrl*   m_treeCtrl;
     wxStaticText* m_projectPathLabel;
     wxStaticText* m_statsLabel;
