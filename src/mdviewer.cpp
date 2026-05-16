@@ -8,6 +8,7 @@
 #include "chat_frame.h"
 #include "creator.h"
 #include "config.h"
+#include "notes.h"
 #include <wx/notebook.h>
 #include <wx/webview.h>
 #include <wx/filedlg.h>
@@ -15,7 +16,10 @@
 #include <wx/config.h>
 #include <wx/clipbrd.h>
 #include <wx/dataobj.h>
+#include <wx/textdlg.h>
+#include <algorithm>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -118,6 +122,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_webView->AddScriptMessageHandler("fontSizeChange");
     m_webView->AddScriptMessageHandler("clipboardCopy");
     m_webView->AddScriptMessageHandler("chat");
+    m_webView->AddScriptMessageHandler("note");
     EnableWebInspector(m_webView);
 
     auto* viewSizer = new wxBoxSizer(wxVERTICAL);
@@ -278,6 +283,22 @@ void MDViewerFrame::LoadAndRender() {
     }
 
     std::string body = RenderMarkdown(raw);
+
+    // Inject note spans into the rendered HTML body (after rendering, so that
+    // ProcessInline has already escaped < > — we match the escaped form).
+    {
+        std::string projDir = CurrentProjectDir();
+        if (!projDir.empty()) {
+            auto notes = LoadNotes(projDir);
+            if (!notes.empty()) {
+                std::map<int,std::string> noteTexts;
+                for (const auto& n : notes)
+                    noteTexts[n.id] = n.text;
+                body = InjectNoteSpans(body, noteTexts);
+            }
+        }
+    }
+
     std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
     std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent);
 
@@ -541,6 +562,48 @@ void MDViewerFrame::DoFind(bool forward) {
 }
 
 // ---------------------------------------------------------------------------
+// Simple JSON field extractor: finds "key":"value" or "key":number in json.
+// For string values, returns content between the first pair of quotes after ':'.
+// For number values (when expectString=false), returns digits.
+static std::string ExtractJsonField(const std::string& json,
+                                    const std::string& key,
+                                    bool expectString = true) {
+    std::string search = "\"" + key + "\"";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    if (pos >= json.size()) return "";
+    if (expectString) {
+        if (json[pos] != '"') return "";
+        ++pos;
+        std::string val;
+        while (pos < json.size()) {
+            char c = json[pos++];
+            if (c == '"') break;
+            if (c == '\\' && pos < json.size()) {
+                char esc = json[pos++];
+                switch (esc) {
+                    case '"':  val += '"';  break;
+                    case '\\': val += '\\'; break;
+                    case 'n':  val += '\n'; break;
+                    case 'r':  val += '\r'; break;
+                    case 't':  val += '\t'; break;
+                    default:   val += esc;  break;
+                }
+            } else {
+                val += c;
+            }
+        }
+        return val;
+    } else {
+        size_t numStart = pos;
+        while (pos < json.size() && (std::isdigit((unsigned char)json[pos]) || json[pos] == '-'))
+            ++pos;
+        return json.substr(numStart, pos - numStart);
+    }
+}
+
 void MDViewerFrame::OnScriptMessage(wxWebViewEvent& evt) {
     if (evt.GetMessageHandler() == "chat") {
         wxString payload = evt.GetString();
@@ -560,10 +623,109 @@ void MDViewerFrame::OnScriptMessage(wxWebViewEvent& evt) {
         }
         return;
     }
+    if (evt.GetMessageHandler() == "note") {
+        std::string payload = evt.GetString().ToStdString();
+        std::string action  = ExtractJsonField(payload, "action");
+        if (action == "add") {
+            std::string selText = ExtractJsonField(payload, "selectedText");
+            std::string context = ExtractJsonField(payload, "context");
+            OnNoteAdd(selText, context);
+        } else if (action == "edit") {
+            std::string idStr = ExtractJsonField(payload, "id", false);
+            if (!idStr.empty()) {
+                try { OnNoteEdit(std::stoi(idStr)); } catch (...) {}
+            }
+        } else if (action == "delete") {
+            std::string idStr = ExtractJsonField(payload, "id", false);
+            if (!idStr.empty()) {
+                try { OnNoteDelete(std::stoi(idStr)); } catch (...) {}
+            }
+        }
+        return;
+    }
     long val;
     if (evt.GetString().ToLong(&val)) {
         m_fontSizePercent = (int)std::max(50L, std::min(200L, val));
         wxConfig cfg("MDViewer");
         cfg.Write("fontSizePercent", (long)m_fontSizePercent);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Note helpers
+// ---------------------------------------------------------------------------
+std::string MDViewerFrame::CurrentProjectDir() const {
+    if (m_filePath.empty()) return "";
+    return wxFileName(m_filePath).GetPath().ToStdString();
+}
+
+void MDViewerFrame::OnNoteAdd(const std::string& selectedText,
+                              const std::string& context) {
+    if (m_filePath.empty() || selectedText.empty()) return;
+    std::string projDir = CurrentProjectDir();
+    auto notes = LoadNotes(projDir);
+    wxTextEntryDialog dlg(this, "Enter your note:", "Add Note");
+    if (dlg.ShowModal() != wxID_OK) return;
+    std::string noteText = dlg.GetValue().ToStdString();
+    if (noteText.empty()) return;
+
+    int id = NextNoteId(notes);
+    Note n;
+    n.id           = id;
+    n.anchor       = "note:" + std::to_string(id);
+    n.selectedText = selectedText;
+    n.text         = noteText;
+    n.file         = wxFileName(m_filePath).GetFullName().ToStdString();
+
+    // Read, patch, write the .md file.
+    std::string content;
+    {
+        std::ifstream f(m_filePath.ToStdString());
+        content.assign(std::istreambuf_iterator<char>(f), {});
+    }
+    content = InsertNoteAnchor(content, selectedText, context, id);
+    {
+        std::ofstream f(m_filePath.ToStdString(), std::ios::trunc);
+        f << content;
+    }
+    notes.push_back(n);
+    SaveNotes(projDir, notes);
+    LoadAndRender();
+}
+
+void MDViewerFrame::OnNoteEdit(int noteId) {
+    if (m_filePath.empty()) return;
+    std::string projDir = CurrentProjectDir();
+    auto notes = LoadNotes(projDir);
+    auto it = std::find_if(notes.begin(), notes.end(),
+                           [noteId](const Note& n){ return n.id == noteId; });
+    if (it == notes.end()) return;
+    wxTextEntryDialog dlg(this, "Edit your note:", "Edit Note",
+                          wxString::FromUTF8(it->text));
+    if (dlg.ShowModal() != wxID_OK) return;
+    it->text = dlg.GetValue().ToStdString();
+    SaveNotes(projDir, notes);
+    LoadAndRender();
+}
+
+void MDViewerFrame::OnNoteDelete(int noteId) {
+    if (m_filePath.empty()) return;
+    std::string projDir = CurrentProjectDir();
+    auto notes = LoadNotes(projDir);
+    // Remove anchor from file.
+    std::string content;
+    {
+        std::ifstream f(m_filePath.ToStdString());
+        content.assign(std::istreambuf_iterator<char>(f), {});
+    }
+    content = RemoveNoteAnchor(content, noteId);
+    {
+        std::ofstream f(m_filePath.ToStdString(), std::ios::trunc);
+        f << content;
+    }
+    notes.erase(std::remove_if(notes.begin(), notes.end(),
+                               [noteId](const Note& n){ return n.id == noteId; }),
+                notes.end());
+    SaveNotes(projDir, notes);
+    LoadAndRender();
 }

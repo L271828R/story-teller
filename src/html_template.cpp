@@ -198,6 +198,37 @@ details.conversation[open] summary{border-bottom:1px solid var(--border)}
 }
 h2:hover .chat-btn{opacity:1}
 
+/* ── Notes ─────────────────────────────────────────────────────────────── */
+.note-marker{
+  display:inline-block;font-size:0.7em;vertical-align:super;
+  cursor:pointer;user-select:none;margin-left:1px;
+  color:var(--link);line-height:1;
+}
+.note-popover{
+  position:fixed;z-index:5000;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:12px 14px;max-width:320px;
+  box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:0.88em;
+  color:var(--text);line-height:1.5;
+}
+.note-popover-text{margin-bottom:10px;white-space:pre-wrap}
+.note-popover-actions{display:flex;gap:8px;justify-content:flex-end}
+.note-popover-actions button{
+  background:none;border:1px solid var(--border);border-radius:4px;
+  padding:3px 10px;cursor:pointer;font-size:0.9em;color:var(--text-muted);
+}
+.note-popover-actions button:hover{background:var(--border)}
+/* Selection toolbar */
+#note-toolbar{
+  position:fixed;z-index:4999;display:none;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:6px;padding:4px 8px;
+  box-shadow:0 2px 8px rgba(0,0,0,.15);
+  cursor:pointer;font-size:0.85em;color:var(--text);
+  white-space:nowrap;user-select:none;
+}
+#note-toolbar:hover{background:var(--border)}
+
 /* ── Lists ──────────────────────────────────────────────────────────────── */
 ul,ol{padding-left:2em;margin-bottom:16px}
 li{margin:4px 0;color:var(--text)}
@@ -428,6 +459,92 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fontSizeChange)
       window.webkit.messageHandlers.fontSizeChange.postMessage(String(pct));
   }, {passive:false});
+})();
+
+// ── Notes ────────────────────────────────────────────────────────────────
+(function() {
+  // Selection toolbar
+  var toolbar = document.createElement('div');
+  toolbar.id = 'note-toolbar';
+  toolbar.textContent = '📝 Add note';
+  document.body.appendChild(toolbar);
+
+  var selTimeout = null;
+  document.addEventListener('selectionchange', function() {
+    clearTimeout(selTimeout);
+    selTimeout = setTimeout(function() {
+      var sel = window.getSelection();
+      var text = sel ? sel.toString().trim() : '';
+      if (!text || text.length < 2) { toolbar.style.display = 'none'; return; }
+      var range = sel.getRangeAt(0);
+      var rect = range.getBoundingClientRect();
+      toolbar.style.display = 'block';
+      toolbar.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 200) + 'px';
+      toolbar.style.top  = (rect.top + window.scrollY - 36) + 'px';
+    }, 200);
+  });
+
+  toolbar.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var sel = window.getSelection();
+    if (!sel || !sel.toString().trim()) return;
+    var selectedText = sel.toString().trim();
+    var range = sel.getRangeAt(0);
+    var container = range.startContainer;
+    var fullText = container.textContent || '';
+    var start = Math.max(0, range.startOffset - 60);
+    var end   = Math.min(fullText.length, range.endOffset + 60);
+    var context = fullText.substring(start, end);
+    toolbar.style.display = 'none';
+    sel.removeAllRanges();
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
+      window.webkit.messageHandlers.note.postMessage(
+        JSON.stringify({action:'add', selectedText:selectedText, context:context}));
+  });
+
+  var activePopover = null;
+  document.addEventListener('mousedown', function(e) {
+    if (activePopover && !activePopover.contains(e.target)) {
+      activePopover.remove(); activePopover = null;
+    }
+    if (!e.target.classList.contains('note-marker'))
+      toolbar.style.display = 'none';
+  });
+
+  document.addEventListener('click', function(e) {
+    var marker = e.target.closest('.note-marker');
+    if (!marker) return;
+    e.stopPropagation();
+    if (activePopover) { activePopover.remove(); activePopover = null; }
+    var noteId  = marker.getAttribute('data-note-id');
+    var noteText= marker.getAttribute('data-note-text') || '(no text)';
+    var pop = document.createElement('div');
+    pop.className = 'note-popover';
+    pop.innerHTML =
+      '<div class="note-popover-text"></div>' +
+      '<div class="note-popover-actions">' +
+        '<button class="note-edit">✏️ Edit</button>' +
+        '<button class="note-delete">🗑️ Delete</button>' +
+      '</div>';
+    pop.querySelector('.note-popover-text').textContent = noteText;
+    var rect = marker.getBoundingClientRect();
+    pop.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 340) + 'px';
+    pop.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+    document.body.appendChild(pop);
+    activePopover = pop;
+    pop.querySelector('.note-edit').addEventListener('click', function() {
+      pop.remove(); activePopover = null;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
+        window.webkit.messageHandlers.note.postMessage(
+          JSON.stringify({action:'edit', id: parseInt(noteId)}));
+    });
+    pop.querySelector('.note-delete').addEventListener('click', function() {
+      pop.remove(); activePopover = null;
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
+        window.webkit.messageHandlers.note.postMessage(
+          JSON.stringify({action:'delete', id: parseInt(noteId)}));
+    });
+  });
 })();
 </script>
 </body>

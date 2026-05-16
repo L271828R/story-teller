@@ -57,6 +57,11 @@ private:
     void PositionFindBar();
     void DoFind(bool forward);
 
+    void OnNoteAdd(const std::string& selectedText, const std::string& context);
+    void OnNoteEdit(int noteId);
+    void OnNoteDelete(int noteId);
+    std::string CurrentProjectDir() const;
+
     void OnOpen(wxCommandEvent& evt);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);

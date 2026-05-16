@@ -1,4 +1,5 @@
 #include "editor.h"
+#include "notes.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -136,8 +137,15 @@ bool ApplyTidbitPatch(const std::string& filepath,
 }
 
 bool ReplaceChapter(const std::string& filepath, const std::string& newContent) {
+    // Rescue any notes whose anchors may have been overwritten by regeneration.
+    std::string projectDir = fs::path(filepath).parent_path().string();
+    std::string basename   = fs::path(filepath).filename().string();
+    auto notes = LoadNotes(projectDir);
+    std::string finalContent = RescueOrphanedNotes(newContent, notes, basename);
+    SaveNotes(projectDir, notes);
+
     std::ofstream f(filepath, std::ios::trunc);
-    f << newContent;
+    f << finalContent;
     return f.good();
 }
 

@@ -1,4 +1,5 @@
 #include "markdown.h"
+#include <map>
 #include <sstream>
 #include <vector>
 #include <cctype>
@@ -559,6 +560,44 @@ std::string RenderMarkdown(const std::string& md) {
                            "</details>\n";
 
     return html;
+}
+
+std::string InjectNoteSpans(const std::string& renderedHtml,
+                            const std::map<int,std::string>& noteTexts) {
+    // ProcessInline escapes < and > so the comment arrives in the HTML body as
+    // the literal text  &lt;!-- note:N --&gt;  — match that form.
+    const std::string prefix = "&lt;!-- note:";
+    const std::string suffix = " --&gt;";
+    std::string result;
+    result.reserve(renderedHtml.size());
+    size_t pos = 0;
+    while (pos < renderedHtml.size()) {
+        size_t found = renderedHtml.find(prefix, pos);
+        if (found == std::string::npos) {
+            result += renderedHtml.substr(pos);
+            break;
+        }
+        result += renderedHtml.substr(pos, found - pos);
+        size_t numStart = found + prefix.size();
+        size_t numEnd   = renderedHtml.find(suffix, numStart);
+        if (numEnd == std::string::npos) {
+            result += renderedHtml.substr(found);
+            break;
+        }
+        std::string numStr = renderedHtml.substr(numStart, numEnd - numStart);
+        int noteId = 0;
+        try { noteId = std::stoi(numStr); } catch (...) {}
+        std::string noteText;
+        auto it = noteTexts.find(noteId);
+        if (it != noteTexts.end()) noteText = it->second;
+        result += "<span class=\"note-marker\" data-note-id=\""
+               + std::to_string(noteId)
+               + "\" data-note-text=\""
+               + EscapeHTML(noteText)
+               + "\">\xf0\x9f\x93\x9d</span>";
+        pos = numEnd + suffix.size();
+    }
+    return result;
 }
 
 std::string GetLLMReadme() {
