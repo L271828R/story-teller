@@ -36,6 +36,7 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_FONT_DECREASE, MDViewerFrame::OnFontDecrease)
     EVT_MENU(ID_FONT_RESET,    MDViewerFrame::OnFontReset)
     EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, MDViewerFrame::OnScriptMessage)
+    EVT_MENU(ID_SAVE_HTML,   MDViewerFrame::OnSaveHTML)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
@@ -67,6 +68,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     wxMenu*    file = new wxMenu();
     file->Append(wxID_OPEN,  "&Open…\tCtrl+O");
     file->Append(ID_RELOAD,  "&Reload\tCtrl+R");
+    file->Append(ID_SAVE_HTML, "Save &HTML…\tCtrl+Shift+S");
     file->AppendSeparator();
     file->Append(wxID_CLOSE, "&Close Window\tCtrl+W");
     file->Append(wxID_EXIT,  "E&xit\tCtrl+Q");
@@ -308,6 +310,36 @@ void MDViewerFrame::OnOpen(wxCommandEvent&) {
 }
 
 void MDViewerFrame::OnReload(wxCommandEvent&) { LoadAndRender(); }
+
+void MDViewerFrame::OnSaveHTML(wxCommandEvent&) {
+    if (m_filePath.empty()) {
+        SetStatusText("No file loaded — open a .md file first.");
+        return;
+    }
+
+    wxString ext = wxFileName(m_filePath).GetExt().Lower();
+    std::string html;
+    if (ext == "html" || ext == "htm") {
+        html = ReadFile(m_filePath.ToStdString());
+    } else {
+        std::string raw   = ReadFile(m_filePath.ToStdString());
+        std::string body  = RenderMarkdown(raw);
+        std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
+        html = BuildHTML(body, title, m_darkMode, m_fontSizePercent);
+    }
+
+    wxString defaultName = wxFileName(m_filePath).GetName() + ".html";
+    wxFileDialog dlg(this, "Save HTML", wxFileName(m_filePath).GetPath(),
+                     defaultName,
+                     "HTML files (*.html)|*.html|All files (*)|*",
+                     wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dlg.ShowModal() == wxID_CANCEL) return;
+
+    std::ofstream f(dlg.GetPath().ToStdString());
+    f << html;
+    SetStatusText("Saved HTML: " + dlg.GetPath());
+}
+
 void MDViewerFrame::OnExit(wxCommandEvent&)   { Close(true); }
 
 void MDViewerFrame::OnClose(wxCloseEvent& evt) {

@@ -68,7 +68,8 @@ wxEND_EVENT_TABLE()
 static wxArrayString make_styles() {
     wxArrayString s;
     for (auto* n : {"Academic essay", "Children's book", "Crime noir",
-                    "Fairy tale", "Horror", "Podcast transcript",
+                    "Fairy tale", "Horror", "Long-form essay",
+                    "Podcast transcript", "Popular science",
                     "Socratic dialogue", "Tech blog post"})
         s.Add(n);
     return s;
@@ -679,7 +680,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
             }
 
             // Stamp each :::tidbit block with a stable <!-- tb:N --> marker.
-            std::string content = res.text;
+            std::string content = CleanMarkdownResponse(res.text);
             std::string stamped;
             int baseTbId = NextTidbitId(projDirStr);
             int tbCount  = 0;

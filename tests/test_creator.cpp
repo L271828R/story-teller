@@ -1,6 +1,7 @@
 #include "creator.h"
 #include "project.h"
 #include <chrono>
+#include <clocale>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -216,6 +217,33 @@ int test_creator() {
         }
     }
 
+    // LLM preamble + ```markdown fence wrapper + trailing ``` + post-explanation prose.
+    // This is the real-world pattern: the LLM says "Here is the document:" then wraps
+    // the content in ```markdown...``` and adds a summary paragraph after.
+    {
+        std::string response =
+            "I have the syntax reference. Let me generate the document now.\n\n"
+            "```markdown\n"
+            "# Title\n\n"
+            "## Chapter 1: Beginning\n\n"
+            "Body text here.\n"
+            "```\n\n"
+            "Here is the full document covering the topic.\n";
+        std::string cleaned = CleanMarkdownResponse(response);
+        bool startsH1    = cleaned.rfind("# Title", 0) == 0;
+        bool noPreamble  = cleaned.find("syntax reference") == std::string::npos;
+        bool noFence     = cleaned.find("```markdown") == std::string::npos;
+        bool noPostAmble = cleaned.find("full document covering") == std::string::npos;
+        bool noBareFence = cleaned.find("\n```") == std::string::npos;
+        if (!startsH1 || !noPreamble || !noFence || !noPostAmble || !noBareFence) {
+            std::cerr << "FAIL [clean-preamble-fence-postamble]: cleaned='"
+                      << cleaned << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [clean-preamble-fence-postamble]\n";
+        }
+    }
+
     {
         std::string response =
             "# 标题\n\n"
@@ -380,6 +408,34 @@ int test_creator() {
             ++failures;
         } else {
             std::cout << "PASS [chapter-filename]\n";
+        }
+    }
+
+    // slugify must strip non-ASCII bytes even when the system locale (en_US.UTF-8)
+    // makes isalnum(0xe2) return true. A raw 0xE2 byte in a filename causes
+    // ofstream to fail on macOS HFS+ which requires valid UTF-8 paths.
+    {
+        // Temporarily switch to the system locale, matching wxWidgets app behaviour.
+        const char* savedLocale = setlocale(LC_ALL, nullptr);
+        setlocale(LC_ALL, "");
+
+        // U+201C LEFT DOUBLE QUOTATION MARK = UTF-8: e2 80 9c
+        const char curly[] = { static_cast<char>(0xe2), static_cast<char>(0x80),
+                                static_cast<char>(0x9c), '\0' };
+        std::string topic = std::string("learn about ") + curly + "blood letting";
+        std::string name = ChapterFilename(topic, 1);
+
+        setlocale(LC_ALL, savedLocale); // restore before any assertion
+
+        bool allAscii = true;
+        for (unsigned char c : name)
+            if (c > 127) { allAscii = false; break; }
+        if (!allAscii) {
+            std::cerr << "FAIL [chapter-filename-utf8]: filename contains non-ASCII byte: '"
+                      << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chapter-filename-utf8]\n";
         }
     }
 

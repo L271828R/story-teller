@@ -23,6 +23,7 @@ enum {
     ID_FIND_NEXT,
     ID_FIND_PREV,
     ID_FIND_CLOSE,
+    ID_SAVE_HTML,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -72,6 +73,7 @@ private:
     void OnFindNext(wxCommandEvent& evt);
     void OnFindPrev(wxCommandEvent& evt);
     void OnFindClose(wxCommandEvent& evt);
+    void OnSaveHTML(wxCommandEvent& evt);
 
     wxDECLARE_EVENT_TABLE();
 };

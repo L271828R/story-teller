@@ -56,9 +56,11 @@ static std::vector<std::string> chapter_blocks(const std::string& content) {
 
 static std::string slugify(const std::string& s) {
     std::string out;
-    for (char c : s) {
-        if (std::isalnum(static_cast<unsigned char>(c)))
-            out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    for (unsigned char c : s) {
+        bool alpha = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        bool digit = (c >= '0' && c <= '9');
+        if (alpha || digit)
+            out += static_cast<char>(alpha && c < 'a' ? c + 32 : c);
         else if (!out.empty() && out.back() != '_')
             out += '_';
         if (out.size() >= 60) break;
@@ -88,6 +90,38 @@ static std::size_t first_document_line(const std::string& s) {
         offset += line.size() + 1;
     }
     return std::string::npos;
+}
+
+// Strip the last lone ``` (or ~~~) line plus any trailing non-heading prose.
+// Called only when we know the response was fence-wrapped by the LLM.
+static std::string strip_trailing_fence(const std::string& s) {
+    std::istringstream in(s);
+    std::string line;
+    std::size_t offset = 0;
+    std::size_t lastFenceOff = std::string::npos;
+    std::size_t lastFenceLen = 0;
+
+    while (std::getline(in, line)) {
+        while (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line == "```" || line == "~~~") {
+            lastFenceOff = offset;
+            lastFenceLen = line.size();
+        }
+        offset += line.size() + 1;
+    }
+
+    if (lastFenceOff == std::string::npos) return s;
+
+    std::size_t afterFence = lastFenceOff + lastFenceLen + 1; // +1 for \n
+    std::string remainder = (afterFence < s.size()) ? trim_copy(s.substr(afterFence)) : "";
+
+    if (!remainder.empty()) {
+        bool hasHeading = remainder.rfind("# ",  0) == 0 || remainder.find("\n# ")  != std::string::npos
+                       || remainder.rfind("## ", 0) == 0 || remainder.find("\n## ") != std::string::npos;
+        if (hasHeading) return s;
+    }
+
+    return trim_copy(s.substr(0, lastFenceOff));
 }
 
 static std::string normalize_tidbit_fences(const std::string& s) {
@@ -132,19 +166,19 @@ std::string CleanMarkdownResponse(const std::string& response) {
         if (firstLineEnd != std::string::npos) {
             std::string fence = text.substr(0, firstLineEnd);
             if (fence == "```" || fence == "```markdown" || fence == "```md") {
-                text = text.substr(firstLineEnd + 1);
-                std::string trimmed = trim_copy(text);
-                if (trimmed.size() >= 3 && trimmed.compare(trimmed.size() - 3, 3, "```") == 0) {
-                    trimmed = trim_copy(trimmed.substr(0, trimmed.size() - 3));
-                }
-                text = trimmed;
+                text = strip_trailing_fence(trim_copy(text.substr(firstLineEnd + 1)));
             }
         }
     }
 
     auto start = first_document_line(text);
     if (start != std::string::npos && start > 0) {
+        std::string prefix = text.substr(0, start);
+        bool prefixHasFence = prefix.find("```") != std::string::npos
+                           || prefix.find("~~~") != std::string::npos;
         text = text.substr(start);
+        if (prefixHasFence)
+            text = strip_trailing_fence(text);
     }
 
     text = normalize_tidbit_fences(text);
