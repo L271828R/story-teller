@@ -147,7 +147,6 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
         wxFont small = m_projectPathLabel->GetFont();
         small.SetPointSize(small.GetPointSize() - 1);
         m_projectPathLabel->SetFont(small);
-        m_projectPathLabel->SetForegroundColour(wxColour(100, 100, 100));
         inner->Add(m_projectPathLabel, 0, wxBOTTOM, 8);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
@@ -331,7 +330,6 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
         LoadChapters();
     }
 
-    SetBackgroundColour(wxColour(235, 235, 228));
 }
 
 // ---------------------------------------------------------------------------

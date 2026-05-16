@@ -52,7 +52,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     : wxFrame(nullptr, wxID_ANY,
               filePath.empty() ? wxString("StoryTeller")
                                : wxString("StoryTeller — " + wxFileName(filePath).GetFullName()),
-              wxDefaultPosition, wxSize(1280, 860))
+              wxDefaultPosition, wxDefaultSize,
+              wxDEFAULT_FRAME_STYLE)
     , m_darkMode(false)
     , m_fontSizePercent(100)
 {
@@ -197,6 +198,14 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(m_notebook, 1, wxEXPAND);
     SetSizer(sizer);
+
+    // Size to fit the display, with a comfortable margin so the title bar
+    // is never pushed off the top of the screen.
+    wxSize display = wxGetDisplaySize();
+    int w = std::min(1280, display.x - 40);
+    int h = std::min(860,  display.y - 80);
+    SetSize(w, h);
+    Centre();
 
     m_viewPage->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();

@@ -288,7 +288,6 @@ EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
 
     outer->Add(inner, 1, wxEXPAND | wxALL, 14);
     SetSizer(outer);
-    SetBackgroundColour(wxColour(228, 232, 235));
 
     RefreshChapters();
 }
