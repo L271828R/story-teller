@@ -218,5 +218,59 @@ int test_project() {
         fs::remove_all(base);
     }
 
+    // MoveFolder moves a subfolder to a different parent directory.
+    {
+        auto base = make_temp_dir();
+        fs::create_directories(base / "literature" / "accidental");
+        fs::create_directories(base / "other");
+
+        MoveResult r = MoveFolder((base / "literature" / "accidental").string(),
+                                  base.string());
+        bool moved  = fs::exists(base / "accidental");
+        bool gone   = !fs::exists(base / "literature" / "accidental");
+        if (!r.ok || !moved || !gone) {
+            std::cerr << "FAIL [move-folder-to-root]: ok=" << r.ok
+                      << " error='" << r.error << "'"
+                      << " moved=" << moved << " gone=" << gone << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [move-folder-to-root]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // MoveFolder refuses when the destination already contains a folder with the same name.
+    {
+        auto base = make_temp_dir();
+        fs::create_directories(base / "literature" / "subfolder");
+        fs::create_directories(base / "subfolder");  // collision
+
+        MoveResult r = MoveFolder((base / "literature" / "subfolder").string(),
+                                  base.string());
+        if (r.ok || r.error.empty()) {
+            std::cerr << "FAIL [move-folder-collision]: expected failure with message\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [move-folder-collision]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // MoveFolder refuses to move a folder into one of its own descendants.
+    {
+        auto base = make_temp_dir();
+        fs::create_directories(base / "parent" / "child");
+
+        MoveResult r = MoveFolder((base / "parent").string(),
+                                  (base / "parent" / "child").string());
+        if (r.ok || r.error.empty()) {
+            std::cerr << "FAIL [move-folder-into-self]: expected failure with message\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [move-folder-into-self]\n";
+        }
+        fs::remove_all(base);
+    }
+
     return failures;
 }

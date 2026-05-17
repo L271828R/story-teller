@@ -456,59 +456,45 @@ void ProjectPanel::OnTreeBeginDrag(wxTreeEvent& evt) {
 
 void ProjectPanel::OnTreeEndDrag(wxTreeEvent& evt) {
     wxTreeItemId target = evt.GetItem();
-    if (!m_dragItem.IsOk() || !target.IsOk() || target == m_dragItem) {
-        m_dragItem = wxTreeItemId();
-        return;
-    }
+    if (!m_dragItem.IsOk()) { m_dragItem = wxTreeItemId(); return; }
 
     auto* src = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(m_dragItem));
-    auto* dst = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(target));
     m_dragItem = wxTreeItemId();
+    if (!src) return;
 
-    if (!src || !dst) return;
+    // Resolve destination folder path.
+    // Dropping onto empty space or the hidden root means "move to projects root".
+    std::string destFolderPath;
+    auto* dst = target.IsOk() ? dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(target))
+                               : nullptr;
 
-    // Only drop onto a folder node.
-    if (dst->kind != TreeNode::Kind::Folder) {
-        wxMessageBox("Drop onto a folder to move a project or subfolder into it.",
-                     "Move", wxOK | wxICON_INFORMATION, this);
+    if (!dst) {
+        AppConfig cfg = LoadConfig();
+        if (cfg.defaultFolder.empty()) return;
+        destFolderPath = cfg.defaultFolder;
+    } else {
+        if (target == m_dragItem) return;
+        if (dst->kind != TreeNode::Kind::Folder) {
+            wxMessageBox("Drop onto a folder to move a project or subfolder into it.",
+                         "Move", wxOK | wxICON_INFORMATION, this);
+            return;
+        }
+        destFolderPath = dst->path;
+    }
+
+    MoveResult result = MoveFolder(src->path, destFolderPath);
+    if (!result.ok) {
+        wxMessageBox(wxString::FromUTF8(result.error), "Move", wxOK | wxICON_WARNING, this);
         return;
     }
 
-    // Prevent moving a folder into one of its own descendants.
-    if (dst->path.rfind(src->path, 0) == 0 &&
-        (dst->path.size() == src->path.size() ||
-         dst->path[src->path.size()] == '/')) {
-        wxMessageBox("Cannot move a folder into itself or one of its subfolders.",
-                     "Move", wxOK | wxICON_WARNING, this);
-        return;
-    }
+    fs::path moved = fs::path(destFolderPath) / fs::path(src->path).filename();
 
-    fs::path srcPath(src->path);
-    fs::path dstPath = fs::path(dst->path) / srcPath.filename();
-
-    if (fs::exists(dstPath)) {
-        wxMessageBox("A folder named \"" + srcPath.filename().string() +
-                     "\" already exists in \"" + dst->name + "\".",
-                     "Move", wxOK | wxICON_WARNING, this);
-        return;
-    }
-
-    std::error_code ec;
-    fs::rename(srcPath, dstPath, ec);
-    if (ec) {
-        wxMessageBox(wxString::FromUTF8("Could not move: " + ec.message()),
-                     "Move", wxOK | wxICON_ERROR, this);
-        return;
-    }
-
-    // Update expand tracking: old path → new path.
     if (m_expandedPaths.erase(src->path))
-        m_expandedPaths.insert(dstPath.string());
+        m_expandedPaths.insert(moved.string());
+    m_expandedPaths.insert(destFolderPath);
 
-    // Keep the destination folder expanded so the moved item is visible.
-    m_expandedPaths.insert(dst->path);
-
-    Logger::get().log("Moved: " + src->path + " -> " + dstPath.string());
+    Logger::get().log("Moved: " + src->path + " -> " + moved.string());
     RefreshProjects();
 }
 

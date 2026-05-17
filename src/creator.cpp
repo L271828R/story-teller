@@ -345,6 +345,26 @@ std::string ChapterFilename(const std::string& topic, int chapterNumber) {
     return prefix.str() + slugify(topic) + ".md";
 }
 
+std::string FilenameFromContent(const std::string& content,
+                                const std::string& fallback,
+                                int chapterNumber) {
+    std::istringstream stream(content);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.rfind("## ", 0) != 0) continue;
+        std::string title = line.substr(3);
+        // Strip optional "Chapter N: " prefix.
+        if (title.rfind("Chapter ", 0) == 0) {
+            auto colon = title.find(": ");
+            if (colon != std::string::npos)
+                title = title.substr(colon + 2);
+        }
+        std::string slug = slugify(title);
+        if (!slug.empty()) return slug + ".md";
+    }
+    return ChapterFilename(fallback, chapterNumber);
+}
+
 std::string SaveChapter(const std::string& projectDir,
                         const std::string& filename,
                         const std::string& content) {

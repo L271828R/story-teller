@@ -636,10 +636,9 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
         SetStatus("Cannot initialise project folder: " + projDir); return;
     }
 
-    GenerationRequest req     = BuildRequest();
-    int               chId    = NextChapterId(projDir.ToStdString());
-    std::string       filename = ChapterFilename(req.topic, chId);
-    std::string       prompt  = BuildPrompt(req, GetLLMReadme());
+    GenerationRequest req    = BuildRequest();
+    int               chId   = NextChapterId(projDir.ToStdString());
+    std::string       prompt = BuildPrompt(req, GetLLMReadme());
     int               bkIdx   = m_backendChoice->GetSelection();
     std::string       bkLabel = m_backendChoice->GetString(bkIdx).ToStdString();
     LLMBackend        backend  = backend_from_label(bkLabel);
@@ -667,13 +666,12 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     SetStatus("Sending to " + m_backendChoice->GetString(bkIdx) + "…");
     Logger::get().log("Generate: backend=" + bkLabel
                       + "  project=" + projDirStr
-                      + "  file=" + filename
                       + "  model=" + (backend == LLMBackend::Ollama ? cfg.ollamaModel : "(n/a)")
                       + "  language=" + language_from_topic(req.topic)
                       + "  topic=" + truncate_for_log(req.topic));
     OpenCallback cb = m_openCallback;
 
-    std::thread([this, prompt, cfg, projDirStr, filename, chId, topicStr, cb]() mutable {
+    std::thread([this, prompt, cfg, projDirStr, chId, topicStr, cb]() mutable {
         auto started = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
         int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
@@ -688,7 +686,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
             RecordLLMTiming(projDirStr, "generate", topicStr, durationSeconds);
         }
 
-        wxTheApp->CallAfter([this, res, projDirStr, filename, chId, cb]() mutable {
+        wxTheApp->CallAfter([this, res, projDirStr, chId, topicStr, cb]() mutable {
             SetGenerating(false);
             if (!res.ok) {
                 Logger::get().log("Generate FAILED: " + res.error);
@@ -698,6 +696,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
 
             // Stamp each :::tidbit block with a stable <!-- tb:N --> marker.
             std::string content = CleanMarkdownResponse(res.text);
+            std::string filename = FilenameFromContent(content, topicStr, chId);
             std::string stamped;
             int baseTbId = NextTidbitId(projDirStr);
             int tbCount  = 0;

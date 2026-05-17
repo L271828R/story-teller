@@ -50,6 +50,12 @@ StampResult StampChapters(const std::string& content, int baseId);
 // Returns a filename like "ch03_black_holes.md" from a topic and chapter number.
 std::string ChapterFilename(const std::string& topic, int chapterNumber);
 
+// Derives a filename from the first ## heading in content (e.g. "the_ravens_shadow.md").
+// Falls back to ChapterFilename(fallback, chapterNumber) when no usable heading is found.
+std::string FilenameFromContent(const std::string& content,
+                                const std::string& fallback,
+                                int chapterNumber);
+
 // Writes content to <projectDir>/<filename> and returns the full path.
 // Creates the file; returns "" on failure.
 std::string SaveChapter(const std::string& projectDir,

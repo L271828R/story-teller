@@ -154,3 +154,29 @@ std::pair<int, int> TidbitLocation(const std::string& projectDir, int tidbitId) 
         return {chId, pos};
     } catch (...) { return {-1, -1}; }
 }
+
+MoveResult MoveFolder(const std::string& srcPath, const std::string& dstFolderPath) {
+    fs::path src(srcPath);
+    fs::path dstFolder(dstFolderPath);
+
+    // Refuse to move a folder into itself or one of its descendants.
+    std::string srcNorm = src.string();
+    std::string dstNorm = dstFolder.string();
+    if (dstNorm.rfind(srcNorm, 0) == 0 &&
+        (dstNorm.size() == srcNorm.size() || dstNorm[srcNorm.size()] == '/')) {
+        return {false, "Cannot move a folder into itself or one of its subfolders."};
+    }
+
+    fs::path dst = dstFolder / src.filename();
+
+    if (fs::exists(dst)) {
+        return {false, "A folder named \"" + src.filename().string() +
+                       "\" already exists in the destination."};
+    }
+
+    std::error_code ec;
+    fs::rename(src, dst, ec);
+    if (ec) return {false, "Could not move: " + ec.message()};
+
+    return {true, ""};
+}

@@ -163,5 +163,21 @@ int test_html_template() {
         }
     }
 
+    // The note toolbar is position:fixed, so its left/top must be set from
+    // getBoundingClientRect() coords directly — adding scrollX/scrollY converts
+    // to document coordinates and pushes the toolbar off-screen for scrolled pages.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool badLeft = html.find("rect.left + window.scrollX") != std::string::npos;
+        bool badTop  = html.find("rect.top + window.scrollY")  != std::string::npos;
+        if (badLeft || badTop) {
+            std::cerr << "FAIL [toolbar-fixed-positioning]: toolbar uses scroll offsets "
+                         "with position:fixed — remove scrollX/scrollY from positioning\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [toolbar-fixed-positioning]\n";
+        }
+    }
+
     return failures;
 }

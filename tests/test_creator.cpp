@@ -467,5 +467,42 @@ int test_creator() {
         fs::remove_all(base);
     }
 
+    // FilenameFromContent extracts the first ## heading title.
+    {
+        std::string content =
+            "## Chapter 1: The Raven's Shadow\n\nSome story text.\n";
+        std::string name = FilenameFromContent(content, "fallback topic", 1);
+        if (name != "the_raven_s_shadow.md") {
+            std::cerr << "FAIL [filename-from-content]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [filename-from-content]\n";
+        }
+    }
+
+    // FilenameFromContent works with a plain "## Title" (no "Chapter N:").
+    {
+        std::string content = "## The Tell-Tale Heart\n\nSome content.";
+        std::string name = FilenameFromContent(content, "fallback", 1);
+        if (name != "the_tell_tale_heart.md") {
+            std::cerr << "FAIL [filename-from-content-plain-heading]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [filename-from-content-plain-heading]\n";
+        }
+    }
+
+    // FilenameFromContent falls back to the topic slug when no heading is found.
+    {
+        std::string content = "No heading here, just plain text.";
+        std::string name = FilenameFromContent(content, "Edgar Allan Poe", 2);
+        if (name != "ch02_edgar_allan_poe.md") {
+            std::cerr << "FAIL [filename-from-content-fallback]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [filename-from-content-fallback]\n";
+        }
+    }
+
     return failures;
 }

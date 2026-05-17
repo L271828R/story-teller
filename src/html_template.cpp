@@ -477,10 +477,12 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       var text = sel ? sel.toString().trim() : '';
       if (!text || text.length < 2) { toolbar.style.display = 'none'; return; }
       var range = sel.getRangeAt(0);
-      var rect = range.getBoundingClientRect();
+      var rects = range.getClientRects();
+      var rect  = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) { toolbar.style.display = 'none'; return; }
       toolbar.style.display = 'block';
-      toolbar.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 200) + 'px';
-      toolbar.style.top  = (rect.top + window.scrollY - 36) + 'px';
+      toolbar.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+      toolbar.style.top  = (rect.top - 36) + 'px';
     }, 200);
   });
 
@@ -528,8 +530,8 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       '</div>';
     pop.querySelector('.note-popover-text').textContent = noteText;
     var rect = marker.getBoundingClientRect();
-    pop.style.left = Math.min(rect.left + window.scrollX, window.innerWidth - 340) + 'px';
-    pop.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+    pop.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
+    pop.style.top  = (rect.bottom + 6) + 'px';
     document.body.appendChild(pop);
     activePopover = pop;
     pop.querySelector('.note-edit').addEventListener('click', function() {

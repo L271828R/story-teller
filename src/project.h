@@ -39,3 +39,8 @@ std::pair<int, int> TidbitLocation(const std::string& projectDir, int tidbitId);
 // Peek the next ID that will be assigned — does NOT consume it.
 int NextChapterId(const std::string& projectDir);
 int NextTidbitId(const std::string& projectDir);
+
+// Move srcPath into dstFolderPath (i.e. result = dstFolderPath/basename(srcPath)).
+// Returns {true, ""} on success, or {false, reason} on any error.
+struct MoveResult { bool ok; std::string error; };
+MoveResult MoveFolder(const std::string& srcPath, const std::string& dstFolderPath);
