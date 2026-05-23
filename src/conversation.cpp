@@ -1,4 +1,5 @@
 #include "conversation.h"
+#include "markdown.h"
 #include <fstream>
 #include <sstream>
 
@@ -174,9 +175,13 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
         << "The following is the full document the reader is studying:\n\n"
         << "```\n" << docMarkdown << "\n```\n\n"
         << "## Your role\n\n"
-        << "You are a knowledgeable and engaging conversation partner. The reader is "
-           "currently reading the chapter: **" << chTitle << "**.\n"
-        << "Answer their question naturally and helpfully. Use the document above as "
+        << "You are a knowledgeable and engaging conversation partner. ";
+    if (chTitle == "Document") {
+        out << "The reader is reviewing the full document.\n";
+    } else {
+        out << "The reader is currently reading the chapter: **" << chTitle << "**.\n";
+    }
+    out << "Answer their question naturally and helpfully. Use the document above as "
            "context when it is relevant, but do NOT limit yourself to it — draw freely "
            "on your broader knowledge whenever the question calls for it or when the "
            "document does not cover the topic. If the document is silent on something "
@@ -192,4 +197,74 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
 
     out << "## New question\n\nQ: " << question << "\nA:";
     return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildChatHTML(const std::string& chTitle,
+                          const std::vector<ConversationTurn>& turns,
+                          const std::string& pendingQ,
+                          bool darkMode) {
+    const std::string bg      = darkMode ? "#0d1117" : "#ffffff";
+    const std::string text    = darkMode ? "#e6edf3" : "#1a1a1a";
+    const std::string qBg     = darkMode ? "#1c2a3a" : "#e3f2fd";
+    const std::string aBg     = darkMode ? "#1c2a1c" : "#f1f8e9";
+    const std::string mutedC  = darkMode ? "#8b949e" : "#666666";
+    const std::string borderC = darkMode ? "#30363d" : "#d0d7de";
+
+    std::string body;
+    int idx = 0;
+    for (const auto& t : turns) {
+        std::string i = std::to_string(idx++);
+        body += "<div class='turn'>"
+                "<button class='del-btn' onclick='delTurn(" + i + ")' "
+                "title='Delete this exchange'>\xc3\x97</button>"
+                "<div class='q'>" + EscapeHTML(t.question) + "</div>"
+                "<div class='a'>" + RenderMarkdown(t.answer) + "</div>"
+                "</div>\n";
+    }
+    if (!pendingQ.empty()) {
+        body += "<div class='turn'>"
+                "<div class='q'>" + EscapeHTML(pendingQ) + "</div>"
+                "<div class='a thinking'>&#x22EF;</div>"
+                "</div>\n";
+    }
+    if (body.empty()) {
+        body = "<p class='empty'>Ask anything about <em>"
+               + EscapeHTML(chTitle) + "</em>.</p>";
+    }
+
+    return "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
+           "<style>"
+           "* { box-sizing: border-box; margin: 0; padding: 0 }"
+           "body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
+           "  font-size: 14px; line-height: 1.6; background: " + bg + "; color: " + text + ";"
+           "  padding: 16px; }"
+           ".turn { position: relative; margin-bottom: 20px; }"
+           ".del-btn { float: right; background: transparent;"
+           "  border: 1px solid transparent; cursor: pointer;"
+           "  color: " + mutedC + "; font-size: 13px; padding: 1px 5px;"
+           "  border-radius: 3px; line-height: 1; opacity: 0; transition: opacity .15s; }"
+           ".turn:hover .del-btn { opacity: 1; }"
+           ".del-btn:hover { border-color: " + borderC + "; }"
+           ".q { background: " + qBg + "; border-radius: 8px 8px 8px 2px;"
+           "  padding: 10px 14px; margin-bottom: 6px; font-weight: 500; }"
+           ".a { background: " + aBg + "; border-radius: 2px 8px 8px 8px;"
+           "  padding: 10px 14px; }"
+           ".a p { margin: 0 0 .6em 0; }"
+           ".a p:last-child { margin-bottom: 0; }"
+           ".a ul,.a ol { padding-left: 1.4em; margin: .4em 0; }"
+           ".a li { margin-bottom: .2em; }"
+           ".thinking { color: " + mutedC + "; font-style: italic; }"
+           ".empty { color: " + mutedC + "; font-style: italic; padding: 8px 0; }"
+           "code { background: rgba(128,128,128,.15); padding: .15em .35em; border-radius: 3px; }"
+           "</style>"
+           "<script>"
+           "function delTurn(i){"
+           "if(window.webkit&&window.webkit.messageHandlers&&"
+           "window.webkit.messageHandlers.deleteTurn)"
+           "window.webkit.messageHandlers.deleteTurn.postMessage(''+i);}"
+           "</script>"
+           "</head><body>" + body +
+           "<script>window.scrollTo(0,document.body.scrollHeight);</script>"
+           "</body></html>";
 }

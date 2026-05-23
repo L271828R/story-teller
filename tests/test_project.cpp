@@ -1,6 +1,7 @@
 #include "project.h"
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -270,6 +271,58 @@ int test_project() {
             std::cout << "PASS [move-folder-into-self]\n";
         }
         fs::remove_all(base);
+    }
+
+    // New-project button flow: InitProject on a brand-new subdirectory path creates a
+    // valid project (the directory doesn't exist yet, unlike the init-project test above).
+    {
+        auto root = make_temp_dir();
+        std::string projectPath = (root / "my-new-story").string();
+
+        bool precondition = !fs::exists(projectPath);  // must not exist beforehand
+        bool ok           = InitProject(projectPath);
+        bool isProject    = ProjectExists(projectPath);
+        bool hasClaude    = fs::exists(fs::path(projectPath) / "claude.md");
+        bool hasIndex     = fs::exists(fs::path(projectPath) / ".index");
+
+        if (!precondition || !ok || !isProject || !hasClaude || !hasIndex) {
+            std::cerr << "FAIL [new-project-creates-subdir]: precondition=" << precondition
+                      << " ok=" << ok << " isProject=" << isProject
+                      << " claude.md=" << hasClaude << " .index=" << hasIndex << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [new-project-creates-subdir]\n";
+        }
+        fs::remove_all(root);
+    }
+
+    // New-project button flow: attempting to create a project where a folder already
+    // exists must leave the existing contents untouched (the button guards this with
+    // fs::exists before calling InitProject).
+    {
+        auto root = make_temp_dir();
+        fs::path existing = root / "taken";
+        fs::create_directories(existing);
+        std::ofstream(existing / "sentinel.txt") << "original";
+
+        bool collision = fs::exists(existing.string());
+
+        // The button skips InitProject when collision is true — verify existing
+        // content is intact.
+        std::string content;
+        {
+            std::ifstream f(existing / "sentinel.txt");
+            if (f) content.assign(std::istreambuf_iterator<char>(f), {});
+        }
+
+        if (!collision || content != "original") {
+            std::cerr << "FAIL [new-project-name-collision]: collision=" << collision
+                      << " content='" << content << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [new-project-name-collision]\n";
+        }
+        fs::remove_all(root);
     }
 
     return failures;

@@ -49,6 +49,7 @@ private:
     void OnActivateBtn(wxCommandEvent& evt);
     void OnRenameBtn(wxCommandEvent& evt);
     void OnNewSubfolder(wxCommandEvent& evt);
+    void OnNewProject(wxCommandEvent& evt);
     void OnRefreshBtn(wxCommandEvent& evt);
     void OnSetFolderBtn(wxCommandEvent& evt);
 
@@ -68,6 +69,7 @@ private:
     wxButton*     m_activateBtn;
     wxButton*     m_renameBtn;
     wxButton*     m_newSubfolderBtn;
+    wxButton*     m_newProjectBtn;
     wxButton*     m_setFolderBtn;
 
     // ---- state --------------------------------------------------------------

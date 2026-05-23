@@ -5,7 +5,7 @@
 #include "markdown.h"
 #include "html_template.h"
 #include "inspector.h"
-#include "chat_frame.h"
+#include "chat_panel.h"
 #include "creator.h"
 #include "config.h"
 #include "notes.h"
@@ -38,6 +38,7 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_THEME_LIGHT, MDViewerFrame::OnThemeLight)
     EVT_MENU(ID_THEME_DARK,  MDViewerFrame::OnThemeDark)
     EVT_MENU(ID_VIEW_LOGS,   MDViewerFrame::OnViewLogs)
+    EVT_MENU(ID_CLEAR_LOGS,  MDViewerFrame::OnClearLogs)
     EVT_MENU(ID_VIEW_DOC,    MDViewerFrame::OnViewDoc)
     EVT_MENU(ID_FONT_INCREASE, MDViewerFrame::OnFontIncrease)
     EVT_MENU(ID_FONT_DECREASE, MDViewerFrame::OnFontDecrease)
@@ -100,7 +101,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     view->AppendRadioItem(ID_THEME_DARK,  "&Dark Mode\tCtrl+Shift+D");
     view->Check(m_darkMode ? ID_THEME_DARK : ID_THEME_LIGHT, true);
     view->AppendSeparator();
-    view->Append(ID_VIEW_LOGS, "View &Logs");
+    view->Append(ID_VIEW_LOGS,   "View &Logs");
+    view->Append(ID_CLEAR_LOGS,  "Clear Logs");
     view->Append(ID_VIEW_DOC,  "View &Document\tCtrl+Shift+V");
     view->AppendSeparator();
     view->Append(ID_FONT_INCREASE, "Increase Font Size\tCtrl++");
@@ -116,21 +118,49 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     // ── Notebook ─────────────────────────────────────────────────────────
     m_notebook = new wxNotebook(this, wxID_ANY);
 
-    // ── View page: webview + floating find bar ────────────────────────────
+    // ── View page: splitter (webview | chat panel) + floating find bar ────
     m_viewPage = new wxPanel(m_notebook, wxID_ANY);
-    m_webView  = wxWebView::New(m_viewPage, wxID_ANY, "about:blank");
+
+    m_splitter = new wxSplitterWindow(m_viewPage, wxID_ANY,
+                                      wxDefaultPosition, wxDefaultSize,
+                                      wxSP_LIVE_UPDATE);
+    m_splitter->SetSashGravity(0.0);   // webview grows; chat keeps its width
+    m_splitter->SetMinimumPaneSize(180);
+
+    m_webViewPanel = new wxPanel(m_splitter, wxID_ANY);
+    m_webView = wxWebView::New(m_webViewPanel, wxID_ANY, "about:blank");
     m_webView->AddScriptMessageHandler("fontSizeChange");
     m_webView->AddScriptMessageHandler("clipboardCopy");
     m_webView->AddScriptMessageHandler("chat");
     m_webView->AddScriptMessageHandler("note");
+    m_webView->AddScriptMessageHandler("closeChat");
     EnableWebInspector(m_webView);
 
+    auto* wvSizer = new wxBoxSizer(wxVERTICAL);
+    wvSizer->Add(m_webView, 1, wxEXPAND);
+    m_webViewPanel->SetSizer(wvSizer);
+
+    m_chatPanel = new ChatPanel(
+        m_splitter, m_darkMode,
+        [this]() {
+            CallAfter([this]() {
+                if (m_splitter->IsSplit())
+                    m_splitter->Unsplit(m_chatPanel);
+            });
+        },
+        [this]() {
+            CallAfter([this]() { LoadAndRender(); });
+        }
+    );
+    m_chatPanel->Hide();
+    m_splitter->Initialize(m_webViewPanel);   // start unsplit
+
     auto* viewSizer = new wxBoxSizer(wxVERTICAL);
-    viewSizer->Add(m_webView, 1, wxEXPAND);
+    viewSizer->Add(m_splitter, 1, wxEXPAND);
     m_viewPage->SetSizer(viewSizer);
 
-    // Find bar lives inside the view page so it floats over the webview.
-    m_findPanel = new wxPanel(m_viewPage, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+    // Find bar floats over the webview panel (right-aligned).
+    m_findPanel = new wxPanel(m_webViewPanel, wxID_ANY, wxDefaultPosition, wxDefaultSize,
                               wxTAB_TRAVERSAL | wxBORDER_SIMPLE);
     auto* fs = new wxBoxSizer(wxHORIZONTAL);
     m_findCtrl = new wxTextCtrl(m_findPanel, wxID_ANY, wxEmptyString,
@@ -212,7 +242,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     SetSize(w, h);
     Centre();
 
-    m_viewPage->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
+    m_webViewPanel->Bind(wxEVT_SIZE, [this](wxSizeEvent& evt) {
         evt.Skip();
         CallAfter([this]() { PositionFindBar(); });
     });
@@ -317,6 +347,12 @@ void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
     SetStatusText("Viewing logs — use View > View Document to return");
 }
 
+void MDViewerFrame::OnClearLogs(wxCommandEvent&) {
+    const std::string logPath = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller/story-teller.log";
+    std::ofstream f(logPath, std::ios::trunc);
+    SetStatusText("Logs cleared");
+}
+
 void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
     SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
@@ -334,6 +370,7 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         m_darkMode = false;
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", false);
+        if (m_chatPanel) m_chatPanel->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -343,6 +380,7 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         m_darkMode = true;
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", true);
+        if (m_chatPanel) m_chatPanel->SetDarkMode(true);
         LoadAndRender();
     }
 }
@@ -394,36 +432,18 @@ void MDViewerFrame::OnSaveHTML(wxCommandEvent&) {
 void MDViewerFrame::OpenChat(int chId, const std::string& chTitle) {
     if (m_filePath.empty()) return;
 
-    // Build LLM config from saved app state
     AppState st = LoadAppState();
     LLMConfig cfg;
     cfg.backend     = BackendFromLabel(st.backend);
     cfg.apiKey      = st.apiKey;
     cfg.ollamaModel = st.ollamaModel;
 
-    // Close existing chat window if open
-    if (m_chatFrame) {
-        m_chatFrame->Close(true);
-        m_chatFrame = nullptr;
-    }
+    m_chatPanel->Open(m_filePath.ToStdString(), chId, chTitle, cfg);
 
-    m_chatFrame = new ChatFrame(
-        this,
-        m_filePath.ToStdString(),
-        chId,
-        chTitle,
-        cfg,
-        m_darkMode,
-        [this]() {
-            // Called after each turn is saved — re-render the document
-            CallAfter([this]() { LoadAndRender(); });
-        }
-    );
-    // ChatFrame calls Show() in its constructor.
-    m_chatFrame->Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
-        m_chatFrame = nullptr;
-        e.Skip();
-    });
+    if (!m_splitter->IsSplit()) {
+        int w = m_splitter->GetClientSize().GetWidth();
+        m_splitter->SplitVertically(m_webViewPanel, m_chatPanel, w * 6 / 10);
+    }
 }
 
 void MDViewerFrame::OnExit(wxCommandEvent&)   { Close(true); }
@@ -510,7 +530,7 @@ void MDViewerFrame::ShowFindBar(bool show) {
 void MDViewerFrame::PositionFindBar() {
     if (!m_findPanel || !m_findPanel->IsShown()) return;
     wxSize panel  = m_findPanel->GetBestSize();
-    wxSize client = m_viewPage ? m_viewPage->GetClientSize() : GetClientSize();
+    wxSize client = m_webViewPanel ? m_webViewPanel->GetClientSize() : GetClientSize();
     m_findPanel->SetSize(client.x - panel.x - 12, 8, panel.x, panel.y);
     m_findPanel->Raise();
 }
@@ -612,8 +632,14 @@ void MDViewerFrame::OnScriptMessage(wxWebViewEvent& evt) {
             long chId = 0;
             payload.Left(sep).ToLong(&chId);
             std::string chTitle = payload.Mid(sep + 1).ToStdString();
+            if (chTitle.empty()) chTitle = "Document";
             OpenChat((int)chId, chTitle);
         }
+        return;
+    }
+    if (evt.GetMessageHandler() == "closeChat") {
+        if (m_splitter && m_splitter->IsSplit())
+            m_splitter->Unsplit(m_chatPanel);
         return;
     }
     if (evt.GetMessageHandler() == "clipboardCopy") {

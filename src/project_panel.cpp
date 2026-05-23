@@ -32,7 +32,8 @@ enum {
     ID_PP_RENAME,
     ID_PP_REFRESH,
     ID_PP_SET_FOLDER,
-    ID_PP_NEW_SUBFOLDER
+    ID_PP_NEW_SUBFOLDER,
+    ID_PP_NEW_PROJECT
 };
 
 enum class SortOrder { Name, Created, Modified };
@@ -43,6 +44,7 @@ wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
     EVT_BUTTON(ID_PP_ACTIVATE,              ProjectPanel::OnActivateBtn)
     EVT_BUTTON(ID_PP_RENAME,               ProjectPanel::OnRenameBtn)
     EVT_BUTTON(ID_PP_NEW_SUBFOLDER,         ProjectPanel::OnNewSubfolder)
+    EVT_BUTTON(ID_PP_NEW_PROJECT,           ProjectPanel::OnNewProject)
     EVT_BUTTON(ID_PP_REFRESH,              ProjectPanel::OnRefreshBtn)
     EVT_BUTTON(ID_PP_SET_FOLDER,           ProjectPanel::OnSetFolderBtn)
     EVT_TREE_SEL_CHANGED(ID_PP_TREE,       ProjectPanel::OnTreeSelChanged)
@@ -196,6 +198,10 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
     m_newSubfolderBtn->Disable();
     btnRow->Add(m_newSubfolderBtn, 0, wxRIGHT, 6);
 
+    m_newProjectBtn = new wxButton(this, ID_PP_NEW_PROJECT, "New Project…");
+    m_newProjectBtn->Disable();
+    btnRow->Add(m_newProjectBtn, 0, wxRIGHT, 6);
+
     btnRow->AddStretchSpacer();
 
     m_setFolderBtn = new wxButton(this, ID_PP_SET_FOLDER, "Set Projects Folder…");
@@ -344,8 +350,9 @@ void ProjectPanel::RefreshProjects() {
     int sortOrder = m_sortChoice ? m_sortChoice->GetSelection() : 0;
     bool anyAdded = PopulateTree(root, cfg.defaultFolder, 4, query, sortOrder);
 
-    // "New Subfolder…" is always usable once a root folder is configured.
+    // These are always usable once a root folder is configured.
     m_newSubfolderBtn->Enable(true);
+    m_newProjectBtn->Enable(true);
 
     if (!anyAdded) {
         m_projectPathLabel->SetLabel(query.empty()
@@ -399,9 +406,10 @@ TreeNode* ProjectPanel::SelectedNode() const {
 void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
     TreeNode* tn = SelectedNode();
 
-    // "New Subfolder…" is always available as long as a projects folder is set.
+    // These are always available as long as a projects folder is set.
     AppConfig cfg = LoadConfig();
     m_newSubfolderBtn->Enable(!cfg.defaultFolder.empty());
+    m_newProjectBtn->Enable(!cfg.defaultFolder.empty());
 
     if (!tn) {
         m_activateBtn->Disable();
@@ -617,6 +625,52 @@ void ProjectPanel::OnNewSubfolder(wxCommandEvent&) {
     // Keep the parent expanded so the new folder is immediately visible.
     m_expandedPaths.insert(parentPath);
     Logger::get().log("Created subfolder: " + newDir.string());
+    RefreshProjects();
+}
+
+void ProjectPanel::OnNewProject(wxCommandEvent&) {
+    std::string parentPath;
+    TreeNode* tn = SelectedNode();
+    if (tn && tn->kind == TreeNode::Kind::Folder) {
+        parentPath = tn->path;
+    } else {
+        AppConfig cfg = LoadConfig();
+        parentPath = cfg.defaultFolder;
+    }
+
+    if (parentPath.empty()) {
+        wxMessageBox("No projects folder is set.", "New Project",
+                     wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    wxString entered = wxGetTextFromUser(
+        wxString::FromUTF8("Enter a name for the new project.\nWill be created in: " + parentPath),
+        "New Project", wxEmptyString, this).Trim();
+    if (entered.empty()) return;
+
+    std::string projectName = entered.ToStdString();
+    if (!validProjectName(projectName)) {
+        wxMessageBox("Use a folder-safe name without slashes.",
+                     "Invalid Name", wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    std::string projectPath = (fs::path(parentPath) / projectName).string();
+    if (fs::exists(projectPath)) {
+        wxMessageBox("A folder with that name already exists.",
+                     "New Project", wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    if (!InitProject(projectPath)) {
+        wxMessageBox("Could not create the project.", "New Project",
+                     wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    m_expandedPaths.insert(parentPath);
+    Logger::get().log("Created project: " + projectPath);
     RefreshProjects();
 }
 

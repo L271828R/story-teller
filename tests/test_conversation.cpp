@@ -176,5 +176,55 @@ int test_conversation() {
         }
     }
 
+    // BuildChatHTML: multi-paragraph answer must produce <p> tags, not raw newlines.
+    // Without RenderMarkdown the answer div contains a flat string with no <p>.
+    {
+        std::vector<ConversationTurn> turns = {{
+            "Tell me about memory.",
+            "First paragraph here.\n\nSecond paragraph here."
+        }};
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasPTag = html.find("<p>") != std::string::npos;
+        if (!hasPTag) {
+            std::cerr << "FAIL [chat-answer-paragraphs]: no <p> tag found in answer HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-answer-paragraphs]\n";
+        }
+    }
+
+    // BuildChatHTML: bold markdown (**text**) in answer must render as <strong>.
+    {
+        std::vector<ConversationTurn> turns = {{
+            "What is special?",
+            "This is **very** important."
+        }};
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasStrong = html.find("<strong>") != std::string::npos;
+        if (!hasStrong) {
+            std::cerr << "FAIL [chat-answer-bold]: no <strong> tag found in answer HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-answer-bold]\n";
+        }
+    }
+
+    // BuildChatHTML: bullet list in answer must render <ul>/<li>.
+    {
+        std::vector<ConversationTurn> turns = {{
+            "List things.",
+            "- Apple\n- Banana\n- Cherry"
+        }};
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasUl = html.find("<ul>") != std::string::npos;
+        bool hasLi = html.find("<li>") != std::string::npos;
+        if (!hasUl || !hasLi) {
+            std::cerr << "FAIL [chat-answer-list]: no <ul>/<li> found in answer HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-answer-list]\n";
+        }
+    }
+
     return failures;
 }

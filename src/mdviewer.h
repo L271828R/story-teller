@@ -10,13 +10,15 @@
 #include "edit_panel.h"
 #include "create_panel.h"
 #include "project_panel.h"
-#include "chat_frame.h"
+#include "chat_panel.h"
+#include <wx/splitter.h>
 
 enum {
     ID_RELOAD       = wxID_HIGHEST + 1,
     ID_THEME_LIGHT,
     ID_THEME_DARK,
     ID_VIEW_LOGS,
+    ID_CLEAR_LOGS,
     ID_VIEW_DOC,
     ID_FONT_INCREASE,
     ID_FONT_DECREASE,
@@ -49,7 +51,9 @@ private:
     wxString      m_findTerm;
     int           m_findTotal   = 0;
     int           m_findCurrent = 0;
-    ChatFrame*    m_chatFrame   = nullptr;
+    wxSplitterWindow* m_splitter      = nullptr;
+    wxPanel*          m_webViewPanel  = nullptr;
+    ChatPanel*        m_chatPanel     = nullptr;
 
     void LoadAndRender();
     std::string ReadFile(const std::string& path);
@@ -67,6 +71,7 @@ private:
     void OnThemeLight(wxCommandEvent& evt);
     void OnThemeDark(wxCommandEvent& evt);
     void OnViewLogs(wxCommandEvent& evt);
+    void OnClearLogs(wxCommandEvent& evt);
     void OnViewDoc(wxCommandEvent& evt);
     void OnFontIncrease(wxCommandEvent& evt);
     void OnFontDecrease(wxCommandEvent& evt);

@@ -197,6 +197,12 @@ details.conversation[open] summary{border-bottom:1px solid var(--border)}
   padding:0 4px;color:inherit;
 }
 h2:hover .chat-btn{opacity:1}
+#doc-chat-btn{
+  background:none;border:1px solid var(--border);border-radius:20px;
+  padding:3px 10px;cursor:pointer;font-size:0.85em;
+  color:var(--text-muted);transition:background .15s,color .15s;
+}
+#doc-chat-btn:hover{background:var(--border);color:var(--text)}
 
 /* ── Notes ─────────────────────────────────────────────────────────────── */
 .note-marker{
@@ -356,6 +362,23 @@ document.querySelectorAll('h2[data-ch-id]').forEach(function(h2) {
   });
   h2.appendChild(btn);
 });
+
+// ── Document-level chat button ───────────────────────────────────────────
+(function() {
+  var bar = document.createElement('div');
+  bar.style.cssText = 'text-align:right;margin-bottom:12px;';
+  var btn = document.createElement('button');
+  btn.id = 'doc-chat-btn';
+  btn.textContent = '💬';
+  btn.title = 'Chat about this document';
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.chat)
+      window.webkit.messageHandlers.chat.postMessage('-1|');
+  });
+  bar.appendChild(btn);
+  document.body.prepend(bar);
+})();
 
 // ── Zoom state ───────────────────────────────────────────────────────────
 let zmScale = 1, zmTX = 0, zmTY = 0;
@@ -546,6 +569,13 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
         window.webkit.messageHandlers.note.postMessage(
           JSON.stringify({action:'delete', id: parseInt(noteId)}));
     });
+  });
+  // Close side chat when the user clicks anywhere in the main content.
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.chat-btn') || e.target.closest('.note-marker') ||
+        e.target.closest('#note-toolbar') || e.target.closest('#zm-overlay')) return;
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.closeChat)
+      window.webkit.messageHandlers.closeChat.postMessage('');
   });
 })();
 </script>
