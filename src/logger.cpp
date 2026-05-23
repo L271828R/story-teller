@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
+#include <unistd.h>
 
 Logger& Logger::get() {
     static Logger instance;
@@ -12,8 +13,11 @@ Logger& Logger::get() {
 Logger::Logger() {
     std::string dir = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller";
     ::system(("mkdir -p \"" + dir + "\"").c_str());
-    m_file.open(dir + "/story-teller.log", std::ios::app);
+    m_path = dir + "/story-teller-" + std::to_string(getpid()) + ".log";
+    m_file.open(m_path, std::ios::app);
 }
+
+const std::string& Logger::filePath() const { return m_path; }
 
 void Logger::log(const std::string& msg) {
     if (!m_file.is_open()) return;

@@ -100,6 +100,7 @@ set(SOURCES
     src/chat_panel.cpp
     src/editor.cpp
     src/notes.cpp
+    src/filemeta.cpp
     src/git_ops.cpp
     src/llm_error.cpp
     src/llm_response.cpp
@@ -130,6 +131,10 @@ add_executable(test_story-teller
     tests/test_meta.cpp
     tests/test_project_search.cpp
     tests/test_notes.cpp
+    tests/test_filemeta.cpp
+    tests/test_logger.cpp
+    src/filemeta.cpp
+    src/logger.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp

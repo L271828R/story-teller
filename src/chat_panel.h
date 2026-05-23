@@ -30,6 +30,7 @@ private:
     LLMConfig     m_llmCfg;
     bool          m_darkMode;
     bool          m_busy    = false;
+    bool          m_isOpen  = false;
 
     std::function<void()>  m_onClose;
     std::function<void()>  m_onSaved;
@@ -38,13 +39,11 @@ private:
 
     wxStaticText* m_titleLabel = nullptr;
     wxWebView*    m_webView    = nullptr;
-    wxTextCtrl*   m_inputCtrl  = nullptr;
-    wxButton*     m_sendBtn    = nullptr;
 
     void ApplyTheme();
     void LoadHistory();
     void Render(const std::string& pendingQuestion = "");
-    void OnSend(wxCommandEvent&);
+    void DoSend(const std::string& question);
     void OnScriptMessage(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();

@@ -7,6 +7,7 @@
 #include <wx/wx.h>
 #include <wx/checklst.h>
 #include <wx/combobox.h>
+#include <wx/listctrl.h>
 #include "config.h"
 #include "creator.h"
 
@@ -16,7 +17,7 @@ class CreatePanel : public wxPanel {
 public:
     using OpenCallback = std::function<void(const std::string& filepath)>;
     CreatePanel(wxWindow* parent, OpenCallback onFileGenerated);
-    void SyncProject();
+    void SyncProject(const std::string& filePath = "");
 
 private:
     OpenCallback   m_openCallback;
@@ -25,7 +26,7 @@ private:
     wxChoice*        m_projectChoice;
     wxStaticText*    m_projectPathLabel;
     wxTextCtrl*      m_topicCtrl;
-    wxChoice*        m_styleChoice;
+    wxComboBox*      m_styleChoice;
 
     // ── Character library ─────────────────────────────────────────────────
     wxListBox*       m_catList;     // left: category names
@@ -36,6 +37,9 @@ private:
     // names that are checked for inclusion (survives category switches)
     std::set<std::string> m_checkedChars;
 
+    // ── Project context (context.md) ───────────────────────────────────────
+    wxTextCtrl*      m_contextCtrl;
+
     // ── Backend ───────────────────────────────────────────────────────────
     wxChoice*        m_backendChoice;
     wxTextCtrl*      m_apiKeyCtrl;
@@ -44,7 +48,8 @@ private:
     wxSizerItem*     m_ollamaSizer  = nullptr;
 
     wxButton*        m_generateBtn;
-    wxListBox*       m_chapterListBox;
+    wxButton*        m_translateBtn = nullptr;
+    wxListCtrl*      m_chapterListBox;
     wxTextCtrl*      m_statusCtrl;
 
     bool m_generating = false;
@@ -65,10 +70,14 @@ private:
     void OnDeleteCategory(wxCommandEvent&);
     void OnAddCharacter(wxCommandEvent&);
     void OnDeleteCharacter(wxCommandEvent&);
+    void OnSaveContext(wxCommandEvent&);
     void OnBackendChanged(wxCommandEvent&);
     void OnGenerate(wxCommandEvent&);
     void OnCopyPrompt(wxCommandEvent&);
     void OnOpenInView(wxCommandEvent&);
+    void OnChapterActivated(wxListEvent&);
+    void OnTranslate(wxCommandEvent&);
+    void OnDeleteFile(wxCommandEvent&);
 
     GenerationRequest BuildRequest() const;
     void UpdateBackendFields();
@@ -77,6 +86,8 @@ private:
 
     void LoadProjects();
     void LoadChapters();
+    void LoadContext();
+    void SaveContext();
     void SelectProject(const wxString& name);
     wxString CurrentProjectPath() const;
     void SaveFormState() const;

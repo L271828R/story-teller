@@ -90,5 +90,30 @@ int test_mdviewer() {
         }
     }
 
+    // OnViewLogs must switch to the View tab, otherwise the rendered HTML is
+    // hidden behind whichever tab the user is currently on.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        // Find the function *definition* (not the event-table entry) and confirm
+        // SetSelection appears before the closing brace.
+        const std::string sig = "void MDViewerFrame::OnViewLogs(";
+        auto pos = code.find(sig);
+        bool hasSetSelection = false;
+        if (pos != std::string::npos) {
+            auto end = code.find("\n}\n", pos);
+            if (end != std::string::npos)
+                hasSetSelection = code.find("SetSelection", pos) < end;
+        }
+        if (!hasSetSelection) {
+            std::cerr << "FAIL [view-logs-switches-tab]: OnViewLogs must call "
+                         "m_notebook->SetSelection to make the View tab visible\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [view-logs-switches-tab]\n";
+        }
+    }
+
     return failures;
 }

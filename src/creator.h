@@ -38,6 +38,19 @@ std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
                                    const std::string& llmReadme,
                                    const std::string& extraInstruction = "");
 
+// Returns the extra-instruction string that asks the LLM to add ::pinyin tag lines.
+std::string BuildPinyinInstruction();
+
+// Removes lines starting with "::pinyin " from text, leaving the Chinese prose.
+std::string StripPinyinLines(const std::string& text);
+
+// Derives the output filename for a translated file.
+// "the_ravens_shadow.md" + "Spanish"          -> "the_ravens_shadow_Spanish.md"
+// "the_ravens_shadow.md" + "Chinese w/ Pinyin" -> "the_ravens_shadow_Chinese_Pinyin.md"
+// "the_ravens_shadow.md" + "Chinese (Mandarin)"-> "the_ravens_shadow_Chinese.md"
+std::string TranslationFilename(const std::string& sourceFilename,
+                                const std::string& language);
+
 // Removes common LLM wrappers around returned markdown, such as an outer
 // ```markdown fence and short prose before the actual document begins.
 std::string CleanMarkdownResponse(const std::string& response);
@@ -61,3 +74,9 @@ std::string FilenameFromContent(const std::string& content,
 std::string SaveChapter(const std::string& projectDir,
                         const std::string& filename,
                         const std::string& content);
+
+// Returns the relative path from defaultFolder to the project directory containing
+// filePath (e.g. "/base/Literature/agatha/ch01.md", "/base" -> "Literature/agatha").
+// Returns "" when the file is not under defaultFolder or is directly in defaultFolder.
+std::string ProjectNameFromFilePath(const std::string& filePath,
+                                    const std::string& defaultFolder);

@@ -340,27 +340,45 @@ StampResult StampChapters(const std::string& content, int baseId) {
 }
 
 std::string ChapterFilename(const std::string& topic, int chapterNumber) {
+    // Take only the first 4 whitespace-separated words so that a long user
+    // prompt typed as the topic does not produce an unwieldy filename.
+    std::string shortened;
+    std::istringstream ss(topic);
+    std::string word;
+    int count = 0;
+    while (ss >> word && count < 4) {
+        if (!shortened.empty()) shortened += ' ';
+        shortened += word;
+        ++count;
+    }
     std::ostringstream prefix;
     prefix << "ch" << std::setw(2) << std::setfill('0') << chapterNumber << "_";
-    return prefix.str() + slugify(topic) + ".md";
+    return prefix.str() + slugify(shortened) + ".md";
 }
 
 std::string FilenameFromContent(const std::string& content,
                                 const std::string& fallback,
                                 int chapterNumber) {
-    std::istringstream stream(content);
-    std::string line;
-    while (std::getline(stream, line)) {
-        if (line.rfind("## ", 0) != 0) continue;
-        std::string title = line.substr(3);
-        // Strip optional "Chapter N: " prefix.
-        if (title.rfind("Chapter ", 0) == 0) {
-            auto colon = title.find(": ");
-            if (colon != std::string::npos)
-                title = title.substr(colon + 2);
+    // Try ## headings first (the expected LLM format), then # as fallback for
+    // non-compliant responses that use H1 instead of H2.
+    for (int pass = 0; pass < 2; ++pass) {
+        const std::string prefix = (pass == 0) ? "## " : "# ";
+        std::istringstream stream(content);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.rfind(prefix, 0) != 0) continue;
+            // Exclude ### (and deeper) when matching "# "
+            if (pass == 1 && line.rfind("## ", 0) == 0) continue;
+            std::string title = line.substr(prefix.size());
+            // Strip optional "Chapter N: " prefix.
+            if (title.rfind("Chapter ", 0) == 0) {
+                auto colon = title.find(": ");
+                if (colon != std::string::npos)
+                    title = title.substr(colon + 2);
+            }
+            std::string slug = slugify(title);
+            if (!slug.empty()) return slug + ".md";
         }
-        std::string slug = slugify(title);
-        if (!slug.empty()) return slug + ".md";
     }
     return ChapterFilename(fallback, chapterNumber);
 }
@@ -373,4 +391,71 @@ std::string SaveChapter(const std::string& projectDir,
     f << content;
     if (!f.good()) return "";
     return path.string();
+}
+
+std::string ProjectNameFromFilePath(const std::string& filePath,
+                                    const std::string& defaultFolder) {
+    if (filePath.empty() || defaultFolder.empty()) return "";
+    fs::path file   = fs::path(filePath).lexically_normal();
+    fs::path base   = fs::path(defaultFolder).lexically_normal();
+    fs::path parent = file.parent_path();
+    if (parent == base) return "";
+    auto rel = parent.lexically_relative(base);
+    std::string relStr = rel.string();
+    if (relStr.empty() || relStr == "." || relStr[0] == '.') return "";
+    return relStr;
+}
+
+std::string BuildPinyinInstruction() {
+    return
+        "For every line of Chinese prose text, add a Pinyin annotation on the line "
+        "immediately below it. The annotation line must start with exactly `::pinyin ` "
+        "(two colons, the word pinyin, one space) followed by the full Pinyin romanisation "
+        "with tone marks. "
+        "Apply this to paragraph text and tidbit content only — "
+        "do NOT add ::pinyin lines under headings, HTML comments, or fenced code blocks. "
+        "Keep all markdown structure, heading levels, tidbit syntax, and comment markers intact.";
+}
+
+std::string StripPinyinLines(const std::string& text) {
+    std::string result;
+    result.reserve(text.size());
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        std::size_t nl = text.find('\n', pos);
+        std::size_t end = (nl == std::string::npos) ? text.size() : nl + 1;
+        std::string_view line(text.data() + pos, end - pos);
+        if (line.substr(0, 9) != "::pinyin ")
+            result.append(line);
+        pos = end;
+    }
+    return result;
+}
+
+std::string TranslationFilename(const std::string& sourceFilename,
+                                const std::string& language) {
+    // Strip .md extension.
+    std::string stem = sourceFilename;
+    if (stem.size() > 3 && stem.substr(stem.size() - 3) == ".md")
+        stem = stem.substr(0, stem.size() - 3);
+
+    // Build a clean slug from the language name.
+    // "Chinese (Mandarin)" -> "Chinese"
+    // "Chinese w/ Pinyin"  -> "Chinese_Pinyin"
+    std::string slug;
+    if (language == "Chinese w/ Pinyin" || language == "Chinese with Pinyin")
+        slug = "Chinese_Pinyin";
+    else if (language.rfind("Chinese", 0) == 0)
+        slug = "Chinese";
+    else {
+        // Use only ASCII alphanumerics and spaces; spaces become underscores.
+        for (unsigned char c : language) {
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                slug += static_cast<char>(c);
+            else if (c == ' ' && !slug.empty() && slug.back() != '_')
+                slug += '_';
+        }
+        while (!slug.empty() && slug.back() == '_') slug.pop_back();
+    }
+    return stem + "_" + slug + ".md";
 }

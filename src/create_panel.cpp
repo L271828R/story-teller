@@ -22,6 +22,8 @@
 #include <wx/dataobj.h>
 #include <wx/dirdlg.h>
 #include <wx/listbox.h>
+#include <wx/listctrl.h>
+#include "filemeta.h"
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
 #include <wx/statline.h>
@@ -48,6 +50,9 @@ enum {
     ID_CP_CHAR_LIST,
     ID_CP_ADD_CHAR,
     ID_CP_DEL_CHAR,
+    ID_CP_SAVE_CONTEXT,
+    ID_CP_TRANSLATE,
+    ID_CP_DELETE_FILE,
 };
 
 wxBEGIN_EVENT_TABLE(CreatePanel, wxPanel)
@@ -63,8 +68,11 @@ wxBEGIN_EVENT_TABLE(CreatePanel, wxPanel)
     EVT_CHOICE(ID_CP_BACKEND,     CreatePanel::OnBackendChanged)
     EVT_BUTTON(ID_CP_GENERATE,      CreatePanel::OnGenerate)
     EVT_BUTTON(ID_CP_COPY_PROMPT,   CreatePanel::OnCopyPrompt)
+    EVT_BUTTON(ID_CP_SAVE_CONTEXT,  CreatePanel::OnSaveContext)
+    EVT_BUTTON(ID_CP_TRANSLATE,     CreatePanel::OnTranslate)
+    EVT_BUTTON(ID_CP_DELETE_FILE,   CreatePanel::OnDeleteFile)
     EVT_BUTTON(ID_CP_OPEN_VIEW,     CreatePanel::OnOpenInView)
-    EVT_LISTBOX_DCLICK(ID_CP_CHAPTER_LIST, CreatePanel::OnOpenInView)
+    EVT_LIST_ITEM_ACTIVATED(ID_CP_CHAPTER_LIST, CreatePanel::OnChapterActivated)
 wxEND_EVENT_TABLE()
 
 static wxArrayString make_styles() {
@@ -171,13 +179,35 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
         inner->Add(m_topicCtrl, 0, wxEXPAND | wxBOTTOM, 10);
     }
 
+    // ── Project context (context.md) ──────────────────────────────────────
+    {
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY, "Project context:"),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        row->AddStretchSpacer();
+        row->Add(new wxButton(this, ID_CP_SAVE_CONTEXT, "Save",
+                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
+                 0, wxALIGN_CENTER_VERTICAL);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
+
+        m_contextCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
+                                       wxDefaultPosition, wxSize(-1, 72),
+                                       wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
+        m_contextCtrl->SetHint(
+            "Describe this project — characters, setting, tone. "
+            "Prepended to the LLM prompt for every generation.");
+        inner->Add(m_contextCtrl, 0, wxEXPAND | wxBOTTOM, 10);
+    }
+    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
+
     // ── Style ─────────────────────────────────────────────────────────────
     {
         auto* row = new wxBoxSizer(wxHORIZONTAL);
         row->Add(new wxStaticText(this, wxID_ANY, "Style:"),
                  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_styleChoice = new wxChoice(this, wxID_ANY, wxDefaultPosition,
-                                     wxDefaultSize, make_styles());
+        m_styleChoice = new wxComboBox(this, wxID_ANY, make_styles()[0],
+                                       wxDefaultPosition, wxSize(200, -1),
+                                       make_styles(), wxCB_DROPDOWN);
         m_styleChoice->SetSelection(0);
         row->Add(m_styleChoice, 0, wxALIGN_CENTER_VERTICAL);
         inner->Add(row, 0, wxBOTTOM, 8);
@@ -287,15 +317,28 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
 
     // ── Chapter list ──────────────────────────────────────────────────────
     {
-        inner->Add(new wxStaticText(this, wxID_ANY, "Chapters in project:"),
+        inner->Add(new wxStaticText(this, wxID_ANY, "Files in project:"),
                    0, wxBOTTOM, 4);
         auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_chapterListBox = new wxListBox(this, ID_CP_CHAPTER_LIST,
-                                         wxDefaultPosition, wxSize(-1, 100));
+        m_chapterListBox = new wxListCtrl(this, ID_CP_CHAPTER_LIST,
+                                          wxDefaultPosition, wxSize(-1, 110),
+                                          wxLC_REPORT | wxLC_SINGLE_SEL);
+        m_chapterListBox->InsertColumn(0, "File",     wxLIST_FORMAT_LEFT, 200);
+        m_chapterListBox->InsertColumn(1, "Language", wxLIST_FORMAT_LEFT,  90);
+        m_chapterListBox->InsertColumn(2, "Created",  wxLIST_FORMAT_LEFT, 130);
+        m_chapterListBox->InsertColumn(3, "Updated",  wxLIST_FORMAT_LEFT, 130);
         row->Add(m_chapterListBox, 1, wxEXPAND | wxRIGHT, 6);
-        row->Add(new wxButton(this, ID_CP_OPEN_VIEW, "Open in View",
-                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-                 0, wxALIGN_TOP);
+        auto* fileBtns = new wxBoxSizer(wxVERTICAL);
+        fileBtns->Add(new wxButton(this, ID_CP_OPEN_VIEW, "Open in View",
+                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
+                      0, wxBOTTOM, 4);
+        m_translateBtn = new wxButton(this, ID_CP_TRANSLATE, "Translate…",
+                                      wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        fileBtns->Add(m_translateBtn, 0, wxBOTTOM, 4);
+        fileBtns->Add(new wxButton(this, ID_CP_DELETE_FILE, "Delete",
+                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
+                      0);
+        row->Add(fileBtns, 0, wxALIGN_TOP);
         inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
@@ -328,6 +371,7 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
 
         RestoreFormState(st);
         LoadChapters();
+        LoadContext();
     }
 
 }
@@ -356,17 +400,51 @@ void CreatePanel::UpdateBackendFields() {
 
 // ---------------------------------------------------------------------------
 void CreatePanel::LoadChapters() {
-    m_chapterListBox->Clear();
+    m_chapterListBox->DeleteAllItems();
     wxString projPath = CurrentProjectPath();
     if (projPath.empty()) return;
     std::error_code ec;
     std::vector<std::string> files;
-    for (auto& e : fs::directory_iterator(projPath.ToStdString(), ec))
-        if (e.path().extension() == ".md" && e.path().filename().string()[0] != '.')
-            files.push_back(e.path().filename().string());
+    for (auto& e : fs::directory_iterator(projPath.ToStdString(), ec)) {
+        std::string fname = e.path().filename().string();
+        if (e.path().extension() == ".md" && fname[0] != '.' && fname != "context.md")
+            files.push_back(fname);
+    }
     std::sort(files.begin(), files.end());
-    for (auto& f : files)
-        m_chapterListBox->Append(wxString::FromUTF8(f));
+    for (auto& f : files) {
+        std::string fullPath = projPath.ToStdString() + "/" + f;
+        long row = m_chapterListBox->InsertItem(m_chapterListBox->GetItemCount(),
+                                                wxString::FromUTF8(f));
+        m_chapterListBox->SetItem(row, 1,
+            wxString::FromUTF8(ReadLanguage(fullPath)));
+        m_chapterListBox->SetItem(row, 2,
+            wxString::FromUTF8(FileCreatedTime(fullPath)));
+        m_chapterListBox->SetItem(row, 3,
+            wxString::FromUTF8(FileModifiedTime(fullPath)));
+    }
+}
+
+void CreatePanel::LoadContext() {
+    wxString projPath = CurrentProjectPath();
+    if (projPath.empty()) { m_contextCtrl->Clear(); return; }
+    fs::path claudeMd = fs::path(projPath.ToStdString()) / "context.md";
+    std::ifstream f(claudeMd);
+    if (!f) { m_contextCtrl->Clear(); return; }
+    std::string content{std::istreambuf_iterator<char>(f), {}};
+    m_contextCtrl->SetValue(wxString::FromUTF8(content));
+}
+
+void CreatePanel::SaveContext() {
+    wxString projPath = CurrentProjectPath();
+    if (projPath.empty()) return;
+    fs::path claudeMd = fs::path(projPath.ToStdString()) / "context.md";
+    std::ofstream f(claudeMd, std::ios::trunc);
+    if (f) f << m_contextCtrl->GetValue().ToStdString();
+}
+
+void CreatePanel::OnSaveContext(wxCommandEvent&) {
+    SaveContext();
+    SetStatus("Project context saved.");
 }
 
 void CreatePanel::LoadProjects() {
@@ -374,16 +452,26 @@ void CreatePanel::LoadProjects() {
     m_projectChoice->Clear();
     if (cfg.defaultFolder.empty()) return;
 
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    for (auto& entry : fs::directory_iterator(cfg.defaultFolder, ec)) {
-        if (entry.is_directory(ec))
-            m_projectChoice->Append(wxString::FromUTF8(entry.path().filename().string()));
-    }
+    for (auto& rel : ListAllProjects(cfg.defaultFolder))
+        m_projectChoice->Append(wxString::FromUTF8(rel));
 }
 
 void CreatePanel::SelectProject(const wxString& name) {
+    // Try exact match first (handles relative paths like "Literature/agatha").
     int idx = m_projectChoice->FindString(name);
+    if (idx == wxNOT_FOUND) {
+        // Fallback: match by last path component for AppState compatibility.
+        wxString lastName = wxString::FromUTF8(
+            fs::path(name.ToStdString()).filename().string());
+        for (int i = 0; i < (int)m_projectChoice->GetCount(); ++i) {
+            wxString item = m_projectChoice->GetString(i);
+            if (wxString::FromUTF8(
+                    fs::path(item.ToStdString()).filename().string()) == lastName) {
+                idx = i;
+                break;
+            }
+        }
+    }
     if (idx != wxNOT_FOUND) m_projectChoice->SetSelection(idx);
 
     wxString path = CurrentProjectPath();
@@ -391,7 +479,8 @@ void CreatePanel::SelectProject(const wxString& name) {
 
     if (!name.empty()) {
         AppState st = LoadAppState();
-        st.currentProject = name.ToStdString();
+        // Save only the last path component for Projects tab compatibility.
+        st.currentProject = fs::path(name.ToStdString()).filename().string();
         SaveAppState(st);
     }
 }
@@ -433,13 +522,29 @@ void CreatePanel::OnProjectSelected(wxCommandEvent&) {
     if (sel == wxNOT_FOUND) return;
     SelectProject(m_projectChoice->GetString(sel));
     LoadChapters();
+    LoadContext();
 }
 
-void CreatePanel::SyncProject() {
+// Called by LoadFile whenever the user opens a file (from any tab or on startup).
+// Lookup chain:
+//   1. Derive the project's relative path from the file path (handles nested projects).
+//   2. Fallback: use the project name saved in AppState (last-component match).
+void CreatePanel::SyncProject(const std::string& filePath) {
+    if (!filePath.empty()) {
+        AppConfig cfg = LoadConfig();
+        std::string rel = ProjectNameFromFilePath(filePath, cfg.defaultFolder);
+        if (!rel.empty()) {
+            SelectProject(wxString::FromUTF8(rel));
+            LoadChapters();
+            LoadContext();
+            return;
+        }
+    }
     AppState st = LoadAppState();
     if (!st.currentProject.empty()) {
         SelectProject(wxString::FromUTF8(st.currentProject));
         LoadChapters();
+        LoadContext();
     }
 }
 
@@ -601,11 +706,11 @@ void CreatePanel::OnBackendChanged(wxCommandEvent&) {
 GenerationRequest CreatePanel::BuildRequest() const {
     GenerationRequest req;
     req.topic = m_topicCtrl->GetValue().ToStdString();
-    req.style = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
+    req.style = m_styleChoice->GetValue().ToStdString();
     for (auto& ch : m_checkedChars)
         req.characters.push_back(ch);
     std::string projDir = CurrentProjectPath().ToStdString();
-    fs::path claudeMd = fs::path(projDir) / "claude.md";
+    fs::path claudeMd = fs::path(projDir) / "context.md";
     if (fs::exists(claudeMd)) {
         std::ifstream f(claudeMd);
         req.projectContext.assign(std::istreambuf_iterator<char>(f), {});
@@ -725,6 +830,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
             std::string path = SaveChapter(projDirStr, filename, stamped);
             if (path.empty()) { SetStatus("Error: could not save chapter file."); return; }
 
+            WriteLanguage(path, language_from_topic(topicStr));
             RegisterChapter(projDirStr, filename);
             for (int i = 0; i < tbCount; ++i)
                 RegisterTidbit(projDirStr, chId, i);
@@ -746,7 +852,7 @@ void CreatePanel::SaveFormState() const {
     st.currentProject = (sel != wxNOT_FOUND)
                         ? m_projectChoice->GetString(sel).ToStdString() : "";
     st.topic   = m_topicCtrl->GetValue().ToStdString();
-    st.style   = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
+    st.style   = m_styleChoice->GetValue().ToStdString();
     st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
 
     std::string chars;
@@ -766,7 +872,10 @@ void CreatePanel::SaveFormState() const {
 void CreatePanel::RestoreFormState(const AppState& st) {
     if (!st.style.empty()) {
         int idx = m_styleChoice->FindString(wxString::FromUTF8(st.style));
-        if (idx != wxNOT_FOUND) m_styleChoice->SetSelection(idx);
+        if (idx != wxNOT_FOUND)
+            m_styleChoice->SetSelection(idx);
+        else
+            m_styleChoice->SetValue(wxString::FromUTF8(st.style));
     }
     if (!st.backend.empty()) {
         int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
@@ -793,8 +902,177 @@ void CreatePanel::OnSave(wxCommandEvent&) {
 }
 
 void CreatePanel::OnOpenInView(wxCommandEvent&) {
-    int sel = m_chapterListBox->GetSelection();
-    if (sel == wxNOT_FOUND) { SetStatus("Select a chapter first."); return; }
-    wxString path = CurrentProjectPath() + "/" + m_chapterListBox->GetString(sel);
+    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (sel == wxNOT_FOUND) { SetStatus("Select a file first."); return; }
+    wxString path = CurrentProjectPath() + "/" + m_chapterListBox->GetItemText(sel, 0);
     if (m_openCallback) m_openCallback(path.ToStdString());
+}
+
+void CreatePanel::OnChapterActivated(wxListEvent& evt) {
+    wxString path = CurrentProjectPath() + "/" + evt.GetText();
+    if (m_openCallback) m_openCallback(path.ToStdString());
+}
+
+// ---------------------------------------------------------------------------
+void CreatePanel::OnDeleteFile(wxCommandEvent&) {
+    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (sel == wxNOT_FOUND) { SetStatus("Select a file to delete first."); return; }
+
+    wxString filename = m_chapterListBox->GetItemText(sel, 0);
+    wxString fullPath = CurrentProjectPath() + "/" + filename;
+
+    if (wxMessageBox("Delete \"" + filename + "\"?\n\nThis cannot be undone.",
+                     "Confirm Delete", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
+        return;
+
+    std::error_code ec;
+    fs::remove(fullPath.ToStdString(), ec);
+    if (ec) {
+        SetStatus("Could not delete file: " + wxString::FromUTF8(ec.message()));
+        return;
+    }
+    SetStatus("Deleted: " + filename);
+    LoadChapters();
+}
+
+// ---------------------------------------------------------------------------
+void CreatePanel::OnTranslate(wxCommandEvent&) {
+    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
+    if (sel == wxNOT_FOUND) { SetStatus("Select a file to translate first."); return; }
+
+    wxString projDir = CurrentProjectPath();
+    if (projDir.empty()) { SetStatus("No project selected."); return; }
+
+    wxString sourceFile = m_chapterListBox->GetItemText(sel, 0);
+    std::string sourcePath = projDir.ToStdString() + "/" + sourceFile.ToStdString();
+
+    wxArrayString langs;
+    for (auto* l : {"English", "Spanish", "French", "German", "Italian", "Portuguese",
+                    "Japanese", "Korean", "Chinese (Mandarin)", "Arabic", "Russian"})
+        langs.Add(l);
+
+    wxSingleChoiceDialog dlg(this, "Translate to:", "Translate", langs);
+    if (dlg.ShowModal() != wxID_OK) return;
+    std::string language = dlg.GetStringSelection().ToStdString();
+
+    std::ifstream ifs(sourcePath);
+    if (!ifs) { SetStatus("Cannot read source file."); return; }
+    std::string sourceText{std::istreambuf_iterator<char>(ifs), {}};
+
+    int bkIdx = m_backendChoice->GetSelection();
+    std::string bkLabel = m_backendChoice->GetString(bkIdx).ToStdString();
+    LLMBackend backend = backend_from_label(bkLabel);
+
+    LLMConfig cfg;
+    cfg.backend     = backend;
+    cfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
+    cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
+
+    bool isChinese = (language == "Chinese (Mandarin)");
+    std::string sourceFilename = sourceFile.ToStdString();
+    std::string projDirStr     = projDir.ToStdString();
+    std::string llmReadme      = GetLLMReadme();
+    OpenCallback cb            = m_openCallback;
+
+    // Chinese always gets ::pinyin annotations so we can produce two files from one call.
+    std::string extraInstr = isChinese ? BuildPinyinInstruction() : "";
+
+    if (backend == LLMBackend::Clipboard) {
+        std::string prompt = BuildTranslationPrompt(sourceText, language, llmReadme, extraInstr);
+        if (wxTheClipboard->Open()) {
+            wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
+            wxTheClipboard->Close();
+        }
+        SetStatus("Translation prompt copied to clipboard.");
+        return;
+    }
+
+    std::string bkLabelCopy = bkLabel;
+    Logger::get().log("Translate: backend=" + bkLabelCopy
+                      + "  source=" + sourceFilename
+                      + "  language=" + language
+                      + "  source_bytes=" + std::to_string(sourceText.size()));
+    if (m_translateBtn) {
+        m_translateBtn->Enable(false);
+        m_translateBtn->SetLabel("Translating…");
+    }
+    SetStatus("Translating to " + wxString::FromUTF8(language) + "…");
+
+    std::thread([this, sourceText, language, isChinese,
+                 sourceFilename, projDirStr, llmReadme, extraInstr, cfg, cb]() mutable {
+        std::string prompt = BuildTranslationPrompt(sourceText, language, llmReadme, extraInstr);
+        LLMResult res = InvokeLLM(prompt, cfg);
+
+        if (!res.ok) {
+            Logger::get().log("Translate FAILED: " + res.error);
+            wxTheApp->CallAfter([this, err = res.error]() {
+                if (m_translateBtn) {
+                    m_translateBtn->Enable(true);
+                    m_translateBtn->SetLabel("Translate…");
+                }
+                SetStatus("Translation error: " + wxString::FromUTF8(err));
+            });
+            return;
+        }
+
+        Logger::get().log("Translate LLM OK: response_bytes=" + std::to_string(res.text.size()));
+        std::string tagged = CleanMarkdownResponse(res.text);
+
+        // For Chinese: parse the single tagged response into two files.
+        // tagged  → _Chinese_Pinyin.md (Chinese lines + ::pinyin annotation lines)
+        // stripped → _Chinese.md (Chinese lines only)
+        std::string pinyinPath;
+        std::string mainPath;
+
+        if (isChinese) {
+            std::string pinyinFile = TranslationFilename(sourceFilename, "Chinese w/ Pinyin");
+            pinyinPath = SaveChapter(projDirStr, pinyinFile, tagged);
+            if (!pinyinPath.empty()) {
+                WriteLanguage(pinyinPath, "Chinese w/ Pinyin");
+                Logger::get().log("Translate saved (pinyin): " + pinyinPath);
+            } else {
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + pinyinFile + " in " + projDirStr);
+            }
+
+            std::string stripped = StripPinyinLines(tagged);
+            std::string chineseFile = TranslationFilename(sourceFilename, "Chinese (Mandarin)");
+            mainPath = SaveChapter(projDirStr, chineseFile, stripped);
+            if (!mainPath.empty()) {
+                WriteLanguage(mainPath, "Chinese (Mandarin)");
+                Logger::get().log("Translate saved (Chinese): " + mainPath);
+            } else {
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + chineseFile + " in " + projDirStr);
+            }
+        } else {
+            std::string outFile = TranslationFilename(sourceFilename, language);
+            mainPath = SaveChapter(projDirStr, outFile, tagged);
+            if (!mainPath.empty()) {
+                WriteLanguage(mainPath, language);
+                Logger::get().log("Translate saved: " + mainPath);
+            } else {
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + outFile + " in " + projDirStr);
+            }
+        }
+
+        wxTheApp->CallAfter([this, mainPath, pinyinPath, isChinese, cb]() {
+            if (m_translateBtn) {
+                m_translateBtn->Enable(true);
+                m_translateBtn->SetLabel("Translate…");
+            }
+            LoadChapters();
+            if (isChinese && !pinyinPath.empty()) {
+                SetStatus("Translated: " +
+                    wxString::FromUTF8(fs::path(mainPath).filename().string()) +
+                    " and " +
+                    wxString::FromUTF8(fs::path(pinyinPath).filename().string()));
+                if (cb) cb(pinyinPath);
+            } else if (!mainPath.empty()) {
+                SetStatus("Translated: " +
+                    wxString::FromUTF8(fs::path(mainPath).filename().string()));
+                if (cb) cb(mainPath);
+            } else {
+                SetStatus("Error: translation completed but file could not be saved. Check View Logs.");
+            }
+        });
+    }).detach();
 }

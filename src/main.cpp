@@ -1,4 +1,5 @@
 #include <wx/wx.h>
+#include <wx/config.h>
 #include "mdviewer.h"
 #include "markdown.h"
 #include "logger.h"
@@ -87,6 +88,11 @@ bool StoryTellerApp::OnInit() {
             wxMessageBox("File not found: " + path, "StoryTeller", wxOK | wxICON_ERROR);
             return false;
         }
+    } else {
+        wxConfig cfg("MDViewer");
+        wxString last;
+        if (cfg.Read("lastFile", &last) && wxFileExists(last))
+            path = last;
     }
 
     MDViewerFrame* frame = new MDViewerFrame(path);

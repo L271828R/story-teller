@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <utility>
+#include <vector>
 
 struct ProjectConfig {
     std::string name;
@@ -10,7 +11,7 @@ struct ProjectConfig {
     std::string ollamaUrl;    // default: http://localhost:11434
 };
 
-// Creates <baseDir>/<name>/ with a claude.md stub and an empty .index file.
+// Creates <baseDir>/<name>/ with a context.md stub and an empty .index file.
 bool CreateProject(const std::string& baseDir, const std::string& name);
 
 // Initialises an existing directory as a project in place (no subdirectory).
@@ -44,3 +45,10 @@ int NextTidbitId(const std::string& projectDir);
 // Returns {true, ""} on success, or {false, reason} on any error.
 struct MoveResult { bool ok; std::string error; };
 MoveResult MoveFolder(const std::string& srcPath, const std::string& dstFolderPath);
+
+// Returns a sorted list of relative paths (from defaultFolder) for every project
+// directory found at any nesting depth under defaultFolder.
+// A directory is a project when ProjectExists() returns true for it.
+// Directories that are not projects are recursed into as organisational folders.
+// Example: defaultFolder/Literature/agatha -> "Literature/agatha"
+std::vector<std::string> ListAllProjects(const std::string& defaultFolder);

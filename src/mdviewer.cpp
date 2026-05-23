@@ -341,14 +341,16 @@ void MDViewerFrame::LoadAndRender() {
 // Menu handlers
 // ---------------------------------------------------------------------------
 void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
-    const std::string logPath = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller/story-teller.log";
+    const std::string logPath = Logger::get().filePath();
     std::string html = BuildLogsHTML(ReadFile(logPath), logPath, m_darkMode);
     m_webView->SetPage(wxString::FromUTF8(html), "");
+    // Switch to the View tab so the rendered HTML is actually visible.
+    m_notebook->SetSelection(3);
     SetStatusText("Viewing logs — use View > View Document to return");
 }
 
 void MDViewerFrame::OnClearLogs(wxCommandEvent&) {
-    const std::string logPath = std::string(getenv("HOME") ?: "") + "/Library/Logs/StoryTeller/story-teller.log";
+    const std::string logPath = Logger::get().filePath();
     std::ofstream f(logPath, std::ios::trunc);
     SetStatusText("Logs cleared");
 }
@@ -357,7 +359,8 @@ void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
     SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
     if (m_editPage) m_editPage->RefreshChapters();
-    if (m_createPage) m_createPage->SyncProject();
+    if (m_createPage) m_createPage->SyncProject(path);
+    wxConfig("MDViewer").Write("lastFile", m_filePath);
     // View is the last tab (index 3: Projects=0, Create=1, Edit=2, View=3).
     m_notebook->SetSelection(3);
     LoadAndRender();
@@ -395,6 +398,7 @@ void MDViewerFrame::OnOpen(wxCommandEvent&) {
     if (dlg.ShowModal() == wxID_CANCEL) return;
     m_filePath = dlg.GetPath();
     SetTitle("MDViewer — " + wxFileName(m_filePath).GetFullName());
+    wxConfig("MDViewer").Write("lastFile", m_filePath);
     LoadAndRender();
 }
 

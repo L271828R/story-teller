@@ -35,14 +35,14 @@ std::string BuildProjectSearchText(const std::string& name,
     std::string searchable = name + " " + source + " " + lastLLM;
 
     // Index only the file that activating the project would open — the first
-    // .md alphabetically excluding claude.md. This keeps project search
+    // .md alphabetically excluding context.md. This keeps project search
     // consistent with what Ctrl+F can actually find in the view.
     std::error_code ec;
     std::vector<fs::path> mdFiles;
     for (auto& entry : fs::directory_iterator(path, ec)) {
         if (!entry.is_regular_file(ec) || entry.path().extension() != ".md")
             continue;
-        if (entry.path().filename() == "claude.md") continue;
+        if (entry.path().filename() == "context.md") continue;
         mdFiles.push_back(entry.path());
     }
     std::sort(mdFiles.begin(), mdFiles.end());

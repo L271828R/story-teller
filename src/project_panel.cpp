@@ -759,7 +759,7 @@ void ProjectPanel::ActivateSelectedProject() {
         for (auto& entry : fs::directory_iterator(projectPath, ec)) {
             if (entry.is_regular_file(ec) &&
                 entry.path().extension() == ".md" &&
-                entry.path().filename() != "claude.md") {
+                entry.path().filename() != "context.md") {
                 mdFiles.push_back(entry.path().string());
             }
         }
@@ -767,7 +767,7 @@ void ProjectPanel::ActivateSelectedProject() {
         if (!mdFiles.empty()) {
             fileToOpen = mdFiles[0];
         } else {
-            std::string claudePath = projectPath + "/claude.md";
+            std::string claudePath = projectPath + "/context.md";
             if (fs::exists(claudePath)) fileToOpen = claudePath;
         }
     }

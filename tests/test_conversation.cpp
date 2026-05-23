@@ -176,6 +176,46 @@ int test_conversation() {
         }
     }
 
+    // BuildChatHTML: input textarea must be embedded in the HTML (not a wx widget).
+    {
+        std::vector<ConversationTurn> turns;
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasTextarea = html.find("<textarea") != std::string::npos;
+        if (!hasTextarea) {
+            std::cerr << "FAIL [chat-html-has-textarea]: no <textarea in HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-html-has-textarea]\n";
+        }
+    }
+
+    // BuildChatHTML: JS must post to the chatSend script message handler.
+    {
+        std::vector<ConversationTurn> turns;
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasChatSend = html.find("chatSend") != std::string::npos;
+        if (!hasChatSend) {
+            std::cerr << "FAIL [chat-html-send-js]: 'chatSend' not found in HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-html-send-js]\n";
+        }
+    }
+
+    // BuildChatHTML: textarea and button must be disabled when pendingQ is set (LLM in flight).
+    {
+        std::vector<ConversationTurn> turns = {{"Hi", "Hello!"}};
+        std::string html = BuildChatHTML("Ch1", turns, "waiting for response", false);
+        bool disabled = html.find("<textarea") != std::string::npos &&
+                        html.find("disabled") != std::string::npos;
+        if (!disabled) {
+            std::cerr << "FAIL [chat-html-input-disabled-when-busy]: input not disabled during pending\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-html-input-disabled-when-busy]\n";
+        }
+    }
+
     // BuildChatHTML: multi-paragraph answer must produce <p> tags, not raw newlines.
     // Without RenderMarkdown the answer div contains a flat string with no <p>.
     {

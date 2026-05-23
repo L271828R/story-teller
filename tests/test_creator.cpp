@@ -504,5 +504,146 @@ int test_creator() {
         }
     }
 
+    // FilenameFromContent extracts the title from an H1 (# ) heading.
+    // LLMs sometimes generate # headings instead of the requested ## format.
+    {
+        std::string content = "# The Raven's Shadow\n\nSome story text.\n";
+        std::string name = FilenameFromContent(content, "fallback topic", 1);
+        if (name != "the_raven_s_shadow.md") {
+            std::cerr << "FAIL [filename-from-content-h1-heading]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [filename-from-content-h1-heading]\n";
+        }
+    }
+
+    // ChapterFilename truncates a long topic to avoid filenames containing
+    // the full prompt text (the fallback path when no heading is found).
+    {
+        std::string longTopic = "please use your mdviewer skill i want to learn about the key";
+        std::string name = ChapterFilename(longTopic, 1);
+        // Should contain ch01_ prefix and end in .md, and be short.
+        bool hasPrefix = name.rfind("ch01_", 0) == 0;
+        bool hasMd     = name.size() > 3 && name.substr(name.size() - 3) == ".md";
+        bool notTooLong = name.size() <= 45;
+        if (!hasPrefix || !hasMd || !notTooLong) {
+            std::cerr << "FAIL [chapter-filename-truncated]: got '" << name << "' (len=" << name.size() << ")\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chapter-filename-truncated]\n";
+        }
+    }
+
+    // ProjectNameFromFilePath: returns the folder name when the file lives directly
+    // inside a subfolder of defaultFolder.
+    {
+        std::string folder = "/Users/alice/projects";
+        std::string file   = "/Users/alice/projects/my-story/chapter_one.md";
+        std::string name   = ProjectNameFromFilePath(file, folder);
+        if (name != "my-story") {
+            std::cerr << "FAIL [project-name-from-path]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-name-from-path]\n";
+        }
+    }
+
+    // ProjectNameFromFilePath: returns empty string when the file is not under
+    // defaultFolder (avoids selecting the wrong project).
+    {
+        std::string folder = "/Users/alice/projects";
+        std::string file   = "/Users/bob/other/chapter.md";
+        std::string name   = ProjectNameFromFilePath(file, folder);
+        if (!name.empty()) {
+            std::cerr << "FAIL [project-name-from-path-mismatch]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-name-from-path-mismatch]\n";
+        }
+    }
+
+    // ProjectNameFromFilePath: nested project returns relative path from defaultFolder.
+    {
+        std::string folder = "/Users/alice/projects";
+        std::string file   = "/Users/alice/projects/Literature/agatha/chapter.md";
+        std::string name   = ProjectNameFromFilePath(file, folder);
+        if (name != "Literature/agatha") {
+            std::cerr << "FAIL [project-name-from-path-nested]: got '" << name << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-name-from-path-nested]\n";
+        }
+    }
+
+    // TranslationFilename: appends language slug before extension.
+    {
+        struct Case { std::string src; std::string lang; std::string want; };
+        for (auto& c : std::vector<Case>{
+            {"the_ravens_shadow.md", "Spanish",          "the_ravens_shadow_Spanish.md"},
+            {"the_ravens_shadow.md", "Chinese (Mandarin)","the_ravens_shadow_Chinese.md"},
+            {"the_ravens_shadow.md", "Chinese w/ Pinyin", "the_ravens_shadow_Chinese_Pinyin.md"},
+            {"ch01_intro.md",        "French",            "ch01_intro_French.md"},
+        }) {
+            std::string got = TranslationFilename(c.src, c.lang);
+            if (got != c.want) {
+                std::cerr << "FAIL [translation-filename]: src='" << c.src
+                          << "' lang='" << c.lang << "' got='" << got << "'\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [translation-filename:" << c.lang << "]\n";
+            }
+        }
+    }
+
+    // BuildPinyinInstruction uses ::pinyin tag so the LLM output can be parsed.
+    {
+        std::string instr = BuildPinyinInstruction();
+        bool hasTag = instr.find("::pinyin") != std::string::npos;
+        if (!hasTag) {
+            std::cerr << "FAIL [pinyin-instruction]: instruction does not contain ::pinyin tag\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pinyin-instruction]\n";
+        }
+    }
+
+    // BuildTranslationPrompt includes Chinese-with-Pinyin instruction when requested.
+    {
+        std::string prompt = BuildTranslationPrompt("## Chapter\n\nText.", "Chinese (Mandarin)", "",
+                                                    BuildPinyinInstruction());
+        bool hasPinyin = prompt.find("Pinyin") != std::string::npos ||
+                         prompt.find("pinyin") != std::string::npos;
+        if (!hasPinyin) {
+            std::cerr << "FAIL [pinyin-instruction-in-prompt]: prompt did not mention Pinyin\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pinyin-instruction-in-prompt]\n";
+        }
+    }
+
+    // StripPinyinLines removes ::pinyin tag lines, keeps Chinese prose.
+    {
+        std::string with_pinyin =
+            "## Chapter One\n\n"
+            "这是一个句子。\n"
+            "::pinyin Zhè shì yī gè jùzi.\n"
+            "\n"
+            "另一句话。\n"
+            "::pinyin Lìng yī jùhuà.\n";
+        std::string expected =
+            "## Chapter One\n\n"
+            "这是一个句子。\n"
+            "\n"
+            "另一句话。\n";
+        std::string got = StripPinyinLines(with_pinyin);
+        if (got != expected) {
+            std::cerr << "FAIL [strip-pinyin-lines]: got '" << got
+                      << "' expected '" << expected << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [strip-pinyin-lines]\n";
+        }
+    }
+
     return failures;
 }

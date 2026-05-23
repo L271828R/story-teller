@@ -210,6 +210,11 @@ std::string BuildChatHTML(const std::string& chTitle,
     const std::string aBg     = darkMode ? "#1c2a1c" : "#f1f8e9";
     const std::string mutedC  = darkMode ? "#8b949e" : "#666666";
     const std::string borderC = darkMode ? "#30363d" : "#d0d7de";
+    const std::string inputBg = darkMode ? "#161b22"  : "#f6f8fa";
+    const std::string linkC   = darkMode ? "#58a6ff"  : "#0969da";
+
+    bool busy = !pendingQ.empty();
+    const std::string dis = busy ? " disabled" : "";
 
     std::string body;
     int idx = 0;
@@ -233,12 +238,17 @@ std::string BuildChatHTML(const std::string& chTitle,
                + EscapeHTML(chTitle) + "</em>.</p>";
     }
 
+    body += "<div id='chat-input'>"
+            "<textarea id='chat-ans' placeholder='Ask something\xe2\x80\xa6'" + dis + "></textarea>"
+            "<button id='chat-send' onclick='chatSend()'" + dis + ">Send</button>"
+            "</div>";
+
     return "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
            "<style>"
            "* { box-sizing: border-box; margin: 0; padding: 0 }"
            "body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
            "  font-size: 14px; line-height: 1.6; background: " + bg + "; color: " + text + ";"
-           "  padding: 16px; }"
+           "  padding: 12px 16px 90px; }"
            ".turn { position: relative; margin-bottom: 20px; }"
            ".del-btn { float: right; background: transparent;"
            "  border: 1px solid transparent; cursor: pointer;"
@@ -257,14 +267,44 @@ std::string BuildChatHTML(const std::string& chTitle,
            ".thinking { color: " + mutedC + "; font-style: italic; }"
            ".empty { color: " + mutedC + "; font-style: italic; padding: 8px 0; }"
            "code { background: rgba(128,128,128,.15); padding: .15em .35em; border-radius: 3px; }"
+           "#chat-input { position:fixed; bottom:0; left:0; right:0;"
+           "  background:" + bg + "; border-top:1px solid " + borderC + ";"
+           "  padding:6px 8px; z-index:50; display:flex; gap:6px; align-items:flex-end; }"
+           "#chat-ans { flex:1; min-height:50px; max-height:120px; resize:vertical;"
+           "  padding:6px 8px; border:1px solid " + borderC + "; border-radius:4px;"
+           "  background:" + inputBg + "; color:" + text + ";"
+           "  font-family:inherit; font-size:.95em; line-height:1.4; }"
+           "#chat-ans:focus { outline:2px solid " + linkC + "; outline-offset:-1px; }"
+           "#chat-send { padding:6px 16px; border-radius:4px;"
+           "  border:1px solid " + linkC + "; background:" + linkC + ";"
+           "  color:#fff; cursor:pointer; font-weight:600; font-size:.9em;"
+           "  white-space:nowrap; align-self:flex-end; }"
+           "#chat-send:disabled { opacity:.38; cursor:default;"
+           "  background:" + inputBg + "; color:" + mutedC + "; border-color:" + borderC + "; }"
            "</style>"
            "<script>"
            "function delTurn(i){"
            "if(window.webkit&&window.webkit.messageHandlers&&"
            "window.webkit.messageHandlers.deleteTurn)"
            "window.webkit.messageHandlers.deleteTurn.postMessage(''+i);}"
+           "function chatSend(){"
+           "var t=document.getElementById('chat-ans');"
+           "var txt=t?t.value.trim():'';"
+           "if(!txt)return;"
+           "if(window.webkit&&window.webkit.messageHandlers&&"
+           "window.webkit.messageHandlers.chatSend)"
+           "window.webkit.messageHandlers.chatSend.postMessage(txt);"
+           "if(t)t.value='';}"
            "</script>"
            "</head><body>" + body +
-           "<script>window.scrollTo(0,document.body.scrollHeight);</script>"
+           "<script>(function(){"
+           "var a=document.getElementById('chat-ans');"
+           "if(!a)return;"
+           "a.addEventListener('keydown',function(e){"
+           "if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();chatSend();}"
+           "});"
+           "if(!a.disabled){a.focus();}"
+           "window.scrollTo(0,document.body.scrollHeight);"
+           "})();</script>"
            "</body></html>";
 }

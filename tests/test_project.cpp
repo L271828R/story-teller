@@ -1,4 +1,5 @@
 #include "project.h"
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -17,18 +18,18 @@ static fs::path make_temp_dir() {
 int test_project() {
     int failures = 0;
 
-    // CreateProject creates the folder, a claude.md stub, and an empty .index.
+    // CreateProject creates the folder, a context.md stub, and an empty .index.
     {
         auto base = make_temp_dir();
         bool ok       = CreateProject(base.string(), "my-story");
         fs::path proj = base / "my-story";
         bool dirExists = fs::exists(proj);
-        bool claudeMd  = fs::exists(proj / "claude.md");
+        bool claudeMd  = fs::exists(proj / "context.md");
         bool index     = fs::exists(proj / ".index");
         if (!ok || !dirExists || !claudeMd || !index) {
             std::cerr << "FAIL [create-project]: ok=" << ok
                       << " dir=" << dirExists
-                      << " claude.md=" << claudeMd
+                      << " context.md=" << claudeMd
                       << " .index=" << index << "\n";
             ++failures;
         } else {
@@ -163,12 +164,12 @@ int test_project() {
     {
         auto base = make_temp_dir();
         bool ok       = InitProject(base.string());
-        bool claudeMd = fs::exists(base / "claude.md");
+        bool claudeMd = fs::exists(base / "context.md");
         bool index    = fs::exists(base / ".index");
         bool isProj   = ProjectExists(base.string());
         if (!ok || !claudeMd || !index || !isProj) {
             std::cerr << "FAIL [init-project]: ok=" << ok
-                      << " claude.md=" << claudeMd
+                      << " context.md=" << claudeMd
                       << " .index=" << index
                       << " isProj=" << isProj << "\n";
             ++failures;
@@ -282,13 +283,13 @@ int test_project() {
         bool precondition = !fs::exists(projectPath);  // must not exist beforehand
         bool ok           = InitProject(projectPath);
         bool isProject    = ProjectExists(projectPath);
-        bool hasClaude    = fs::exists(fs::path(projectPath) / "claude.md");
+        bool hasClaude    = fs::exists(fs::path(projectPath) / "context.md");
         bool hasIndex     = fs::exists(fs::path(projectPath) / ".index");
 
         if (!precondition || !ok || !isProject || !hasClaude || !hasIndex) {
             std::cerr << "FAIL [new-project-creates-subdir]: precondition=" << precondition
                       << " ok=" << ok << " isProject=" << isProject
-                      << " claude.md=" << hasClaude << " .index=" << hasIndex << "\n";
+                      << " context.md=" << hasClaude << " .index=" << hasIndex << "\n";
             ++failures;
         } else {
             std::cout << "PASS [new-project-creates-subdir]\n";
@@ -323,6 +324,69 @@ int test_project() {
             std::cout << "PASS [new-project-name-collision]\n";
         }
         fs::remove_all(root);
+    }
+
+    // ListAllProjects: flat layout returns top-level project names.
+    {
+        auto base = make_temp_dir();
+        CreateProject(base.string(), "alpha");
+        CreateProject(base.string(), "beta");
+        fs::create_directories(base / "not-a-project");  // no .index, must be ignored
+
+        auto list = ListAllProjects(base.string());
+        bool hasAlpha = (std::find(list.begin(), list.end(), "alpha") != list.end());
+        bool hasBeta  = (std::find(list.begin(), list.end(), "beta")  != list.end());
+        bool noExtra  = (list.size() == 2);
+        if (!hasAlpha || !hasBeta || !noExtra) {
+            std::cerr << "FAIL [list-projects-flat]: size=" << list.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [list-projects-flat]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // ListAllProjects: nested layout returns relative paths.
+    {
+        auto base = make_temp_dir();
+        fs::create_directories(base / "Literature");
+        CreateProject((base / "Literature").string(), "agatha");
+        CreateProject((base / "Literature").string(), "kafka");
+
+        auto list = ListAllProjects(base.string());
+        bool hasAgatha = (std::find(list.begin(), list.end(), "Literature/agatha") != list.end());
+        bool hasKafka  = (std::find(list.begin(), list.end(), "Literature/kafka")  != list.end());
+        bool noExtra   = (list.size() == 2);
+        if (!hasAgatha || !hasKafka || !noExtra) {
+            std::cerr << "FAIL [list-projects-nested]: size=" << list.size();
+            for (auto& p : list) std::cerr << " '" << p << "'";
+            std::cerr << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [list-projects-nested]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // ListAllProjects: mixed flat + nested layout, result is sorted.
+    {
+        auto base = make_temp_dir();
+        CreateProject(base.string(), "zzz-top");
+        fs::create_directories(base / "Science");
+        CreateProject((base / "Science").string(), "physics");
+        CreateProject(base.string(), "aaa-first");
+
+        auto list = ListAllProjects(base.string());
+        bool isSorted = std::is_sorted(list.begin(), list.end());
+        bool hasAll   = (list.size() == 3);
+        if (!isSorted || !hasAll) {
+            std::cerr << "FAIL [list-projects-mixed]: sorted=" << isSorted
+                      << " size=" << list.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [list-projects-mixed]\n";
+        }
+        fs::remove_all(base);
     }
 
     return failures;

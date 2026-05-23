@@ -13,10 +13,7 @@
 
 namespace fs = std::filesystem;
 
-enum { ID_CP_SEND = wxID_HIGHEST + 501 };
-
 wxBEGIN_EVENT_TABLE(ChatPanel, wxPanel)
-    EVT_BUTTON(ID_CP_SEND, ChatPanel::OnSend)
 wxEND_EVENT_TABLE()
 
 // ---------------------------------------------------------------------------
@@ -45,23 +42,14 @@ ChatPanel::ChatPanel(wxWindow*             parent,
     // Chat history webview
     m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
     m_webView->AddScriptMessageHandler("deleteTurn");
+    m_webView->AddScriptMessageHandler("chatSend");
     m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
                     &ChatPanel::OnScriptMessage, this);
-
-    // Input row: multiline text (Enter = newline) + Send button
-    auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
-    m_inputCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                 wxDefaultPosition, wxSize(-1, 60),
-                                 wxTE_MULTILINE);
-    m_sendBtn = new wxButton(this, ID_CP_SEND, "Send");
-    inputRow->Add(m_inputCtrl, 1, wxEXPAND | wxALL, 6);
-    inputRow->Add(m_sendBtn, 0, wxALIGN_BOTTOM | wxALL, 6);
 
     auto* outer = new wxBoxSizer(wxVERTICAL);
     outer->Add(headerRow, 0, wxEXPAND | wxTOP | wxBOTTOM, 4);
     outer->Add(line, 0, wxEXPAND);
     outer->Add(m_webView, 1, wxEXPAND);
-    outer->Add(inputRow, 0, wxEXPAND);
     SetSizer(outer);
 
     ApplyTheme();
@@ -69,15 +57,7 @@ ChatPanel::ChatPanel(wxWindow*             parent,
 
 // ---------------------------------------------------------------------------
 void ChatPanel::ApplyTheme() {
-    if (m_darkMode) {
-        SetBackgroundColour(wxColour(13, 17, 23));
-        m_inputCtrl->SetBackgroundColour(wxColour(28, 33, 40));
-        m_inputCtrl->SetForegroundColour(wxColour(230, 237, 243));
-    } else {
-        SetBackgroundColour(wxNullColour);
-        m_inputCtrl->SetBackgroundColour(wxNullColour);
-        m_inputCtrl->SetForegroundColour(wxNullColour);
-    }
+    SetBackgroundColour(m_darkMode ? wxColour(13, 17, 23) : wxNullColour);
     Refresh();
 }
 
@@ -88,10 +68,10 @@ void ChatPanel::Open(const std::string& filePath, int chId,
     m_chId     = chId;
     m_chTitle  = chTitle;
     m_llmCfg   = llmCfg;
+    m_isOpen   = true;
     m_titleLabel->SetLabel(wxString::FromUTF8("Chat \xe2\x80\x94 " + chTitle));
     LoadHistory();
     Render();
-    m_inputCtrl->SetFocus();
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +94,13 @@ void ChatPanel::Render(const std::string& pendingQ) {
 
 // ---------------------------------------------------------------------------
 void ChatPanel::OnScriptMessage(wxWebViewEvent& evt) {
+    const wxString handler = evt.GetMessageHandler();
+    if (handler == "chatSend") {
+        std::string question = evt.GetString().Trim().ToStdString();
+        if (!question.empty()) DoSend(question);
+        return;
+    }
+    // handler == "deleteTurn"
     if (m_busy) return;
     long idx = -1;
     if (!evt.GetString().ToLong(&idx) || idx < 0 || idx >= (long)m_turns.size()) return;
@@ -124,15 +111,10 @@ void ChatPanel::OnScriptMessage(wxWebViewEvent& evt) {
 }
 
 // ---------------------------------------------------------------------------
-void ChatPanel::OnSend(wxCommandEvent&) {
-    if (m_busy || m_chId < 0) return;
-    wxString raw = m_inputCtrl->GetValue().Trim();
-    if (raw.empty()) return;
+void ChatPanel::DoSend(const std::string& question) {
+    if (m_busy || !m_isOpen) return;
 
-    std::string question = raw.ToStdString();
-    m_inputCtrl->Clear();
     m_busy = true;
-    m_sendBtn->Enable(false);
     Render(question);
 
     std::string filePath = m_filePath;
@@ -161,7 +143,6 @@ void ChatPanel::OnSend(wxCommandEvent&) {
 
         wxTheApp->CallAfter([this, res, filePath, chId, chTitle, question]() {
             m_busy = false;
-            m_sendBtn->Enable(true);
 
             // Discard if the user switched to a different chapter while waiting.
             if (m_chId != chId) return;

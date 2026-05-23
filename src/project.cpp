@@ -1,9 +1,11 @@
 #include "project.h"
 #include "git_ops.h"
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -43,8 +45,8 @@ static int ReadInt(const std::map<std::string, std::string>& m,
 }
 
 static bool write_stub_files(const fs::path& proj, const std::string& name) {
-    if (!fs::exists(proj / "claude.md")) {
-        std::ofstream md(proj / "claude.md");
+    if (!fs::exists(proj / "context.md")) {
+        std::ofstream md(proj / "context.md");
         md << "# " << name << "\n\n"
            << "Add project context here. "
            << "This text is prepended to every generation prompt.\n";
@@ -179,4 +181,28 @@ MoveResult MoveFolder(const std::string& srcPath, const std::string& dstFolderPa
     if (ec) return {false, "Could not move: " + ec.message()};
 
     return {true, ""};
+}
+
+static void collectProjects(const fs::path& base,
+                             const fs::path& dir,
+                             std::vector<std::string>& out) {
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(dir, ec)) {
+        if (!entry.is_directory(ec)) continue;
+        if (ProjectExists(entry.path().string())) {
+            auto rel = entry.path().lexically_relative(base);
+            out.push_back(rel.string());
+        } else {
+            collectProjects(base, entry.path(), out);
+        }
+    }
+}
+
+std::vector<std::string> ListAllProjects(const std::string& defaultFolder) {
+    std::vector<std::string> result;
+    collectProjects(fs::path(defaultFolder).lexically_normal(),
+                    fs::path(defaultFolder).lexically_normal(),
+                    result);
+    std::sort(result.begin(), result.end());
+    return result;
 }
