@@ -1,0 +1,269 @@
+#include "persona_panel_html.h"
+#include <cstdio>
+#include <string>
+
+static std::string jstr(const std::string& s) {
+    std::string o = "\"";
+    for (unsigned char c : s) {
+        if      (c == '"')  o += "\\\"";
+        else if (c == '\\') o += "\\\\";
+        else if (c == '\n') o += "\\n";
+        else if (c == '\r') o += "\\r";
+        else if (c < 0x20)  { char b[8]; snprintf(b,8,"\\u%04x",c); o += b; }
+        else                 o += (char)c;
+    }
+    return o + "\"";
+}
+
+std::string BuildPersonaPanelHTML(
+    const std::map<std::string, std::vector<std::string>>& categories,
+    const std::map<std::string, std::string>& images,
+    bool darkMode)
+{
+    // Build JS data: categories object
+    std::string catJS = "{";
+    bool fc = true;
+    for (const auto& kv : categories) {
+        if (!fc) catJS += ",";
+        fc = false;
+        catJS += jstr(kv.first) + ":[";
+        bool fn = true;
+        for (const auto& n : kv.second) {
+            if (!fn) catJS += ",";
+            fn = false;
+            catJS += jstr(n);
+        }
+        catJS += "]";
+    }
+    catJS += "}";
+
+    // Build JS data: images object
+    std::string imgJS = "{";
+    bool fi = true;
+    for (const auto& kv : images) {
+        if (!fi) imgJS += ",";
+        fi = false;
+        imgJS += jstr(kv.first) + ":" + jstr(kv.second);
+    }
+    imgJS += "}";
+
+    const char* bodyClass = darkMode ? "dark" : "";
+
+    return R"HTML(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+:root{
+  --bg:#f5f5f5;--surface:#fff;--border:#ddd;
+  --text:#222;--muted:#888;--accent:#0066cc;
+  --pill-active:#0066cc;--pill-active-text:#fff;
+  --card-hover:#f0f4ff;--btn-bg:#fff;
+}
+.dark{
+  --bg:#1e1e1e;--surface:#2a2a2a;--border:#444;
+  --text:#e0e0e0;--muted:#999;--accent:#4d9fff;
+  --pill-active:#4d9fff;--pill-active-text:#111;
+  --card-hover:#2a2a3a;--btn-bg:#2a2a2a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+  font-size:13px;background:var(--bg);color:var(--text);
+  padding:16px;
+}
+h2{font-size:15px;font-weight:600;margin-bottom:14px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px}
+.pill{
+  padding:4px 14px;border-radius:20px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);
+  cursor:pointer;font-size:12px;user-select:none;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.pill:hover{background:var(--card-hover)}
+.pill.active{
+  background:var(--pill-active);color:var(--pill-active-text);
+  border-color:var(--pill-active);font-weight:600;
+}
+.grid{display:flex;flex-wrap:wrap;gap:14px}
+.card{
+  width:136px;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:16px 10px 12px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  transition:background .15s;
+}
+.card:hover{background:var(--card-hover)}
+.avatar{
+  width:76px;height:76px;border-radius:50%;
+  overflow:hidden;border:2px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;font-size:26px;font-weight:700;color:#fff;
+}
+.avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.pname{
+  font-size:11px;font-weight:500;text-align:center;
+  color:var(--text);line-height:1.3;word-break:break-word;
+  max-height:2.6em;overflow:hidden;
+}
+.upload-btn{
+  padding:4px 10px;border-radius:5px;
+  border:1px solid var(--border);background:var(--btn-bg);
+  color:var(--text);cursor:pointer;font-size:11px;
+  transition:background .15s;white-space:nowrap;
+}
+.upload-btn:hover{background:var(--card-hover)}
+.upload-btn.has-img{color:var(--accent);border-color:var(--accent)}
+.empty{color:var(--muted);padding:32px;text-align:center;width:100%}
+.cat-label{
+  font-size:10px;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.05em;margin-top:2px;
+}
+.search{
+  width:100%;padding:7px 10px;border-radius:7px;
+  border:1px solid var(--border);background:var(--surface);
+  color:var(--text);font-size:13px;margin-bottom:12px;
+  outline:none;box-sizing:border-box;
+}
+.search:focus{border-color:var(--accent)}
+</style>
+</head>
+<body class=")HTML" + std::string(bodyClass) + R"HTML(">
+<h2>Manage Personas</h2>
+<input class="search" id="search" type="text" placeholder="Search…" oninput="setSearch(this.value)">
+<div class="filters" id="filters"></div>
+<div class="grid" id="grid"></div>
+
+<script>
+var _cats   = )HTML" + catJS + R"HTML(;
+var _imgs   = )HTML" + imgJS + R"HTML(;
+var _cur    = '__all__';
+var _search = '';
+
+function send(obj) {
+  window.webkit.messageHandlers.persona.postMessage(JSON.stringify(obj));
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function norm(s) {
+  return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'');
+}
+
+function nameColor(name) {
+  var h = 0;
+  for (var i = 0; i < name.length; i++)
+    h = (h * 31 + name.charCodeAt(i)) & 0xfffffff;
+  return 'hsl(' + (h % 360) + ',55%,42%)';
+}
+
+function fuzzy(name, q) {
+  if (!q) return true;
+  var n = name.toLowerCase(), qi = 0;
+  for (var i = 0; i < n.length && qi < q.length; i++)
+    if (n[i] === q[qi]) qi++;
+  return qi === q.length;
+}
+
+function getNames() {
+  var names;
+  if (_cur === '__all__') {
+    var all = {}, out = [];
+    Object.keys(_cats).sort().forEach(function(c) {
+      _cats[c].forEach(function(n) { if (!all[n]) { all[n]=1; out.push(n); } });
+    });
+    names = out.sort();
+  } else {
+    names = (_cats[_cur] || []).slice();
+  }
+  if (_search) {
+    var q = _search.toLowerCase();
+    names = names.filter(function(n) { return fuzzy(n, q); });
+  }
+  return names;
+}
+
+function getCat(name) {
+  var found = [];
+  Object.keys(_cats).forEach(function(c) {
+    if (_cats[c].indexOf(name) !== -1) found.push(c);
+  });
+  return found.join(', ');
+}
+
+function renderFilters() {
+  var cats = Object.keys(_cats).sort();
+  var h = '<div class="pill active" id="pill-all" data-cat="__all__" onclick="setFilter(this.dataset.cat)">All</div>';
+  cats.forEach(function(c) {
+    h += '<div class="pill" id="pill-' + norm(c) + '" data-cat="' + esc(c) +
+         '" onclick="setFilter(this.dataset.cat)">' + esc(c) + '</div>';
+  });
+  document.getElementById('filters').innerHTML = h;
+}
+
+function renderGrid() {
+  var names = getNames();
+  if (!names.length) {
+    document.getElementById('grid').innerHTML = '<div class="empty">No personas found.</div>';
+    return;
+  }
+  var h = names.map(function(name) {
+    var key  = norm(name);
+    var url  = _imgs[key];
+    var hasImg = !!url;
+    var avatar = hasImg
+      ? '<img src="' + url + '" alt="' + esc(name) + '">'
+      : '<span style="background:' + nameColor(name) + '">' +
+        esc(name.trim().charAt(0).toUpperCase()) + '</span>';
+    var catLabel = _cur === '__all__' && !_search
+      ? '<div class="cat-label">' + esc(getCat(name)) + '</div>' : '';
+    return '<div class="card">' +
+      '<div class="avatar">' + avatar + '</div>' +
+      '<div class="pname">' + esc(name) + '</div>' +
+      catLabel +
+      '<button class="upload-btn' + (hasImg ? ' has-img' : '') +
+      '" data-name="' + esc(name) + '" onclick="upload(this.dataset.name)">' +
+      (hasImg ? 'Replace' : 'Upload Image') + '</button>' +
+      '</div>';
+  }).join('');
+  document.getElementById('grid').innerHTML = h;
+}
+
+function setFilter(cat) {
+  _cur = cat;
+  document.querySelectorAll('.pill').forEach(function(p){ p.classList.remove('active'); });
+  var id = cat === '__all__' ? 'pill-all' : 'pill-' + norm(cat);
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+  renderGrid();
+}
+
+function setSearch(val) {
+  _search = val.trim();
+  renderGrid();
+}
+
+function upload(name) {
+  send({action:'upload', name:name});
+}
+
+window.updatePersonaImage = function(key, url) {
+  _imgs[key] = url;
+  renderGrid();
+};
+
+window.setDarkMode = function(dark) {
+  document.body.classList.toggle('dark', dark);
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  renderFilters();
+  renderGrid();
+  document.getElementById('search').focus();
+});
+</script>
+</body>
+</html>
+)HTML";
+}

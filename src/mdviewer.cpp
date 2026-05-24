@@ -9,6 +9,8 @@
 #include "creator.h"
 #include "config.h"
 #include "notes.h"
+#include "persona.h"
+#include "persona_panel.h"
 #include <wx/notebook.h>
 #include <wx/webview.h>
 #include <wx/filedlg.h>
@@ -20,6 +22,7 @@
 #include <algorithm>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -46,6 +49,8 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, MDViewerFrame::OnScriptMessage)
     EVT_MENU(ID_SAVE_HTML,            MDViewerFrame::OnSaveHTML)
     EVT_MENU(ID_NEW_FROM_CLIPBOARD,   MDViewerFrame::OnNewFromClipboard)
+    EVT_MENU(ID_FOCUS_MODE,           MDViewerFrame::OnFocusMode)
+    EVT_MENU(ID_MANAGE_PERSONAS,      MDViewerFrame::OnManagePersonas)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
@@ -78,6 +83,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     wxMenu*    file = new wxMenu();
     file->Append(wxID_OPEN,             "&Open…\tCtrl+O");
     file->Append(ID_NEW_FROM_CLIPBOARD, "New from &Clipboard…\tCtrl+Shift+N");
+    file->Append(ID_MANAGE_PERSONAS,    "Manage &Personas…");
     file->Append(ID_RELOAD,             "&Reload\tCtrl+R");
     file->Append(ID_SAVE_HTML,          "Save &HTML…\tCtrl+Shift+S");
     file->AppendSeparator();
@@ -110,6 +116,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     view->Append(ID_FONT_INCREASE, "Increase Font Size\tCtrl++");
     view->Append(ID_FONT_DECREASE, "Decrease Font Size\tCtrl+-");
     view->Append(ID_FONT_RESET,    "Reset Font Size\tCtrl+0");
+    view->AppendSeparator();
+    view->Append(ID_FOCUS_MODE,    "Focus Mode\tCtrl+Shift+H");
     bar->Append(view, "&View");
 
     SetMenuBar(bar);
@@ -221,7 +229,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── Edit page ─────────────────────────────────────────────────────────
     m_editPage = new EditPanel(m_notebook,
-        [this](const std::string& path) { LoadFile(path); });
+        [this](const std::string& path) { LoadFile(path); }, m_darkMode);
     m_notebook->AddPage(m_editPage, "Edit");
 
     // ── View page (last) ──────────────────────────────────────────────────
@@ -336,7 +344,8 @@ void MDViewerFrame::LoadAndRender() {
     }
 
     std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
-    std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent);
+    std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent,
+                                  ToDataURLs(ScanPersonaImages()));
 
     wxString baseURL = "file://" + wxFileName(m_filePath).GetPath(wxPATH_GET_SEPARATOR);
     m_webView->SetPage(wxString::FromUTF8(html), baseURL);
@@ -380,6 +389,7 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         cfg.Write("darkMode", false);
         if (m_chatPanel) m_chatPanel->SetDarkMode(false);
         if (m_createPage) m_createPage->SetDarkMode(false);
+        if (m_editPage) m_editPage->SetDarkMode(false);
         if (m_monitorPage) m_monitorPage->SetDarkMode(false);
         LoadAndRender();
     }
@@ -392,6 +402,7 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         cfg.Write("darkMode", true);
         if (m_chatPanel) m_chatPanel->SetDarkMode(true);
         if (m_createPage) m_createPage->SetDarkMode(true);
+        if (m_editPage) m_editPage->SetDarkMode(true);
         if (m_monitorPage) m_monitorPage->SetDarkMode(true);
         LoadAndRender();
     }
@@ -437,6 +448,25 @@ void MDViewerFrame::OnNewFromClipboard(wxCommandEvent&) {
         f << data.GetText().ToStdString();
     }
     LoadFile(path);
+}
+
+void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
+    AppConfig cfg = LoadConfig();
+    std::map<std::string, std::vector<std::string>> cats;
+    if (!cfg.defaultFolder.empty())
+        cats = ExtractTidbitNamesByCategory(cfg.defaultFolder);
+
+    if (cats.empty() && !m_filePath.empty()) {
+        std::string content = ReadFile(m_filePath.ToStdString());
+        auto names = ExtractTidbitNames(content);
+        if (!names.empty())
+            cats["(Current File)"] = names;
+    }
+
+    auto images = ScanPersonaImages();
+    auto* panel = new PersonaPanel(this, m_darkMode, cats, images,
+                                   [this]{ LoadAndRender(); });
+    panel->Show();
 }
 
 void MDViewerFrame::OnReload(wxCommandEvent&) { LoadAndRender(); }
@@ -506,6 +536,10 @@ void MDViewerFrame::OnFontDecrease(wxCommandEvent&) {
     wxConfig cfg("MDViewer");
     cfg.Write("fontSizePercent", (long)m_fontSizePercent);
     LoadAndRender();
+}
+
+void MDViewerFrame::OnFocusMode(wxCommandEvent&) {
+    m_webView->RunScript("toggleFocusMode()");
 }
 
 void MDViewerFrame::OnFontReset(wxCommandEvent&) {

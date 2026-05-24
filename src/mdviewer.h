@@ -30,6 +30,8 @@ enum {
     ID_SAVE_HTML,
     ID_CHAT_OPEN,
     ID_NEW_FROM_CLIPBOARD,
+    ID_FOCUS_MODE,
+    ID_MANAGE_PERSONAS,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -71,6 +73,8 @@ private:
 
     void OnOpen(wxCommandEvent& evt);
     void OnNewFromClipboard(wxCommandEvent& evt);
+    void OnFocusMode(wxCommandEvent& evt);
+    void OnManagePersonas(wxCommandEvent& evt);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);
     void OnThemeDark(wxCommandEvent& evt);

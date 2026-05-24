@@ -1,31 +1,92 @@
 #include "edit_panel.h"
 #include "config.h"
 #include "creator.h"
+#include "edit_panel_html.h"
 #include "editor.h"
 #include "git_ops.h"
 #include "llm.h"
 #include "logger.h"
 #include "meta.h"
 #include "project.h"
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <thread>
-#include <chrono>
 #include <cctype>
-#include <wx/button.h>
+#include <wx/app.h>
 #include <wx/clipbrd.h>
-#include <wx/choice.h>
 #include <wx/dataobj.h>
-#include <wx/listbox.h>
-#include <wx/radiobut.h>
+#include <wx/msgdlg.h>
 #include <wx/sizer.h>
-#include <wx/statline.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
+#include <wx/textdlg.h>
 #include <wx/utils.h>
 
 namespace fs = std::filesystem;
+
+// ── JSON helpers ──────────────────────────────────────────────────────────────
+
+static std::string ExtractField(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\"";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    if (pos >= json.size() || json[pos] != '"') return "";
+    ++pos;
+    std::string val;
+    while (pos < json.size()) {
+        char c = json[pos++];
+        if (c == '"') break;
+        if (c == '\\' && pos < json.size()) {
+            char e = json[pos++];
+            switch (e) {
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'n':  val += '\n'; break;
+                case 'r':  val += '\r'; break;
+                case 't':  val += '\t'; break;
+                default:   val += e;    break;
+            }
+        } else {
+            val += c;
+        }
+    }
+    return val;
+}
+
+static int ExtractInt(const std::string& json, const std::string& key, int def = -1) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return def;
+    pos += search.size();
+    while (pos < json.size() && json[pos] == ' ') ++pos;
+    if (pos >= json.size()) return def;
+    try { return std::stoi(json.substr(pos)); } catch (...) { return def; }
+}
+
+// Escape a value for embedding in a JS single-quoted string literal.
+static std::string jsq(const std::string& s) {
+    std::string r = "'";
+    for (char c : s) {
+        if      (c == '\'') r += "\\'";
+        else if (c == '\\') r += "\\\\";
+        else if (c == '\n') r += "\\n";
+        else if (c == '\r') { /* skip */ }
+        else r += c;
+    }
+    return r + "'";
+}
+
+static std::string language_suffix(const std::string& language) {
+    std::string out;
+    for (unsigned char c : language) {
+        if (std::isalnum(c)) out += (char)std::tolower(c);
+        else if (!out.empty() && out.back() != '_') out += '_';
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out.empty() ? "translated" : out;
+}
 
 static std::string shell_quote(const std::string& s) {
     std::string out = "'";
@@ -47,428 +108,312 @@ static std::string applescript_string(const std::string& s) {
     return out;
 }
 
+// ── LLM config helper ─────────────────────────────────────────────────────────
+
 static LLMConfig llm_config_from_state(const AppState& st) {
     LLMConfig cfg;
-    cfg.backend = LLMBackend::Clipboard;
     cfg.backend = BackendFromLabel(st.backend);
     if (!st.apiKey.empty())      cfg.apiKey      = st.apiKey;
     if (!st.ollamaModel.empty()) cfg.ollamaModel = st.ollamaModel;
     return cfg;
 }
 
-static std::string language_suffix(const std::string& language) {
-    std::string out;
-    for (unsigned char c : language) {
-        if (std::isalnum(c)) out += (char)std::tolower(c);
-        else if (!out.empty() && out.back() != '_') out += '_';
-    }
-    while (!out.empty() && out.back() == '_') out.pop_back();
-    return out.empty() ? "translated" : out;
-}
+// ── Constructor ───────────────────────────────────────────────────────────────
 
-static wxString preview_label(const char* prefix, int id, const std::string& preview) {
-    wxString text = wxString::FromUTF8(preview);
-    if (text.length() > 80) text = text.Left(80) + "...";
-    return wxString::Format("%s:%d  ", prefix, id) + text;
-}
-
-enum {
-    ID_EP_REFRESH        = wxID_HIGHEST + 300,
-    ID_EP_CHAPTER,
-    ID_EP_OPEN_VIEW,
-    ID_EP_OPEN_VIM,
-    ID_EP_MOVE_UP,
-    ID_EP_MOVE_DOWN,
-    ID_EP_RENAME_FILE,
-    ID_EP_DELETE_FILE,
-    ID_EP_REWRITE,
-    ID_EP_TRANSLATE,
-    ID_EP_RADIO_TIDBIT,
-    ID_EP_RADIO_CHAPTER,
-    ID_EP_COMMIT,
-    ID_EP_VIEW_VER,
-    ID_EP_DIFF,
-    ID_EP_RESTORE,
-    ID_EP_CHECKOUT,
-    ID_EP_STASH,
-    ID_EP_UNSTASH,
-};
-
-wxBEGIN_EVENT_TABLE(EditPanel, wxPanel)
-    EVT_BUTTON(ID_EP_REFRESH,           EditPanel::OnRefresh)
-    EVT_LISTBOX(ID_EP_CHAPTER,          EditPanel::OnChapterSelected)
-    EVT_LISTBOX_DCLICK(ID_EP_CHAPTER,   EditPanel::OnChapterActivated)
-    EVT_BUTTON(ID_EP_MOVE_UP,           EditPanel::OnMoveFileUp)
-    EVT_BUTTON(ID_EP_MOVE_DOWN,         EditPanel::OnMoveFileDown)
-    EVT_BUTTON(ID_EP_RENAME_FILE,       EditPanel::OnRenameFile)
-    EVT_BUTTON(ID_EP_DELETE_FILE,       EditPanel::OnDeleteFile)
-    EVT_RADIOBUTTON(ID_EP_RADIO_TIDBIT,  EditPanel::OnTargetChanged)
-    EVT_RADIOBUTTON(ID_EP_RADIO_CHAPTER, EditPanel::OnTargetChanged)
-    EVT_BUTTON(ID_EP_REWRITE,           EditPanel::OnRewrite)
-    EVT_BUTTON(ID_EP_TRANSLATE,         EditPanel::OnTranslate)
-    EVT_BUTTON(ID_EP_COMMIT,            EditPanel::OnCommit)
-    EVT_BUTTON(ID_EP_VIEW_VER,          EditPanel::OnViewVersion)
-    EVT_BUTTON(ID_EP_DIFF,              EditPanel::OnDiff)
-    EVT_BUTTON(ID_EP_RESTORE,           EditPanel::OnRestore)
-    EVT_BUTTON(ID_EP_CHECKOUT,          EditPanel::OnCheckout)
-    EVT_BUTTON(ID_EP_STASH,             EditPanel::OnStash)
-    EVT_BUTTON(ID_EP_UNSTASH,           EditPanel::OnUnstash)
-wxEND_EVENT_TABLE()
-
-EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged)
+EditPanel::EditPanel(wxWindow* parent, OpenCallback onFileChanged, bool darkMode)
     : wxPanel(parent, wxID_ANY)
     , m_openCallback(std::move(onFileChanged))
+    , m_darkMode(darkMode)
 {
-    auto* outer = new wxBoxSizer(wxVERTICAL);
-    auto* inner = new wxBoxSizer(wxVERTICAL);
+    m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
+    m_webView->AddScriptMessageHandler("edit");
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+        [this](wxWebViewEvent& evt) {
+            if (evt.GetMessageHandler() == "edit")
+                HandleMessage(evt.GetString().ToStdString());
+        });
 
-    // ── File list (left) + right list (tidbits or chapter sections) ──────
-    {
-        auto* cols = new wxBoxSizer(wxHORIZONTAL);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(m_webView, 1, wxEXPAND);
+    SetSizer(sizer);
 
-        auto* leftCol = new wxBoxSizer(wxVERTICAL);
-        leftCol->Add(new wxStaticText(this, wxID_ANY, "File:"), 0, wxBOTTOM, 4);
-        m_chapterList = new wxListBox(this, ID_EP_CHAPTER,
-                                      wxDefaultPosition, wxSize(310, 110));
-        leftCol->Add(m_chapterList, 1, wxEXPAND);
-
-        auto* orderRow = new wxBoxSizer(wxHORIZONTAL);
-        m_moveUpBtn = new wxButton(this, ID_EP_MOVE_UP, "↑",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_moveDownBtn = new wxButton(this, ID_EP_MOVE_DOWN, "↓",
-                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        orderRow->Add(m_moveUpBtn, 0, wxRIGHT, 6);
-        orderRow->Add(m_moveDownBtn, 0);
-        leftCol->Add(orderRow, 0, wxTOP, 6);
-
-        auto* openRow = new wxBoxSizer(wxHORIZONTAL);
-        openRow->Add(new wxStaticText(this, wxID_ANY, "Open:"),
-                     0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_radioOpenView = new wxRadioButton(this, ID_EP_OPEN_VIEW, "View tab",
-                                            wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
-        m_radioOpenVim  = new wxRadioButton(this, ID_EP_OPEN_VIM, "Vim");
-        m_radioOpenView->SetValue(true);
-        openRow->Add(m_radioOpenView, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        openRow->Add(m_radioOpenVim,  0, wxALIGN_CENTER_VERTICAL);
-        leftCol->Add(openRow, 0, wxTOP, 6);
-
-        auto* fileBtnRow = new wxBoxSizer(wxHORIZONTAL);
-        m_renameFileBtn = new wxButton(this, ID_EP_RENAME_FILE, "Rename",
-                                       wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_deleteFileBtn = new wxButton(this, ID_EP_DELETE_FILE, "Delete",
-                                       wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        fileBtnRow->Add(m_renameFileBtn, 0, wxRIGHT, 6);
-        fileBtnRow->Add(m_deleteFileBtn, 0);
-        leftCol->Add(fileBtnRow, 0, wxTOP, 6);
-
-        cols->Add(leftCol, 0, wxEXPAND | wxRIGHT, 12);
-
-        auto* rightCol = new wxBoxSizer(wxVERTICAL);
-        m_rightLabel = new wxStaticText(this, wxID_ANY, "Tidbits:");
-        rightCol->Add(m_rightLabel, 0, wxBOTTOM, 4);
-        m_tidbitList = new wxListBox(this, wxID_ANY,
-                                     wxDefaultPosition, wxSize(-1, 70));
-        rightCol->Add(m_tidbitList, 0, wxEXPAND);
-        cols->Add(rightCol, 1, wxEXPAND);
-
-        inner->Add(cols, 0, wxEXPAND | wxBOTTOM, 6);
-
-        auto* refreshRow = new wxBoxSizer(wxHORIZONTAL);
-        refreshRow->AddStretchSpacer();
-        refreshRow->Add(new wxButton(this, ID_EP_REFRESH, "↺ Refresh",
-                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0);
-        inner->Add(refreshRow, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Rewrite target ────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Rewrite:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-        m_radioTidbit  = new wxRadioButton(this, ID_EP_RADIO_TIDBIT, "Selected tidbit",
-                                           wxDefaultPosition, wxDefaultSize, wxRB_GROUP);
-        m_radioChapter = new wxRadioButton(this, ID_EP_RADIO_CHAPTER, "Selected chapter");
-        m_radioTidbit->SetValue(true);
-        row->Add(m_radioTidbit,  0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 12);
-        row->Add(m_radioChapter, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxBOTTOM, 10);
-    }
-
-    // ── Instruction ───────────────────────────────────────────────────────
-    inner->Add(new wxStaticText(this, wxID_ANY, "Instruction:"), 0, wxBOTTOM, 6);
-    m_instructCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                    wxDefaultPosition, wxSize(-1, 60),
-                                    wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
-    m_instructCtrl->SetHint("e.g. Make this shorter and funnier, translate to Spanish…");
-    inner->Add(m_instructCtrl, 0, wxEXPAND | wxBOTTOM, 8);
-
-    m_rewriteBtn = new wxButton(this, ID_EP_REWRITE, "Rewrite");
-    inner->Add(m_rewriteBtn, 0, wxBOTTOM, 10);
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Translate selected file ───────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Translate file to:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_translateLangCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                             wxDefaultPosition, wxSize(180, -1));
-        m_translateLangCtrl->SetHint("e.g. Spanish, Chinese");
-        row->Add(m_translateLangCtrl, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_translateBtn = new wxButton(this, ID_EP_TRANSLATE, "Translate file",
-                                      wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        row->Add(m_translateBtn, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Git version history ───────────────────────────────────────────────
-    inner->Add(new wxStaticText(this, wxID_ANY, "Version history for this project folder (select 1 or 2):"),
-               0, wxBOTTOM, 4);
-
-    // History list — LB_EXTENDED lets user ctrl/shift-click two items.
-    m_historyList = new wxListBox(this, wxID_ANY,
-                                  wxDefaultPosition, wxSize(-1, 110),
-                                  0, nullptr, wxLB_EXTENDED);
-    inner->Add(m_historyList, 0, wxEXPAND | wxBOTTOM, 6);
-
-    {
-        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Commit");
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_commitMsgCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                         wxDefaultPosition, wxDefaultSize, 0);
-        m_commitMsgCtrl->SetHint("Commit message…");
-        row->Add(m_commitMsgCtrl, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_commitBtn = new wxButton(this, ID_EP_COMMIT, "Save to git",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        row->Add(m_commitBtn, 0, wxALIGN_CENTER_VERTICAL);
-        box->Add(row, 0, wxEXPAND | wxALL, 6);
-        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-
-    {
-        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Version");
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_viewVerBtn = new wxButton(this, ID_EP_VIEW_VER, "View version",
-                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_diffBtn    = new wxButton(this, ID_EP_DIFF,    "Diff selected vs current",
-                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_restoreBtn = new wxButton(this, ID_EP_RESTORE, "Restore",
-                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_checkoutBtn = new wxButton(this, ID_EP_CHECKOUT, "Checkout",
-                                     wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        row->Add(m_viewVerBtn, 0, wxRIGHT, 8);
-        row->Add(m_diffBtn,    0, wxRIGHT, 8);
-        row->Add(m_restoreBtn, 0, wxRIGHT, 8);
-        row->Add(m_checkoutBtn, 0);
-        box->Add(row, 0, wxEXPAND | wxALL, 6);
-        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-
-    {
-        auto* box = new wxStaticBoxSizer(wxVERTICAL, this, "Stash");
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_stashBtn = new wxButton(this, ID_EP_STASH, "Stash changes",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        m_unstashBtn = new wxButton(this, ID_EP_UNSTASH, "Unstash latest",
-                                    wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        row->Add(m_stashBtn, 0, wxRIGHT, 8);
-        row->Add(m_unstashBtn, 0);
-        box->Add(row, 0, wxEXPAND | wxALL, 6);
-        inner->Add(box, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
-
-    // ── Status ────────────────────────────────────────────────────────────
-    m_statusCtrl = new wxTextCtrl(this, wxID_ANY, "Select a file to begin.",
-                                  wxDefaultPosition, wxSize(-1, 70),
-                                  wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
-    inner->Add(m_statusCtrl, 1, wxEXPAND);
-
-    outer->Add(inner, 1, wxEXPAND | wxALL, 14);
-    SetSizer(outer);
-
-    RefreshChapters();
+    m_webView->SetPage(wxString::FromUTF8(BuildEditPanelHTML(m_darkMode)), "");
 }
 
-// ---------------------------------------------------------------------------
-
-std::string EditPanel::CurrentProjectPath() const {
-    AppConfig  cfg = LoadConfig();
-    AppState   st  = LoadAppState();
-    if (cfg.defaultFolder.empty() || st.currentProject.empty()) return "";
-    return cfg.defaultFolder + "/" + st.currentProject;
-}
-
-std::string EditPanel::CurrentChapterPath() const {
-    int sel = m_chapterList->GetSelection();
-    if (sel == wxNOT_FOUND) return "";
-    std::string proj = CurrentProjectPath();
-    if (proj.empty()) return "";
-    return proj + "/" + m_chapterList->GetString(sel).ToStdString();
-}
+// ── Public interface ──────────────────────────────────────────────────────────
 
 void EditPanel::RefreshChapters() {
-    std::string previousFile;
-    int previousSelection = m_chapterList->GetSelection();
-    if (previousSelection != wxNOT_FOUND)
-        previousFile = m_chapterList->GetString(previousSelection).ToStdString();
+    if (!m_ready) { m_pendingRefresh = true; return; }
+    DoRefresh();
+}
 
-    m_chapterList->Clear();
-    m_tidbitList->Clear();
-    m_historyList->Clear();
+void EditPanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    Run("setDarkMode(" + std::string(dark ? "true" : "false") + ");");
+}
+
+// ── WebView helpers ───────────────────────────────────────────────────────────
+
+void EditPanel::Run(const std::string& js) {
+    if (!m_ready || !m_webView) return;
+    m_webView->RunScript(wxString::FromUTF8(js));
+}
+
+void EditPanel::HandleMessage(const std::string& json) {
+    std::string action = ExtractField(json, "action");
+
+    if (action == "ready") {
+        m_ready = true;
+        DoRefresh();
+        return;
+    }
+    if (action == "refresh")             { DoRefresh(); return; }
+    if (action == "select_file")         { OnSelectFile(ExtractField(json,"file")); return; }
+    if (action == "open_file")           { OnOpenFile(ExtractField(json,"file"), ExtractField(json,"mode")); return; }
+    if (action == "move_file")           { OnMoveFile(ExtractField(json,"file"), ExtractField(json,"direction")); return; }
+    if (action == "rename_file")         { OnRenameFile(); return; }
+    if (action == "delete_file")         { OnDeleteFile(); return; }
+    if (action == "set_rewrite_target")  {
+        m_showSections = (ExtractField(json,"target") == "chapter");
+        PushItems();
+        return;
+    }
+    if (action == "rewrite")             { OnRewrite(json); return; }
+    if (action == "translate")           { OnTranslate(json); return; }
+    if (action == "commit")              { OnCommit(ExtractField(json,"file"), ExtractField(json,"message")); return; }
+    if (action == "view_version")        { OnViewVersion(ExtractField(json,"commit")); return; }
+    if (action == "diff")                { OnDiff(ExtractField(json,"file"), ExtractField(json,"commit1"), ExtractField(json,"commit2")); return; }
+    if (action == "restore")             { OnRestore(ExtractField(json,"file"), ExtractField(json,"commit"), ExtractField(json,"shortHash"), ExtractField(json,"subject")); return; }
+    if (action == "checkout")            { OnCheckout(ExtractField(json,"commit"), ExtractField(json,"shortHash"), ExtractField(json,"subject")); return; }
+    if (action == "stash")               { OnStash(); return; }
+    if (action == "unstash")             { OnUnstash(); return; }
+}
+
+// ── State pushers ─────────────────────────────────────────────────────────────
+
+void EditPanel::PushFiles() {
+    std::string js = "setFiles([";
+    for (size_t i = 0; i < m_files.size(); ++i) {
+        if (i) js += ",";
+        js += jsq(m_files[i]);
+    }
+    js += "]," + std::to_string(m_selFile) + ");";
+    Run(js);
+}
+
+void EditPanel::PushItems() {
+    const bool sections = m_showSections;
+    std::string target = sections ? "chapter" : "tidbit";
+    std::string js = "setItems([";
+    if (sections) {
+        for (size_t i = 0; i < m_sections.size(); ++i) {
+            if (i) js += ",";
+            js += "{id:" + std::to_string(m_sections[i].id) +
+                  ",label:" + jsq("ch:" + std::to_string(m_sections[i].id)
+                                  + "  " + m_sections[i].preview) +
+                  ",type:'chapter'}";
+        }
+    } else {
+        for (size_t i = 0; i < m_tidbits.size(); ++i) {
+            if (i) js += ",";
+            js += "{id:" + std::to_string(m_tidbits[i].id) +
+                  ",label:" + jsq("tb:" + std::to_string(m_tidbits[i].id)
+                                  + "  " + m_tidbits[i].preview) +
+                  ",type:'tidbit'}";
+        }
+    }
+    js += "]," + jsq(target) + ");";
+    Run(js);
+}
+
+void EditPanel::PushHistory() {
+    std::string js = "setHistory([";
+    for (size_t i = 0; i < m_commits.size(); ++i) {
+        if (i) js += ",";
+        js += "{hash:" + jsq(m_commits[i].hash) +
+              ",shortHash:" + jsq(m_commits[i].shortHash) +
+              ",date:" + jsq(m_commits[i].date) +
+              ",subject:" + jsq(m_commits[i].subject) + "}";
+    }
+    js += "]);";
+    Run(js);
+}
+
+void EditPanel::PushStatus(const std::string& msg) {
+    Run("setStatus(" + jsq(msg) + ");");
+}
+
+void EditPanel::PushBusy(bool on) {
+    m_busy = on;
+    Run(std::string("setBusy(") + (on ? "true" : "false") + ");");
+}
+
+// ── Business logic ────────────────────────────────────────────────────────────
+
+std::string EditPanel::CurrentProjectPath() const {
+    AppConfig cfg = LoadConfig();
+    AppState  st  = LoadAppState();
+    if (cfg.defaultFolder.empty() || st.currentProject.empty()) return "";
+
+    // st.currentProject may be just the base name ("darwin") or a full
+    // relative path ("Literature/darwin") — try direct first, then search.
+    std::string direct = cfg.defaultFolder + "/" + st.currentProject;
+    if (fs::exists(direct)) return direct;
+
+    std::string base = fs::path(st.currentProject).filename().string();
+    for (const auto& rel : ListAllProjects(cfg.defaultFolder)) {
+        if (fs::path(rel).filename().string() == base)
+            return cfg.defaultFolder + "/" + rel;
+    }
+    return "";
+}
+
+std::string EditPanel::ChapterPath(const std::string& filename) const {
+    std::string proj = CurrentProjectPath();
+    if (proj.empty() || filename.empty()) return "";
+    return proj + "/" + filename;
+}
+
+void EditPanel::DoRefresh() {
+    m_files.clear();
     m_tidbits.clear();
     m_sections.clear();
     m_commits.clear();
+    m_selFile = -1;
 
     std::string proj = CurrentProjectPath();
-    if (proj.empty()) { SetStatus("No project selected — use the Create tab first."); return; }
+    if (proj.empty()) {
+        PushFiles();
+        PushItems();
+        PushHistory();
+        PushStatus("No project selected — use the Create tab to open a project.");
+        return;
+    }
 
     std::error_code ec;
-    std::vector<std::string> files;
-    for (auto& e : fs::directory_iterator(proj, ec))
-        if (e.path().extension() == ".md" && e.path().filename().string()[0] != '.')
-            files.push_back(e.path().filename().string());
-    std::sort(files.begin(), files.end());
-    files = ApplyFileOrder(files, LoadFileOrder(proj));
-
-    for (auto& f : files)
-        m_chapterList->Append(wxString::FromUTF8(f));
-
-    if (m_chapterList->GetCount() > 0) {
-        int selection = RefreshedFileSelectionIndex(files, previousFile);
-        if (selection < 0 || selection >= (int)m_chapterList->GetCount()) selection = 0;
-        m_chapterList->SetSelection(selection);
-        ReloadRightList();
-        LoadHistory();
-    } else {
-        SetStatus("No files yet — generate one in the Create tab.");
+    for (auto& e : fs::directory_iterator(proj, ec)) {
+        std::string name = e.path().filename().string();
+        if (e.path().extension() == ".md" && name[0] != '.')
+            m_files.push_back(name);
     }
+    std::sort(m_files.begin(), m_files.end());
+    m_files = ApplyFileOrder(m_files, LoadFileOrder(proj));
+
+    if (!m_files.empty()) {
+        // Pick a sensible default: re-use prev selection, else prefer a
+        // non-context story file (one that has tidbit markers).
+        int pick = 0;
+        if (m_selFile >= 0 && m_selFile < (int)m_files.size()) {
+            pick = m_selFile;  // keep previous
+        } else {
+            for (int i = 0; i < (int)m_files.size(); ++i) {
+                if (m_files[i] != "context.md") { pick = i; break; }
+            }
+        }
+        m_selFile = pick;
+        LoadItemsForFile(m_files[m_selFile]);
+        PushFiles();
+        PushItems();
+        PushStatus(std::to_string(m_files.size()) + " file(s). "
+                   "Double-click to open in View tab.");
+        LoadHistoryForProject();
+        PushHistory();
+    } else {
+        PushFiles();
+        PushItems();
+        PushHistory();
+        PushStatus("No .md files found in: " + proj);
+    }
+}
+
+void EditPanel::LoadItemsForFile(const std::string& filename) {
+    m_tidbits.clear();
+    m_sections.clear();
+
+    std::string path = ChapterPath(filename);
+    if (path.empty()) return;
+
+    std::ifstream f(path);
+    if (!f) return;
+    std::string content((std::istreambuf_iterator<char>(f)), {});
+
+    // Tidbits
+    {
+        const std::string prefix = "<!-- tb:";
+        size_t pos = 0;
+        while ((pos = content.find(prefix, pos)) != std::string::npos) {
+            auto end = content.find(" -->", pos);
+            if (end == std::string::npos) break;
+            std::string id_str = content.substr(pos + prefix.size(), end - pos - prefix.size());
+            int id = 0;
+            try { id = std::stoi(id_str); } catch (...) { pos = end; continue; }
+
+            std::string block = ExtractTidbit(content, id);
+            std::string preview = "[empty]";
+            if (!block.empty()) {
+                std::istringstream ss(block);
+                std::string line;
+                while (std::getline(ss, line))
+                    if (!line.empty() && line.substr(0, 3) != ":::")
+                        { preview = line; break; }
+            }
+            if (preview.size() > 80) {
+                // Truncate at a UTF-8 character boundary (continuation bytes are 10xxxxxx).
+                size_t cut = 77;
+                while (cut > 0 && (preview[cut] & 0xC0) == 0x80) --cut;
+                preview = preview.substr(0, cut) + "...";
+            }
+            m_tidbits.push_back({id, preview});
+            pos = end;
+        }
+    }
+
+    // Sections / chapters
+    {
+        const std::string prefix = "<!-- ch:";
+        size_t pos = 0;
+        while ((pos = content.find(prefix, pos)) != std::string::npos) {
+            auto end = content.find(" -->", pos);
+            if (end == std::string::npos) break;
+            std::string id_str = content.substr(pos + prefix.size(), end - pos - prefix.size());
+            int id = 0;
+            try { id = std::stoi(id_str); } catch (...) { pos = end; continue; }
+
+            std::string block = ExtractChapter(content, id);
+            std::string preview = "[empty]";
+            if (!block.empty()) {
+                std::istringstream ss(block);
+                std::string line;
+                while (std::getline(ss, line))
+                    if (line.rfind("## ", 0) == 0) { preview = line.substr(3); break; }
+            }
+            if (preview.size() > 80) {
+                size_t cut = 77;
+                while (cut > 0 && (preview[cut] & 0xC0) == 0x80) --cut;
+                preview = preview.substr(0, cut) + "...";
+            }
+            m_sections.push_back({id, preview});
+            pos = end;
+        }
+    }
+}
+
+void EditPanel::LoadHistoryForProject() {
+    m_commits.clear();
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+    auto log = GitLogProject(proj);
+    for (auto& c : log)
+        m_commits.push_back({c.hash, c.shortHash, c.date, c.subject});
 }
 
 void EditPanel::SaveCurrentFileOrder() const {
     std::string proj = CurrentProjectPath();
     if (proj.empty()) return;
-
-    std::vector<std::string> files;
-    for (unsigned int i = 0; i < m_chapterList->GetCount(); ++i)
-        files.push_back(m_chapterList->GetString(i).ToStdString());
-    SaveFileOrder(proj, files);
+    SaveFileOrder(proj, m_files);
 }
 
-// Reload the right list based on the active radio button.
-void EditPanel::ReloadRightList() {
-    if (m_radioChapter->GetValue()) {
-        m_rightLabel->SetLabel("Chapters:");
-        LoadSections();
-    } else {
-        m_rightLabel->SetLabel("Tidbits:");
-        LoadTidbits();
-    }
-}
-
-void EditPanel::LoadTidbits() {
-    m_tidbitList->Clear();
-    m_tidbits.clear();
-
-    std::string path = CurrentChapterPath();
-    if (path.empty()) return;
-
-    std::ifstream f(path);
-    if (!f) { SetStatus("Cannot read: " + path); return; }
-    std::string content((std::istreambuf_iterator<char>(f)), {});
-
-    std::string marker_prefix = "<!-- tb:";
-    std::size_t pos = 0;
-    while ((pos = content.find(marker_prefix, pos)) != std::string::npos) {
-        auto end = content.find(" -->", pos);
-        if (end == std::string::npos) break;
-        std::string id_str = content.substr(pos + marker_prefix.size(),
-                                            end - pos - marker_prefix.size());
-        int id = 0;
-        try { id = std::stoi(id_str); } catch (...) { pos = end; continue; }
-
-        std::string block = ExtractTidbit(content, id);
-        std::string preview = "[empty]";
-        if (!block.empty()) {
-            std::istringstream ss(block);
-            std::string line;
-            while (std::getline(ss, line))
-                if (!line.empty() && line.substr(0, 3) != ":::") { preview = line; break; }
-        }
-
-        m_tidbits.push_back({id, preview});
-        m_tidbitList->Append(preview_label("tb", id, preview));
-        pos = end;
-    }
-
-    SetStatus(m_tidbits.empty() ? "No tidbits found in this file."
-                                 : wxString::Format("%d tidbit(s) found.", (int)m_tidbits.size()));
-}
-
-void EditPanel::LoadSections() {
-    m_tidbitList->Clear();
-    m_sections.clear();
-
-    std::string path = CurrentChapterPath();
-    if (path.empty()) return;
-
-    std::ifstream f(path);
-    if (!f) { SetStatus("Cannot read: " + path); return; }
-    std::string content((std::istreambuf_iterator<char>(f)), {});
-
-    std::string marker_prefix = "<!-- ch:";
-    std::size_t pos = 0;
-    while ((pos = content.find(marker_prefix, pos)) != std::string::npos) {
-        auto end = content.find(" -->", pos);
-        if (end == std::string::npos) break;
-        std::string id_str = content.substr(pos + marker_prefix.size(),
-                                            end - pos - marker_prefix.size());
-        int id = 0;
-        try { id = std::stoi(id_str); } catch (...) { pos = end; continue; }
-
-        std::string block = ExtractChapter(content, id);
-        std::string preview = "[empty]";
-        if (!block.empty()) {
-            std::istringstream ss(block);
-            std::string line;
-            while (std::getline(ss, line))
-                if (line.rfind("## ", 0) == 0) { preview = line.substr(3); break; }
-        }
-
-        m_sections.push_back({id, preview});
-        m_tidbitList->Append(preview_label("ch", id, preview));
-        pos = end;
-    }
-
-    SetStatus(m_sections.empty()
-              ? "No chapters found — generate with a newer prompt."
-              : wxString::Format("%d chapter(s) found.", (int)m_sections.size()));
-}
-
-void EditPanel::LoadHistory() {
-    m_historyList->Clear();
-    m_commits.clear();
-
-    std::string proj = CurrentProjectPath();
-    if (proj.empty()) return;
-
-    auto log = GitLogProject(proj);
-    for (auto& c : log) {
-        m_historyList->Append(wxString::FromUTF8(
-            c.date + "  " + c.shortHash + "  " + c.subject));
-        m_commits.push_back({c.hash, c.shortHash, c.date, c.subject});
-    }
-
-    if (m_commits.empty())
-        SetStatus("No commits found for this project.");
-}
-
-void EditPanel::OpenCurrentFileInVim() {
-    std::string path = CurrentChapterPath();
-    if (path.empty()) { SetStatus("Select a file first."); return; }
-
+void EditPanel::OpenInVim(const std::string& path) {
     std::string vimCmd = "vim " + shell_quote(path);
     std::string itermScript =
         "tell application \"iTerm2\"\n"
@@ -478,333 +423,256 @@ void EditPanel::OpenCurrentFileInVim() {
         "    write text " + applescript_string(vimCmd) + "\n"
         "  end tell\n"
         "end tell";
-    std::string terminalScript =
+    std::string termScript =
         "tell application \"Terminal\" to activate\n"
         "tell application \"Terminal\" to do script \"vim \" & quoted form of "
         + applescript_string(path);
-
     std::string cmd = "osascript -e " + shell_quote(itermScript)
-                    + " || osascript -e " + shell_quote(terminalScript);
+                    + " || osascript -e " + shell_quote(termScript);
     long pid = wxExecute(wxString::FromUTF8(cmd), wxEXEC_ASYNC);
-    if (pid == 0) {
-        SetStatus("Could not open Terminal with Vim.");
-        Logger::get().log("Open Vim failed: " + path);
-        return;
-    }
-    SetStatus("Opening in Vim: " + wxString::FromUTF8(fs::path(path).filename().string()));
-    Logger::get().log("Open Vim: " + path);
+    if (pid == 0) PushStatus("Could not open Terminal with Vim.");
 }
 
-// ---------------------------------------------------------------------------
+// ── Action handlers ───────────────────────────────────────────────────────────
 
-void EditPanel::OnRefresh(wxCommandEvent&)         { RefreshChapters(); }
-void EditPanel::OnChapterSelected(wxCommandEvent&) { ReloadRightList(); LoadHistory(); }
-void EditPanel::OnChapterActivated(wxCommandEvent&) {
-    if (m_radioOpenVim->GetValue()) {
-        OpenCurrentFileInVim();
-        return;
-    }
-    std::string path = CurrentChapterPath();
-    if (path.empty()) { SetStatus("Select a file first."); return; }
+void EditPanel::OnSelectFile(const std::string& filename) {
+    auto it = std::find(m_files.begin(), m_files.end(), filename);
+    if (it == m_files.end()) return;
+    m_selFile = (int)(it - m_files.begin());
+    LoadItemsForFile(filename);
+    PushItems();  // show items immediately; don't block on git
+    int nb = (int)(m_showSections ? m_sections.size() : m_tidbits.size());
+    PushStatus(filename + " — " + std::to_string(nb) + " item(s) found.");
+    LoadHistoryForProject();
+    PushHistory();
+}
+
+void EditPanel::OnOpenFile(const std::string& filename, const std::string& mode) {
+    std::string path = ChapterPath(filename);
+    if (path.empty()) { PushStatus("Select a file first."); return; }
+    if (mode == "vim") { OpenInVim(path); return; }
     if (m_openCallback) m_openCallback(path);
-    SetStatus("Opened in View tab: " + wxString::FromUTF8(fs::path(path).filename().string()));
+    PushStatus("Opened in View tab: " + filename);
 }
-void EditPanel::OnMoveFileUp(wxCommandEvent&) {
-    int sel = m_chapterList->GetSelection();
-    if (sel == wxNOT_FOUND || sel == 0) return;
-    wxString name = m_chapterList->GetString(sel);
-    m_chapterList->Delete((unsigned int)sel);
-    m_chapterList->Insert(name, (unsigned int)(sel - 1));
-    m_chapterList->SetSelection(sel - 1);
+
+void EditPanel::OnMoveFile(const std::string& filename, const std::string& direction) {
+    auto it = std::find(m_files.begin(), m_files.end(), filename);
+    if (it == m_files.end()) return;
+    int idx = (int)(it - m_files.begin());
+    if (direction == "up" && idx > 0) {
+        std::swap(m_files[idx], m_files[idx - 1]);
+        m_selFile = idx - 1;
+    } else if (direction == "down" && idx + 1 < (int)m_files.size()) {
+        std::swap(m_files[idx], m_files[idx + 1]);
+        m_selFile = idx + 1;
+    } else {
+        return;
+    }
     SaveCurrentFileOrder();
-    ReloadRightList();
-    LoadHistory();
+    PushFiles();
 }
-void EditPanel::OnMoveFileDown(wxCommandEvent&) {
-    int sel = m_chapterList->GetSelection();
-    if (sel == wxNOT_FOUND || sel >= (int)m_chapterList->GetCount() - 1) return;
-    wxString name = m_chapterList->GetString(sel);
-    m_chapterList->Delete((unsigned int)sel);
-    m_chapterList->Insert(name, (unsigned int)(sel + 1));
-    m_chapterList->SetSelection(sel + 1);
-    SaveCurrentFileOrder();
-    ReloadRightList();
-    LoadHistory();
-}
-void EditPanel::OnRenameFile(wxCommandEvent&) {
-    std::string oldPath = CurrentChapterPath();
-    if (oldPath.empty()) { SetStatus("Select a file first."); return; }
 
-    fs::path oldFs(oldPath);
-    wxString oldName = wxString::FromUTF8(oldFs.filename().string());
-    wxString newName = wxGetTextFromUser("New filename:", "Rename File", oldName, this).Trim();
-    if (newName.empty() || newName == oldName) return;
-
-    fs::path newFs(newName.ToStdString());
-    if (newFs.has_parent_path()) {
-        SetStatus("Rename failed: enter a filename only, not a path.");
+void EditPanel::OnRenameFile() {
+    if (m_selFile < 0 || m_selFile >= (int)m_files.size()) {
+        PushStatus("Select a file first.");
         return;
     }
-    if (newFs.extension().empty()) {
-        newFs += ".md";
-    }
-    if (newFs.extension() != ".md") {
-        SetStatus("Rename failed: filename must end in .md.");
-        return;
-    }
+    std::string oldName = m_files[m_selFile];
+    wxString newNameWx = wxGetTextFromUser(
+        "New filename:", "Rename File",
+        wxString::FromUTF8(oldName), this).Trim();
+    if (newNameWx.empty() || newNameWx.ToStdString() == oldName) return;
 
-    fs::path target = oldFs.parent_path() / newFs;
-    if (fs::exists(target)) {
-        SetStatus("Rename failed: target file already exists.");
-        return;
-    }
+    std::string newName = newNameWx.ToStdString();
+    fs::path newFs(newName);
+    if (newFs.has_parent_path()) { PushStatus("Enter a filename only, not a path."); return; }
+    if (newFs.extension().empty()) newFs += ".md";
+    if (newFs.extension() != ".md") { PushStatus("Filename must end in .md."); return; }
+
+    std::string proj = CurrentProjectPath();
+    if (proj.empty()) return;
+    fs::path oldFull(proj + "/" + oldName);
+    fs::path newFull = oldFull.parent_path() / newFs;
+    if (fs::exists(newFull)) { PushStatus("Rename failed: target already exists."); return; }
 
     std::error_code ec;
-    fs::rename(oldFs, target, ec);
-    if (ec) {
-        SetStatus("Rename failed: " + wxString::FromUTF8(ec.message()));
-        Logger::get().log("EditPanel rename FAILED: " + oldPath + " -> " + target.string()
-                          + "  " + ec.message());
-        return;
-    }
+    fs::rename(oldFull, newFull, ec);
+    if (ec) { PushStatus("Rename failed: " + ec.message()); return; }
 
-    Logger::get().log("EditPanel renamed file: " + oldPath + " -> " + target.string());
-    RefreshChapters();
-    int idx = m_chapterList->FindString(wxString::FromUTF8(target.filename().string()));
-    if (idx != wxNOT_FOUND) {
-        m_chapterList->SetSelection(idx);
-        ReloadRightList();
-        LoadHistory();
-        SaveCurrentFileOrder();
-    }
-    SetStatus("Renamed to: " + wxString::FromUTF8(target.filename().string()));
+    Logger::get().log("EditPanel renamed: " + oldName + " -> " + newFs.string());
+    m_files[m_selFile] = newFs.filename().string();
+    SaveCurrentFileOrder();
+    PushFiles();
+    PushStatus("Renamed to: " + newFs.filename().string());
 }
-void EditPanel::OnDeleteFile(wxCommandEvent&) {
-    std::string path = CurrentChapterPath();
-    if (path.empty()) { SetStatus("Select a file first."); return; }
 
-    std::string filename = fs::path(path).filename().string();
+void EditPanel::OnDeleteFile() {
+    if (m_selFile < 0 || m_selFile >= (int)m_files.size()) {
+        PushStatus("Select a file first.");
+        return;
+    }
+    std::string filename = m_files[m_selFile];
     wxString question = "Delete '" + wxString::FromUTF8(filename) + "'?\n\n"
-                        "This removes the file from disk. Git history may still contain older committed versions.";
-    if (wxMessageBox(question, "Confirm delete", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
+        "This removes the file from disk. Git history may preserve older versions.";
+    if (wxMessageBox(question, "Confirm delete",
+                     wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
         return;
 
+    std::string path = ChapterPath(filename);
     std::error_code ec;
     bool removed = fs::remove(path, ec);
-    if (!removed || ec) {
-        SetStatus("Delete failed: " + wxString::FromUTF8(ec ? ec.message() : "file was not removed"));
-        Logger::get().log("EditPanel delete FAILED: " + path + "  " + (ec ? ec.message() : "not removed"));
-        return;
-    }
+    if (!removed || ec) { PushStatus("Delete failed: " + (ec ? ec.message() : "not removed")); return; }
 
-    Logger::get().log("EditPanel deleted file: " + path);
-    RefreshChapters();
+    Logger::get().log("EditPanel deleted: " + filename);
+    m_files.erase(m_files.begin() + m_selFile);
+    if (m_selFile >= (int)m_files.size()) m_selFile = (int)m_files.size() - 1;
+    if (m_selFile >= 0) LoadItemsForFile(m_files[m_selFile]);
+    else { m_tidbits.clear(); m_sections.clear(); }
     SaveCurrentFileOrder();
-    SetStatus("Deleted: " + wxString::FromUTF8(filename));
-}
-void EditPanel::OnTargetChanged(wxCommandEvent&)   { ReloadRightList(); }
-
-void EditPanel::SetStatus(const wxString& msg) { m_statusCtrl->SetValue(msg); }
-void EditPanel::SetBusy(bool on) {
-    m_rewriteBtn->Enable(!on);
-    m_rewriteBtn->SetLabel(on ? "Rewriting…" : "Rewrite");
-    m_translateBtn->Enable(!on);
-    m_commitBtn->Enable(!on);
-    m_moveUpBtn->Enable(!on);
-    m_moveDownBtn->Enable(!on);
-    m_renameFileBtn->Enable(!on);
-    m_deleteFileBtn->Enable(!on);
-    m_checkoutBtn->Enable(!on);
-    m_stashBtn->Enable(!on);
-    m_unstashBtn->Enable(!on);
+    PushFiles();
+    PushItems();
+    PushStatus("Deleted: " + filename);
 }
 
-// ── Rewrite via LLM ──────────────────────────────────────────────────────────
+// ── Rewrite ───────────────────────────────────────────────────────────────────
 
-void EditPanel::OnRewrite(wxCommandEvent&) {
-    wxString instr = m_instructCtrl->GetValue().Trim();
-    if (instr.empty()) { SetStatus("Enter an instruction first."); return; }
+void EditPanel::OnRewrite(const std::string& json) {
+    std::string filename = ExtractField(json, "file");
+    std::string target   = ExtractField(json, "target");
+    int         id       = ExtractInt(json, "id");
+    std::string instr    = ExtractField(json, "instruction");
 
-    std::string chapterPath = CurrentChapterPath();
-    if (chapterPath.empty()) { SetStatus("Select a file first."); return; }
+    std::string path = ChapterPath(filename);
+    if (path.empty() || instr.empty()) return;
 
-    std::string chapterContent;
-    {
-        std::ifstream f(chapterPath);
-        if (!f) { SetStatus("Cannot read file."); return; }
-        chapterContent.assign(std::istreambuf_iterator<char>(f), {});
-    }
+    std::string content;
+    { std::ifstream f(path); if (!f) { PushStatus("Cannot read file."); return; }
+      content.assign(std::istreambuf_iterator<char>(f), {}); }
 
-    bool chapterMode = m_radioChapter->GetValue();
-    int tidbitId  = -1;
-    int sectionId = -1;
+    bool chapterMode = (target == "chapter");
     std::string originalBlock;
-
     if (chapterMode) {
-        int sel = m_tidbitList->GetSelection();
-        if (sel == wxNOT_FOUND || sel >= (int)m_sections.size()) {
-            SetStatus("Select a chapter from the list."); return;
-        }
-        sectionId     = m_sections[sel].id;
-        originalBlock = ExtractChapter(chapterContent, sectionId);
-        if (originalBlock.empty()) {
-            SetStatus("Could not extract chapter — try Refresh."); return;
-        }
+        if (id < 0) { PushStatus("Select a chapter section first."); return; }
+        originalBlock = ExtractChapter(content, id);
+        if (originalBlock.empty()) { PushStatus("Could not extract chapter — try Refresh."); return; }
     } else {
-        int sel = m_tidbitList->GetSelection();
-        if (sel == wxNOT_FOUND || sel >= (int)m_tidbits.size()) {
-            SetStatus("Select a tidbit from the list."); return;
-        }
-        tidbitId      = m_tidbits[sel].id;
-        originalBlock = ExtractTidbit(chapterContent, tidbitId);
-        if (originalBlock.empty()) {
-            SetStatus("Could not extract tidbit — try Refresh."); return;
-        }
+        if (id < 0) { PushStatus("Select a tidbit first."); return; }
+        originalBlock = ExtractTidbit(content, id);
+        if (originalBlock.empty()) { PushStatus("Could not extract tidbit — try Refresh."); return; }
     }
 
-    AppState st = LoadAppState();
+    AppState st  = LoadAppState();
     LLMConfig cfg = llm_config_from_state(st);
+    std::string prompt = BuildPatchPrompt(originalBlock, instr, "", content);
 
-    // Clipboard mode: copy the prompt so the user can paste it into any LLM manually.
     if (cfg.backend == LLMBackend::Clipboard) {
-        std::string prompt = BuildPatchPrompt(originalBlock, instr.ToStdString(), "", chapterContent);
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
             wxTheClipboard->Close();
         }
-        SetStatus("Prompt copied to clipboard.\n\n"
-                  "Paste into any LLM, copy the rewritten block, then paste it back\n"
-                  "into the file manually — or set a direct backend in the Create tab\n"
-                  "to have the rewrite applied automatically.");
+        PushStatus("Prompt copied to clipboard.\nPaste into any LLM, then copy the result "
+                   "and paste it back manually — or set a direct backend in the Create tab.");
         return;
     }
 
-    std::string backendLabel = st.backend;
-    std::string prompt   = BuildPatchPrompt(originalBlock, instr.ToStdString(), "", chapterContent);
-    std::string chapPath = chapterPath;
-    OpenCallback cb      = m_openCallback;
+    Logger::get().log("EditPanel rewrite: file=" + filename
+                      + " mode=" + target + " id=" + std::to_string(id));
+    PushBusy(true);
+    PushStatus("Sending to " + st.backend + "…");
 
-    Logger::get().log("EditPanel rewrite: file=" + chapPath
-                      + "  mode=" + (chapterMode ? "chapter" : "tidbit")
-                      + "  id=" + std::to_string(chapterMode ? sectionId : tidbitId)
-                      + "  backend=" + st.backend);
+    std::string chapPath = path;
+    OpenCallback cb = m_openCallback;
 
-    SetBusy(true);
-    SetStatus("Sending to " + wxString::FromUTF8(backendLabel) + "…");
-
-    std::thread([this, prompt, cfg, chapPath, chapterMode, tidbitId, sectionId, cb]() mutable {
-        auto started = std::chrono::steady_clock::now();
+    std::thread([this, prompt, cfg, chapPath, chapterMode, id, cb, filename]() mutable {
+        auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
-        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - started).count();
-        if (res.ok) {
-            std::string topic = (chapterMode ? "chapter " : "tidbit ")
-                              + std::to_string(chapterMode ? sectionId : tidbitId);
+        int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        if (res.ok)
             RecordLLMTiming(fs::path(chapPath).parent_path().string(),
-                            "patch", topic, durationSeconds);
-        }
+                            "patch", (chapterMode?"chapter ":"tidbit ")+std::to_string(id), secs);
 
-        wxTheApp->CallAfter([this, res, chapPath, chapterMode, tidbitId, sectionId, cb]() mutable {
-            SetBusy(false);
+        wxTheApp->CallAfter([this, res, chapPath, chapterMode, id, cb, filename]() mutable {
+            PushBusy(false);
             if (!res.ok) {
                 Logger::get().log("EditPanel rewrite FAILED: " + res.error);
-                SetStatus("Error: " + wxString::FromUTF8(res.error));
+                PushStatus("Error: " + res.error);
                 return;
             }
-
-            bool ok = chapterMode
-                      ? ApplyChapterPatch(chapPath, sectionId, res.text)
-                      : ApplyTidbitPatch(chapPath, tidbitId, res.text);
-
-            if (!ok) { SetStatus("Rewrite failed — could not write file."); return; }
-
-            ReloadRightList();
-            LoadHistory();
-            SetStatus("Done. Rendering updated file.");
+            bool ok = chapterMode ? ApplyChapterPatch(chapPath, id, res.text)
+                                  : ApplyTidbitPatch(chapPath, id, res.text);
+            if (!ok) { PushStatus("Rewrite failed — could not write file."); return; }
+            OnSelectFile(filename);
+            PushStatus("Rewrite done.");
             if (cb) cb(chapPath);
         });
     }).detach();
 }
 
-void EditPanel::OnTranslate(wxCommandEvent&) {
-    wxString lang = m_translateLangCtrl->GetValue().Trim();
-    if (lang.empty()) { SetStatus("Enter a target language first."); return; }
+// ── Translate ─────────────────────────────────────────────────────────────────
 
-    std::string sourcePath = CurrentChapterPath();
-    if (sourcePath.empty()) { SetStatus("Select a file first."); return; }
+void EditPanel::OnTranslate(const std::string& json) {
+    std::string filename = ExtractField(json, "file");
+    std::string language = ExtractField(json, "language");
+    std::string instr    = ExtractField(json, "instruction");
+    std::string commit   = ExtractField(json, "commit");
+
+    std::string srcPath = ChapterPath(filename);
+    if (srcPath.empty() || language.empty()) return;
 
     std::string sourceContent;
-    wxArrayInt selectedVersions;
-    m_historyList->GetSelections(selectedVersions);
-    if (selectedVersions.size() == 1) {
-        int idx = selectedVersions[0];
-        if (idx < 0 || idx >= (int)m_commits.size()) return;
+    if (!commit.empty()) {
         std::string proj = CurrentProjectPath();
-        std::string relPath = fs::path(sourcePath).filename().string();
-        sourceContent = GitShowFile(proj, m_commits[idx].hash, relPath);
-        if (sourceContent.empty()) { SetStatus("Could not read selected version."); return; }
+        sourceContent = GitShowFile(proj, commit, filename);
+        if (sourceContent.empty()) { PushStatus("Could not read selected version."); return; }
     } else {
-        std::ifstream f(sourcePath);
-        if (!f) { SetStatus("Cannot read selected file."); return; }
+        std::ifstream f(srcPath);
+        if (!f) { PushStatus("Cannot read file."); return; }
         sourceContent.assign(std::istreambuf_iterator<char>(f), {});
     }
 
-    AppState st = LoadAppState();
+    AppState st   = LoadAppState();
     LLMConfig cfg = llm_config_from_state(st);
-    wxString extraInstr = m_instructCtrl->GetValue().Trim();
-    std::string prompt = BuildTranslationPrompt(sourceContent,
-                                                lang.ToStdString(),
-                                                extraInstr.ToStdString());
+    std::string prompt = BuildTranslationPrompt(sourceContent, language, instr);
 
     if (cfg.backend == LLMBackend::Clipboard) {
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
             wxTheClipboard->Close();
         }
-        SetStatus("Translation prompt copied to clipboard.\n\n"
-                  "Paste it into any LLM, then save the translated markdown as a new file.");
+        PushStatus("Translation prompt copied to clipboard.");
         return;
     }
 
-    fs::path src(sourcePath);
-    std::string suffix = language_suffix(lang.ToStdString());
-    fs::path outPath = src.parent_path() / (src.stem().string() + "_" + suffix + src.extension().string());
+    fs::path src(srcPath);
+    std::string suffix = language_suffix(language);
+    fs::path outPath = src.parent_path() /
+        (src.stem().string() + "_" + suffix + src.extension().string());
     OpenCallback cb = m_openCallback;
-    std::string backendLabel = st.backend.empty() ? "LLM" : st.backend;
 
-    Logger::get().log("EditPanel translate: file=" + sourcePath
-                      + "  target=" + lang.ToStdString()
-                      + "  backend=" + backendLabel);
-
-    SetBusy(true);
-    SetStatus("Translating to " + lang + " with " + wxString::FromUTF8(backendLabel) + "…");
+    Logger::get().log("EditPanel translate: file=" + filename + " lang=" + language);
+    PushBusy(true);
+    PushStatus("Translating to " + language + "…");
 
     std::thread([this, prompt, cfg, outPath, cb]() mutable {
-        auto started = std::chrono::steady_clock::now();
+        auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
-        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - started).count();
-        if (res.ok) {
+        int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        if (res.ok)
             RecordLLMTiming(outPath.parent_path().string(),
-                            "translate", outPath.filename().string(), durationSeconds);
-        }
+                            "translate", outPath.filename().string(), secs);
         wxTheApp->CallAfter([this, res, outPath, cb]() mutable {
-            SetBusy(false);
+            PushBusy(false);
             if (!res.ok) {
                 Logger::get().log("EditPanel translate FAILED: " + res.error);
-                SetStatus("Error: " + wxString::FromUTF8(res.error));
+                PushStatus("Error: " + res.error);
                 return;
             }
-            {
-                std::ofstream f(outPath);
-                f << CleanMarkdownResponse(res.text);
-                if (!f.good()) {
-                    SetStatus("Translation failed — could not write file.");
-                    return;
-                }
-            }
-            RefreshChapters();
-            SetStatus("Translated file saved: " + wxString::FromUTF8(outPath.filename().string()));
+            { std::ofstream f(outPath); f << CleanMarkdownResponse(res.text);
+              if (!f.good()) { PushStatus("Could not write translated file."); return; } }
+            DoRefresh();
+            PushStatus("Translated file saved: " + outPath.filename().string());
             if (cb) cb(outPath.string());
         });
     }).detach();
@@ -812,190 +680,110 @@ void EditPanel::OnTranslate(wxCommandEvent&) {
 
 // ── Git operations ────────────────────────────────────────────────────────────
 
-void EditPanel::OnCommit(wxCommandEvent&) {
+void EditPanel::OnCommit(const std::string& filename, const std::string& message) {
     std::string proj = CurrentProjectPath();
-    std::string path = CurrentChapterPath();
-    if (proj.empty() || path.empty()) { SetStatus("Select a file first."); return; }
-
-    wxString msg = m_commitMsgCtrl->GetValue().Trim();
-    if (msg.empty()) { SetStatus("Enter a commit message first."); return; }
-
-    std::string relPath = fs::path(path).filename().string();
-    bool ok = GitCommitFile(proj, relPath, msg.ToStdString());
-    if (!ok) {
-        SetStatus("Commit failed — is git configured for this project?");
-        return;
-    }
-    m_commitMsgCtrl->Clear();
-    LoadHistory();
+    if (proj.empty() || filename.empty() || message.empty()) return;
+    bool ok = GitCommitFile(proj, filename, message);
+    if (!ok) { PushStatus("Commit failed — is git configured for this project?"); return; }
+    Run("clearCommitMsg();");
+    Logger::get().log("EditPanel committed: " + filename + " — " + message);
+    PushStatus("Committed: " + message);
+    // Refresh history after a short delay (git index may not be instant).
     std::thread([this]() {
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-        wxTheApp->CallAfter([this]() { LoadHistory(); });
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        wxTheApp->CallAfter([this]() {
+            LoadHistoryForProject();
+            PushHistory();
+        });
     }).detach();
-    SetStatus("Committed: " + msg);
-    Logger::get().log("EditPanel committed: " + relPath + " — " + msg.ToStdString());
 }
 
-void EditPanel::OnViewVersion(wxCommandEvent&) {
-    wxArrayInt sel;
-    m_historyList->GetSelections(sel);
-    if (sel.empty()) { SetStatus("Select one commit from history to view."); return; }
-
-    int idx = sel[0];
-    if (idx < 0 || idx >= (int)m_commits.size()) return;
-
+void EditPanel::OnViewVersion(const std::string& commitHash) {
+    if (commitHash.empty() || m_selFile < 0) {
+        PushStatus("Select a file and a commit first.");
+        return;
+    }
     std::string proj    = CurrentProjectPath();
-    std::string path    = CurrentChapterPath();
-    if (proj.empty() || path.empty()) return;
+    std::string relPath = m_files[m_selFile];
+    std::string content = GitShowFile(proj, commitHash, relPath);
+    if (content.empty()) { PushStatus("Could not retrieve that version."); return; }
 
-    std::string relPath = fs::path(path).filename().string();
-    std::string content = GitShowFile(proj, m_commits[idx].hash, relPath);
-    if (content.empty()) { SetStatus("Could not retrieve that version."); return; }
-
-    // Write to a temp file so the View tab can render it.
+    std::string shortHash = commitHash.size() >= 7 ? commitHash.substr(0, 7) : commitHash;
     fs::path tmp = fs::temp_directory_path() /
-                   ("storyteller_ver_" + m_commits[idx].shortHash + "_" + relPath);
-    {
-        std::ofstream f(tmp);
-        f << content;
-    }
+                   ("storyteller_ver_" + shortHash + "_" + relPath);
+    { std::ofstream f(tmp); f << content; }
     if (m_openCallback) m_openCallback(tmp.string());
-    SetStatus("Viewing " + m_commits[idx].shortHash + ": " + m_commits[idx].subject);
+    PushStatus("Viewing " + shortHash + ": " + relPath);
 }
 
-void EditPanel::OnDiff(wxCommandEvent&) {
-    wxArrayInt sel;
-    m_historyList->GetSelections(sel);
-    if (sel.size() > 2) {
-        SetStatus("Select 0, 1, or 2 commits to diff.");
-        return;
-    }
-
+void EditPanel::OnDiff(const std::string& filename,
+                       const std::string& hash1, const std::string& hash2) {
     std::string proj = CurrentProjectPath();
-    std::string path = CurrentChapterPath();
-    if (proj.empty() || path.empty()) { SetStatus("Select a file first."); return; }
-    std::string relPath = fs::path(path).filename().string();
-
-    std::string hash1, hash2;
-    if (sel.empty()) {
-        // Nothing selected: diff HEAD vs working copy (show uncommitted changes).
-        hash1 = "HEAD";
-        hash2 = "";
-    } else if (sel.size() == 1) {
-        int idx = sel[0];
-        if (idx < 0 || idx >= (int)m_commits.size()) return;
-        hash1 = m_commits[idx].hash;
-        hash2 = "";  // diff vs working copy
-    } else {
-        // Ensure older commit is hash1 (higher index = older in log)
-        int a = sel[0], b = sel[1];
-        if (a > b) std::swap(a, b);
-        if (a < 0 || b >= (int)m_commits.size()) return;
-        hash1 = m_commits[b].hash;  // older
-        hash2 = m_commits[a].hash;  // newer
-    }
-
-    std::string html = GitDiffHTML(proj, hash1, hash2, relPath);
-
-    fs::path tmp = fs::temp_directory_path() / ("storyteller_diff_" + relPath + ".html");
-    {
-        std::ofstream f(tmp);
-        f << html;
-    }
+    if (proj.empty() || filename.empty()) { PushStatus("Select a file first."); return; }
+    std::string html = GitDiffHTML(proj, hash1, hash2, filename);
+    fs::path tmp = fs::temp_directory_path() / ("storyteller_diff_" + filename + ".html");
+    { std::ofstream f(tmp); f << html; }
     if (m_openCallback) m_openCallback(tmp.string());
-    if (sel.empty()) {
-        SetStatus("Diff opened: HEAD vs current file.");
-    } else if (sel.size() == 1) {
-        int idx = sel[0];
-        SetStatus("Diff opened: " + m_commits[idx].shortHash + " vs current file.");
-    } else {
-        SetStatus("Diff opened between selected versions.");
-    }
+    PushStatus("Diff opened: " + filename);
 }
 
-void EditPanel::OnRestore(wxCommandEvent&) {
-    wxArrayInt sel;
-    m_historyList->GetSelections(sel);
-    if (sel.size() != 1) { SetStatus("Select exactly one commit to restore."); return; }
-
-    int idx = sel[0];
-    if (idx < 0 || idx >= (int)m_commits.size()) return;
-
-    std::string proj    = CurrentProjectPath();
-    std::string path    = CurrentChapterPath();
-    if (proj.empty() || path.empty()) return;
-    std::string relPath = fs::path(path).filename().string();
-
+void EditPanel::OnRestore(const std::string& filename, const std::string& commitHash,
+                          const std::string& shortHash, const std::string& subject) {
+    if (filename.empty() || commitHash.empty()) return;
     wxString question = wxString::Format(
-        "Restore '%s' to version %s (%s)?\nThis will overwrite the working copy.",
-        relPath, m_commits[idx].shortHash, m_commits[idx].subject);
-    if (wxMessageBox(question, "Confirm restore", wxYES_NO | wxICON_WARNING, this) != wxYES)
-        return;
-
-    bool ok = GitRestoreFile(proj, m_commits[idx].hash, relPath);
-    if (!ok) { SetStatus("Restore failed."); return; }
-
-    RefreshChapters();
-    if (m_openCallback) m_openCallback(path);
-    SetStatus("Restored to " + m_commits[idx].shortHash + ": " + m_commits[idx].subject);
-    Logger::get().log("EditPanel restored: " + relPath + " to " + m_commits[idx].hash);
-}
-
-void EditPanel::OnCheckout(wxCommandEvent&) {
-    wxArrayInt sel;
-    m_historyList->GetSelections(sel);
-    if (sel.size() != 1) { SetStatus("Select exactly one commit to checkout."); return; }
-
-    int idx = sel[0];
-    if (idx < 0 || idx >= (int)m_commits.size()) return;
+        "Restore '%s' to version %s (%s)?\nThis overwrites the working copy.",
+        filename, shortHash, subject);
+    if (wxMessageBox(question, "Confirm restore",
+                     wxYES_NO | wxICON_WARNING, this) != wxYES) return;
 
     std::string proj = CurrentProjectPath();
-    if (proj.empty()) return;
+    bool ok = GitRestoreFile(proj, commitHash, filename);
+    if (!ok) { PushStatus("Restore failed."); return; }
+    OnSelectFile(filename);
+    if (m_openCallback) m_openCallback(ChapterPath(filename));
+    PushStatus("Restored to " + shortHash + ": " + subject);
+    Logger::get().log("EditPanel restored: " + filename + " to " + commitHash);
+}
 
+void EditPanel::OnCheckout(const std::string& commitHash,
+                           const std::string& shortHash, const std::string& subject) {
+    if (commitHash.empty()) return;
     wxString question = wxString::Format(
         "Checkout the whole project folder to version %s (%s)?\n\n"
-        "This affects every file in this story folder and may leave git in detached HEAD.\n"
-        "Use Stash first if you have local changes you want to keep.",
-        m_commits[idx].shortHash, m_commits[idx].subject);
-    if (wxMessageBox(question, "Confirm checkout", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
-        return;
+        "This affects every file and may leave git in detached HEAD.\n"
+        "Use Stash first if you have local changes to keep.",
+        shortHash, subject);
+    if (wxMessageBox(question, "Confirm checkout",
+                     wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES) return;
 
-    std::string hash = m_commits[idx].hash;
-    std::string shortHash = m_commits[idx].shortHash;
-    std::string subject = m_commits[idx].subject;
-    bool ok = GitCheckoutCommit(proj, hash);
-    if (!ok) {
-        SetStatus("Checkout failed. Stash or commit local changes, then try again.");
-        return;
-    }
-
-    RefreshChapters();
-    std::string path = CurrentChapterPath();
-    if (!path.empty() && m_openCallback) m_openCallback(path);
-    SetStatus("Checked out project folder at " + shortHash + ": " + subject);
-    Logger::get().log("EditPanel checkout: " + proj + " to " + hash);
+    std::string proj = CurrentProjectPath();
+    bool ok = GitCheckoutCommit(proj, commitHash);
+    if (!ok) { PushStatus("Checkout failed. Stash or commit local changes first."); return; }
+    DoRefresh();
+    if (m_selFile >= 0 && m_openCallback)
+        m_openCallback(ChapterPath(m_files[m_selFile]));
+    PushStatus("Checked out at " + shortHash + ": " + subject);
+    Logger::get().log("EditPanel checkout: " + proj + " to " + commitHash);
 }
 
-void EditPanel::OnStash(wxCommandEvent&) {
+void EditPanel::OnStash() {
     std::string proj = CurrentProjectPath();
     if (proj.empty()) return;
-
     bool ok = GitStashProject(proj, "StoryTeller stash");
-    RefreshChapters();
-    SetStatus(ok ? "Stashed local project-folder changes."
-                 : "Stash failed or there were no changes to stash.");
+    DoRefresh();
+    PushStatus(ok ? "Stashed local project-folder changes."
+                  : "Stash failed or there were no changes to stash.");
     Logger::get().log(std::string("EditPanel stash ") + (ok ? "OK: " : "FAILED: ") + proj);
 }
 
-void EditPanel::OnUnstash(wxCommandEvent&) {
+void EditPanel::OnUnstash() {
     std::string proj = CurrentProjectPath();
     if (proj.empty()) return;
-
     bool ok = GitUnstashProject(proj);
-    RefreshChapters();
-    std::string path = CurrentChapterPath();
-    if (!path.empty() && m_openCallback) m_openCallback(path);
-    SetStatus(ok ? "Unstashed latest project-folder changes."
-                 : "Unstash failed. There may be no stash, or there may be conflicts.");
+    DoRefresh();
+    if (m_selFile >= 0 && m_openCallback)
+        m_openCallback(ChapterPath(m_files[m_selFile]));
+    PushStatus(ok ? "Unstashed latest project-folder changes."
+                  : "Unstash failed. There may be no stash, or there may be conflicts.");
     Logger::get().log(std::string("EditPanel unstash ") + (ok ? "OK: " : "FAILED: ") + proj);
 }

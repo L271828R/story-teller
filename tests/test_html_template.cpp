@@ -179,5 +179,19 @@ int test_html_template() {
         }
     }
 
+    // Focus mode: CSS class and JS toggle function must be present.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasCss = html.find(".focus-line") != std::string::npos;
+        bool hasJs  = html.find("toggleFocusMode") != std::string::npos;
+        if (!hasCss || !hasJs) {
+            std::cerr << "FAIL [focus-mode]: missing focus-line CSS=" << hasCss
+                      << " toggleFocusMode JS=" << hasJs << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [focus-mode]\n";
+        }
+    }
+
     return failures;
 }

@@ -1,5 +1,6 @@
 #include "html_template.h"
 #include "markdown.h"
+#include <map>
 #include <sstream>
 #include "mermaid_js.h"
 #include "hljs_js.h"
@@ -55,13 +56,25 @@ static const std::string& GetHighlightCSSDark() {
 std::string BuildHTML(const std::string& body,
                       const std::string& title,
                       bool darkMode,
-                      int fontSizePercent) {
+                      int fontSizePercent,
+                      const std::map<std::string, std::string>& personaImages) {
     const std::string htmlClass    = darkMode ? " class=\"dark\"" : "";
     const std::string mermaidTheme = darkMode ? "dark" : "default";
     char fsBuf[32];
     snprintf(fsBuf, sizeof(fsBuf), "%.4g", 16.0 * fontSizePercent / 100.0);
     const std::string fsPx       = std::string(fsBuf) + "px";
     const std::string fontPctStr = std::to_string(fontSizePercent);
+
+    // Build window._personaImages JSON object literal.
+    std::string personaJS = "window._personaImages={";
+    bool first = true;
+    for (const auto& kv : personaImages) {
+        if (!first) personaJS += ",";
+        first = false;
+        // Escape the URL (file paths on macOS shouldn't need much escaping).
+        personaJS += "\"" + kv.first + "\":\"" + kv.second + "\"";
+    }
+    personaJS += "};";
 
     return R"HTML(<!DOCTYPE html>
 <html lang="en")HTML" + htmlClass + R"HTML(>
@@ -172,6 +185,12 @@ details.tidbit summary::-webkit-details-marker{display:none}
 details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 .tidbit-body{padding:12px 16px}
 .tidbit-body p:last-child{margin-bottom:0}
+.persona-img{
+  float:right;max-width:110px;max-height:110px;
+  border-radius:50%;margin:0 0 10px 14px;
+  object-fit:cover;border:2px solid var(--border);
+  box-shadow:0 2px 8px rgba(0,0,0,.18);
+}
 
 /* ── Conversation ───────────────────────────────────────────────────────── */
 details.conversation{
@@ -245,6 +264,12 @@ img{max-width:100%;height:auto;border-radius:4px}
 
 /* ── Rule ───────────────────────────────────────────────────────────────── */
 hr{height:.25em;padding:0;margin:24px 0;background:var(--border);border:0}
+
+/* ── Focus / reading mode ───────────────────────────────────────────────── */
+.focus-line{
+  background:rgba(255,215,0,.38);border-radius:2px;
+  outline:2px solid #f5c800;outline-offset:1px;
+}
 
 /* ── Table ──────────────────────────────────────────────────────────────── */
 table{border-collapse:collapse;margin-bottom:16px;width:100%}
@@ -576,6 +601,174 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
         e.target.closest('#note-toolbar') || e.target.closest('#zm-overlay')) return;
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.closeChat)
       window.webkit.messageHandlers.closeChat.postMessage('');
+  });
+})();
+
+// ── Persona images ───────────────────────────────────────────────────────
+)HTML" + personaJS + R"HTML(
+(function() {
+  function normName(s) {
+    return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'');
+  }
+  function lookupPersona(name) {
+    var imgs = window._personaImages;
+    if (!imgs) return null;
+    // 1. Exact normalized key
+    var src = imgs[normName(name)];
+    if (src) return src;
+    // 2. English part from parentheses: "李白 (Li Bai)" → "li_bai"
+    var m = name.match(/\(([^)]+)\)/);
+    if (m) { src = imgs[normName(m[1])]; if (src) return src; }
+    // 3. Non-ASCII (Chinese) part only
+    var nonAscii = name.replace(/[\x00-\x7F]+/g,'').trim();
+    if (nonAscii) { src = imgs[normName(nonAscii)]; if (src) return src; }
+    // 4. ASCII words only, strip punctuation
+    var ascii = name.replace(/[^\x00-\x7F]+/g,' ').replace(/[()]/g,' ').trim();
+    if (ascii) { src = imgs[normName(ascii)]; if (src) return src; }
+    return null;
+  }
+  document.querySelectorAll('details.tidbit').forEach(function(details) {
+    details.addEventListener('toggle', function() {
+      if (!details.open || details.querySelector('.persona-img')) return;
+      var summary = details.querySelector('summary');
+      if (!summary) return;
+      var src = lookupPersona(summary.textContent || '');
+      if (!src) return;
+      var body = details.querySelector('.tidbit-body');
+      if (!body) return;
+      var img = document.createElement('img');
+      img.src = src;
+      img.className = 'persona-img';
+      img.alt = summary.textContent.trim();
+      body.prepend(img);
+    });
+  });
+})();
+
+// ── Focus / reading mode — 10-token chunks ───────────────────────────────
+(function() {
+  var CHUNK_SIZE  = 10;
+  var focusActive = false;
+  var focusBlocks = [];
+  var focusIdx    = -1;
+  var focusEl     = null;
+
+  // Split text into chunks of CHUNK_SIZE content tokens.
+  // Tokens: each CJK character counts as one; each Latin/other word counts as one.
+  // Whitespace is preserved by attaching it to the preceding token's chunk.
+  function makeChunks(text, size) {
+    var out  = [];
+    var re   = /[一-鿿぀-ヿ가-힯]|[^\s一-鿿぀-ヿ가-힯]+|\s+/g;
+    var toks = text.match(re) || [];
+    var cur  = '', n = 0;
+    for (var i = 0; i < toks.length; i++) {
+      var t = toks[i];
+      cur += t;
+      if (/\S/.test(t)) {
+        n++;
+        if (n >= size) { if (cur.trim()) out.push(cur); cur = ''; n = 0; }
+      }
+    }
+    if (cur.trim()) out.push(cur);
+    return out;
+  }
+
+  // Walk all content text nodes, split into chunk spans, return span array.
+  function wrapAll() {
+    var spans = [];
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT,
+      function(node) {
+        if (!node.textContent.trim()) return NodeFilter.FILTER_SKIP;
+        var p = node.parentNode;
+        while (p && p !== document.body) {
+          var tag = (p.tagName || '').toUpperCase();
+          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'BUTTON' || tag === 'SUMMARY')
+            return NodeFilter.FILTER_SKIP;
+          if (p.id === 'zm-overlay' || p.id === 'note-toolbar')
+            return NodeFilter.FILTER_SKIP;
+          if (p.dataset && p.dataset.focusChunk) return NodeFilter.FILTER_SKIP;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    );
+    var nodes = [], n;
+    while ((n = walker.nextNode())) nodes.push(n);
+
+    nodes.forEach(function(textNode) {
+      var chunks = makeChunks(textNode.textContent, CHUNK_SIZE);
+      if (!chunks.length) return;
+      var frag = document.createDocumentFragment();
+      chunks.forEach(function(chunk) {
+        var sp = document.createElement('span');
+        sp.dataset.focusChunk = '1';
+        sp.textContent = chunk;
+        frag.appendChild(sp);
+        spans.push(sp);
+      });
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
+    return spans;
+  }
+
+  // Remove all chunk spans and restore plain text nodes.
+  function unwrapAll() {
+    document.querySelectorAll('[data-focus-chunk]').forEach(function(sp) {
+      var parent = sp.parentNode;
+      while (sp.firstChild) parent.insertBefore(sp.firstChild, sp);
+      parent.removeChild(sp);
+    });
+    document.body.normalize();
+  }
+
+  function clearFocus() {
+    if (focusEl) { focusEl.classList.remove('focus-line'); focusEl = null; }
+  }
+
+  function moveFocus(idx) {
+    clearFocus();
+    if (!focusBlocks.length) return;
+    focusIdx = Math.max(0, Math.min(idx, focusBlocks.length - 1));
+    focusEl  = focusBlocks[focusIdx];
+    focusEl.classList.add('focus-line');
+    focusEl.scrollIntoView({block:'nearest', behavior:'smooth'});
+  }
+
+  window.toggleFocusMode = function() {
+    focusActive = !focusActive;
+    if (focusActive) {
+      focusBlocks = wrapAll();
+      moveFocus(0);
+    } else {
+      clearFocus();
+      unwrapAll();
+      focusBlocks = [];
+      focusIdx = -1;
+    }
+    return focusActive;
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (!focusActive) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      e.preventDefault(); moveFocus(focusIdx + 1);
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      e.preventDefault(); moveFocus(focusIdx - 1);
+    } else if (e.key === 'Escape') {
+      var overlay = document.getElementById('zm-overlay');
+      if (!overlay || !overlay.classList.contains('open')) toggleFocusMode();
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!focusActive) return;
+    if (e.target.closest('#zm-overlay') || e.target.closest('.chat-btn') ||
+        e.target.closest('#note-toolbar') || e.target.closest('.note-marker')) return;
+    var chunk = e.target.closest('[data-focus-chunk]');
+    if (chunk) {
+      var i = focusBlocks.indexOf(chunk);
+      if (i !== -1) moveFocus(i);
+    }
   });
 })();
 </script>
