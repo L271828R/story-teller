@@ -238,7 +238,9 @@ h2:hover .chat-btn{opacity:1}
 
 /* ── Notes ─────────────────────────────────────────────────────────────── */
 .note-marker{
-  text-decoration:underline dotted var(--link);
+  text-decoration-line:underline;
+  text-decoration-style:dotted;
+  text-decoration-color:var(--link);
   text-decoration-skip-ink:none;
   cursor:pointer;
 }
