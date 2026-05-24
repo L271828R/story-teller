@@ -193,5 +193,26 @@ int test_html_template() {
         }
     }
 
+    // Tidbit carousel must have both a prev (‹) and a next (›) arrow so the
+    // user can navigate in both directions.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasPrev = html.find("&#x2039;") != std::string::npos ||
+                       html.find("\xe2\x80\xb9")  != std::string::npos ||  // ‹ UTF-8
+                       html.find("'\\u2039'")     != std::string::npos ||
+                       html.find("'‹'")           != std::string::npos;
+        bool hasNext = html.find("&#x203a;") != std::string::npos ||
+                       html.find("\xe2\x80\xba")  != std::string::npos ||  // › UTF-8
+                       html.find("'\\u203a'")     != std::string::npos ||
+                       html.find("'›'")           != std::string::npos;
+        if (!hasPrev || !hasNext) {
+            std::cerr << "FAIL [carousel-both-arrows]: carousel must have both ‹ prev and › next arrows"
+                      << " (hasPrev=" << hasPrev << " hasNext=" << hasNext << ")\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [carousel-both-arrows]\n";
+        }
+    }
+
     return failures;
 }

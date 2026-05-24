@@ -5,6 +5,7 @@
 #include <wx/filename.h>
 #include <wx/textctrl.h>
 #include <wx/stattext.h>
+#include <wx/datetime.h>
 #include <string>
 #include "logger.h"
 #include "edit_panel.h"
@@ -59,6 +60,7 @@ private:
     wxSplitterWindow* m_splitter      = nullptr;
     wxPanel*          m_webViewPanel  = nullptr;
     ChatPanel*        m_chatPanel     = nullptr;
+    wxDateTime        m_fileMtime;
 
     void LoadAndRender();
     std::string ReadFile(const std::string& path);
@@ -96,6 +98,7 @@ private:
     void OnFindClose(wxCommandEvent& evt);
     void OnSaveHTML(wxCommandEvent& evt);
     void OpenChat(int chId, const std::string& chTitle);
+    void OnActivate(wxActivateEvent& evt);
 
     wxDECLARE_EVENT_TABLE();
 };

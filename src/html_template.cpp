@@ -676,6 +676,10 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     spk.title = 'Click to expand';
     var nav = document.createElement('div');
     nav.className = 'tidbit-carousel-nav';
+    var prev = document.createElement('button');
+    prev.className = 'tidbit-carousel-arrow';
+    prev.textContent = '‹';
+    prev.title = 'Previous';
     var ctr = document.createElement('span');
     ctr.className = 'tidbit-carousel-counter';
     ctr.textContent = '1 / ' + group.length;
@@ -683,6 +687,7 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     arr.className = 'tidbit-carousel-arrow';
     arr.textContent = '›';
     arr.title = 'Next';
+    nav.appendChild(prev);
     nav.appendChild(ctr);
     nav.appendChild(arr);
     header.appendChild(spk);
@@ -712,6 +717,14 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     spk.addEventListener('click', function() {
       isOpen = !isOpen;
       bodyDiv.style.display = isOpen ? '' : 'none';
+      if (isOpen) renderBody();
+    });
+
+    prev.addEventListener('click', function(e) {
+      e.stopPropagation();
+      cur = (cur - 1 + group.length) % group.length;
+      spk.textContent = '💬 ' + speakers[cur];
+      ctr.textContent = (cur + 1) + ' / ' + group.length;
       if (isOpen) renderBody();
     });
 

@@ -16,6 +16,7 @@
 #include <wx/filedlg.h>
 #include <wx/filename.h>
 #include <wx/config.h>
+#include <wx/tokenzr.h>
 #include <wx/clipbrd.h>
 #include <wx/dataobj.h>
 #include <wx/textdlg.h>
@@ -262,6 +263,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     });
 
     CallAfter([this]() { LoadAndRender(); });
+
+    Bind(wxEVT_ACTIVATE, &MDViewerFrame::OnActivate, this);
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +353,10 @@ void MDViewerFrame::LoadAndRender() {
     wxString baseURL = "file://" + wxFileName(m_filePath).GetPath(wxPATH_GET_SEPARATOR);
     m_webView->SetPage(wxString::FromUTF8(html), baseURL);
     SetStatusText("Rendered: " + m_filePath);
+
+    wxDateTime mt;
+    wxFileName(m_filePath).GetTimes(nullptr, &mt, nullptr);
+    if (mt.IsValid()) m_fileMtime = mt;
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +470,31 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
             cats["(Current File)"] = names;
     }
 
+    // Merge the Create tab character library so characters appear here
+    // even before they've been used in a generated story.
+    {
+        wxConfig wxcfg("StoryTeller");
+        wxcfg.SetPath("/charlib");
+        wxString catStr;
+        if (wxcfg.Read("categories", &catStr) && !catStr.empty()) {
+            wxStringTokenizer tok(catStr, ",");
+            while (tok.HasMoreTokens()) {
+                std::string cat = tok.GetNextToken().ToStdString();
+                wxString charStr;
+                wxcfg.Read(wxString::FromUTF8(cat), &charStr);
+                auto& vec = cats[cat];
+                wxStringTokenizer ctok(charStr, "|");
+                while (ctok.HasMoreTokens()) {
+                    std::string name = ctok.GetNextToken().ToStdString();
+                    if (!name.empty() &&
+                        std::find(vec.begin(), vec.end(), name) == vec.end())
+                        vec.push_back(name);
+                }
+                std::sort(vec.begin(), vec.end());
+            }
+        }
+    }
+
     auto images = ScanPersonaImages();
     auto* panel = new PersonaPanel(this, m_darkMode, cats, images,
                                    [this]{ LoadAndRender(); });
@@ -470,6 +502,17 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
 }
 
 void MDViewerFrame::OnReload(wxCommandEvent&) { LoadAndRender(); }
+
+void MDViewerFrame::OnActivate(wxActivateEvent& evt) {
+    evt.Skip();
+    if (!evt.GetActive() || m_filePath.empty()) return;
+    wxDateTime mt;
+    if (!wxFileName(m_filePath).GetTimes(nullptr, &mt, nullptr) || !mt.IsValid()) return;
+    if (m_fileMtime.IsValid() && mt != m_fileMtime) {
+        m_fileMtime = mt;
+        LoadAndRender();
+    }
+}
 
 void MDViewerFrame::OnSaveHTML(wxCommandEvent&) {
     if (m_filePath.empty()) {

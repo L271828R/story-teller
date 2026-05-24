@@ -57,5 +57,29 @@ int test_markdown() {
         }
     }
 
+    // Trailing two spaces on paragraph lines (LLM artifact) must NOT produce
+    // visible "<br>" text. ProcessInline escapes '<' to '&lt;', so the buggy
+    // flushParagraph produces the literal text "&lt;br>" that the user sees
+    // between sentences. Both that and a real <br> element are wrong here.
+    {
+        std::string md =
+            "First sentence.  \n"
+            "Second sentence.  \n"
+            "Third sentence.  \n";
+        std::string html = RenderMarkdown(md);
+        // ProcessInline escapes both < and >, so the bug produces "&lt;br&gt;"
+        // as visible text. Also guard against a raw <br> element just in case.
+        bool hasVisibleBr = html.find("&lt;br&gt;") != std::string::npos;
+        bool hasHtmlBr    = html.find("<br>")       != std::string::npos;
+        if (hasVisibleBr || hasHtmlBr) {
+            std::cerr << "FAIL [no-br-trailing-spaces]: trailing spaces on paragraph lines "
+                         "must not produce visible <br> text or a <br> element\n"
+                      << "  got: " << html << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [no-br-trailing-spaces]\n";
+        }
+    }
+
     return failures;
 }

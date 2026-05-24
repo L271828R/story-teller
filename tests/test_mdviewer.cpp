@@ -115,5 +115,22 @@ int test_mdviewer() {
         }
     }
 
+    // File-change reload: when the app is activated (user switches back from vim),
+    // mdviewer must compare the file's mtime and re-render if it changed.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool hasActivate = code.find("wxEVT_ACTIVATE") != std::string::npos;
+        bool hasMtime    = code.find("m_fileMtime")    != std::string::npos;
+        if (!hasActivate || !hasMtime) {
+            std::cerr << "FAIL [reload-on-file-change]: mdviewer must bind wxEVT_ACTIVATE "
+                         "and track m_fileMtime to reload files edited externally\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [reload-on-file-change]\n";
+        }
+    }
+
     return failures;
 }

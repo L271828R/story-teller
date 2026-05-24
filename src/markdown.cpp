@@ -221,9 +221,8 @@ std::string RenderMarkdown(const std::string& md) {
         std::string para;
         for (size_t k = 0; k < paraLines.size(); k++) {
             std::string ln = paraLines[k];
-            bool hardBreak = ln.size() >= 2 && ln[ln.size()-1] == ' ' && ln[ln.size()-2] == ' ';
-            if (hardBreak) ln.resize(ln.size() - 2);
-            if (k > 0) para += hardBreak ? "<br>" : " ";
+            while (!ln.empty() && ln.back() == ' ') ln.pop_back();
+            if (k > 0) para += ' ';
             para += ln;
         }
         html += "<p>" + ProcessInline(para) + "</p>\n";
