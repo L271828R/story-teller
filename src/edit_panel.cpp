@@ -78,6 +78,19 @@ static std::string jsq(const std::string& s) {
     return r + "'";
 }
 
+static std::string BuildDocumentPrompt(const std::string& content,
+                                        const std::string& instruction) {
+    return
+        "Apply the following instruction to this document.\n"
+        "Preserve all structural tokens exactly as written:\n"
+        "  - :::tidbit[Name] ... ::: fences\n"
+        "  - <!-- tb:N --> and <!-- ch:N --> HTML comments\n"
+        "  - ## headings and --- separators\n"
+        "Return ONLY the modified document. No code fences, no explanation.\n\n"
+        "Instruction: " + instruction + "\n\n"
+        "---\n\n" + content;
+}
+
 static std::string language_suffix(const std::string& language) {
     std::string out;
     for (unsigned char c : language) {
@@ -174,8 +187,9 @@ void EditPanel::HandleMessage(const std::string& json) {
     if (action == "rename_file")         { OnRenameFile(); return; }
     if (action == "delete_file")         { OnDeleteFile(); return; }
     if (action == "set_rewrite_target")  {
-        m_showSections = (ExtractField(json,"target") == "chapter");
-        PushItems();
+        m_rewriteTarget = ExtractField(json, "target");
+        m_showSections  = (m_rewriteTarget == "chapter");
+        if (m_rewriteTarget != "document") PushItems();
         return;
     }
     if (action == "rewrite")             { OnRewrite(json); return; }
@@ -203,7 +217,6 @@ void EditPanel::PushFiles() {
 
 void EditPanel::PushItems() {
     const bool sections = m_showSections;
-    std::string target = sections ? "chapter" : "tidbit";
     std::string js = "setItems([";
     if (sections) {
         for (size_t i = 0; i < m_sections.size(); ++i) {
@@ -222,7 +235,7 @@ void EditPanel::PushItems() {
                   ",type:'tidbit'}";
         }
     }
-    js += "]," + jsq(target) + ");";
+    js += "]," + jsq(m_rewriteTarget) + ");";
     Run(js);
 }
 
@@ -548,6 +561,58 @@ void EditPanel::OnRewrite(const std::string& json) {
     std::string content;
     { std::ifstream f(path); if (!f) { PushStatus("Cannot read file."); return; }
       content.assign(std::istreambuf_iterator<char>(f), {}); }
+
+    // ── Document-wide rewrite ─────────────────────────────────────────────────
+    if (target == "document") {
+        AppState  st  = LoadAppState();
+        LLMConfig cfg = llm_config_from_state(st);
+        std::string prompt = BuildDocumentPrompt(content, instr);
+
+        if (cfg.backend == LLMBackend::Clipboard) {
+            if (wxTheClipboard->Open()) {
+                wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
+                wxTheClipboard->Close();
+            }
+            PushStatus("Document prompt copied to clipboard.\n"
+                       "Paste into any LLM, copy the result, then paste it back as the file.");
+            return;
+        }
+
+        Logger::get().log("EditPanel rewrite-document: file=" + filename);
+        PushBusy(true);
+        PushStatus("Sending entire document to " + st.backend + "…");
+
+        std::string chapPath = path;
+        OpenCallback cb = m_openCallback;
+
+        std::thread([this, prompt, cfg, chapPath, filename, cb]() mutable {
+            auto t0 = std::chrono::steady_clock::now();
+            LLMResult res = InvokeLLM(prompt, cfg);
+            int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            if (res.ok)
+                RecordLLMTiming(fs::path(chapPath).parent_path().string(),
+                                "rewrite-doc", filename, secs);
+
+            wxTheApp->CallAfter([this, res, chapPath, filename, cb]() mutable {
+                PushBusy(false);
+                if (!res.ok) {
+                    Logger::get().log("EditPanel rewrite-document FAILED: " + res.error);
+                    PushStatus("Error: " + res.error);
+                    return;
+                }
+                {
+                    std::ofstream f(chapPath, std::ios::trunc);
+                    f << CleanMarkdownResponse(res.text);
+                    if (!f.good()) { PushStatus("Could not write file."); return; }
+                }
+                OnSelectFile(filename);
+                PushStatus("Document rewrite done: " + filename);
+                if (cb) cb(chapPath);
+            });
+        }).detach();
+        return;
+    }
 
     bool chapterMode = (target == "chapter");
     std::string originalBlock;

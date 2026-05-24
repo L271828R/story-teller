@@ -25,7 +25,8 @@ private:
 
     std::vector<std::string> m_files;
     int                      m_selFile = -1;
-    bool                     m_showSections = false;
+    bool                     m_showSections  = false;
+    std::string              m_rewriteTarget = "tidbit"; // "tidbit"|"chapter"|"document"
 
     struct TidbitEntry  { int id; std::string preview; };
     struct SectionEntry { int id; std::string preview; };

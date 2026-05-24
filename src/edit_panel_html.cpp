@@ -102,18 +102,18 @@ input[type=radio]{cursor:pointer}
     </div>
   </div>
   <div class="right-pane">
-    <div class="label-row" style="margin-bottom:0">
-      <span class="sec-title" id="items-title">Tidbits</span>
-      <span class="stretch"></span>
-      <label><input type="radio" name="rt" value="tidbit" checked onchange="setRewriteTarget('tidbit')"> Tidbits</label>
-      <label><input type="radio" name="rt" value="chapter"       onchange="setRewriteTarget('chapter')"> Chapters</label>
-    </div>
+    <div class="sec-title" id="items-title">Tidbits</div>
     <div class="list-box" id="item-box">
       <ul id="item-list"><li class="empty-item">Select a file.</li></ul>
     </div>
   </div>
 </div>
-<div class="btn-row" style="justify-content:flex-end;margin-top:6px">
+<div class="btn-row" style="margin-top:8px">
+  <span class="muted">Rewrite target:</span>
+  <label><input type="radio" name="rt" value="tidbit"   checked onchange="setRewriteTarget('tidbit')"> Selected tidbit</label>
+  <label><input type="radio" name="rt" value="chapter"          onchange="setRewriteTarget('chapter')"> Selected chapter</label>
+  <label><input type="radio" name="rt" value="document"         onchange="setRewriteTarget('document')"> Entire document</label>
+  <span class="stretch"></span>
   <button onclick="send({action:'refresh'})">↺ Refresh</button>
 </div>
 
@@ -121,8 +121,8 @@ input[type=radio]{cursor:pointer}
 
 <!-- ── Rewrite ───────────────────────────────────────────────────────────── -->
 <div style="margin-bottom:6px">
-  <div class="sec-title">Instruction (for rewrite or translation)</div>
-  <textarea id="instruct" placeholder="e.g. Make this shorter and funnier…"></textarea>
+  <div class="sec-title" id="rewrite-label">Instruction — selected tidbit</div>
+  <textarea id="instruct" placeholder="e.g. Translate only the tidbit blocks to English, keep chapters in Chinese…"></textarea>
 </div>
 <div class="btn-row" style="margin-bottom:10px">
   <button id="rewrite-btn" class="primary" onclick="doRewrite()">Rewrite</button>
@@ -267,8 +267,16 @@ function clickItem(idx) {
 
 function setRewriteTarget(val) {
   _rewriteTarget = val;
-  document.getElementById('items-title').textContent =
-    val === 'chapter' ? 'Chapters' : 'Tidbits';
+  var itemsTitle = val === 'chapter' ? 'Chapters'
+                 : val === 'document' ? 'Tidbits (browse only)'
+                 : 'Tidbits';
+  document.getElementById('items-title').textContent = itemsTitle;
+  var rwLabel = val === 'document'
+    ? 'Instruction — entire document (structural tokens preserved)'
+    : val === 'chapter'
+    ? 'Instruction — selected chapter'
+    : 'Instruction — selected tidbit';
+  document.getElementById('rewrite-label').textContent = rwLabel;
   send({action:'set_rewrite_target', target:val});
 }
 
@@ -322,7 +330,17 @@ function doRewrite() {
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
   var instr = document.getElementById('instruct').value.trim();
   if (!instr) { setStatus('Enter an instruction first.'); return; }
+  if (_rewriteTarget === 'document') {
+    send({action:'rewrite', file:_files[_selFile],
+          target:'document', id:-1, instruction:instr});
+    return;
+  }
   var id = (_selItem >= 0 && _items.length) ? _items[_selItem].id : -1;
+  if (id < 0) {
+    var what = _rewriteTarget === 'chapter' ? 'chapter' : 'tidbit';
+    setStatus('Select a ' + what + ' from the list first.');
+    return;
+  }
   send({action:'rewrite', file:_files[_selFile],
         target:_rewriteTarget, id:id, instruction:instr});
 }
