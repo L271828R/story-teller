@@ -10,6 +10,7 @@
 #include "logger.h"
 #include "edit_panel.h"
 #include "create_panel.h"
+#include "image_panel.h"
 #include "project_panel.h"
 #include "chat_panel.h"
 #include "monitor_panel.h"
@@ -33,6 +34,7 @@ enum {
     ID_NEW_FROM_CLIPBOARD,
     ID_FOCUS_MODE,
     ID_MANAGE_PERSONAS,
+    ID_MANAGE_IMAGES,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -77,6 +79,7 @@ private:
     void OnNewFromClipboard(wxCommandEvent& evt);
     void OnFocusMode(wxCommandEvent& evt);
     void OnManagePersonas(wxCommandEvent& evt);
+    void OnManageImages(wxCommandEvent& evt);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);
     void OnThemeDark(wxCommandEvent& evt);

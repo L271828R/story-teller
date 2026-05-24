@@ -9,6 +9,7 @@
 #include "creator.h"
 #include "config.h"
 #include "notes.h"
+#include "images.h"
 #include "persona.h"
 #include "persona_panel.h"
 #include <wx/notebook.h>
@@ -52,6 +53,7 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_NEW_FROM_CLIPBOARD,   MDViewerFrame::OnNewFromClipboard)
     EVT_MENU(ID_FOCUS_MODE,           MDViewerFrame::OnFocusMode)
     EVT_MENU(ID_MANAGE_PERSONAS,      MDViewerFrame::OnManagePersonas)
+    EVT_MENU(ID_MANAGE_IMAGES,        MDViewerFrame::OnManageImages)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
@@ -85,6 +87,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     file->Append(wxID_OPEN,             "&Open…\tCtrl+O");
     file->Append(ID_NEW_FROM_CLIPBOARD, "New from &Clipboard…\tCtrl+Shift+N");
     file->Append(ID_MANAGE_PERSONAS,    "Manage &Personas…");
+    file->Append(ID_MANAGE_IMAGES,      "Manage &Images…");
     file->Append(ID_RELOAD,             "&Reload\tCtrl+R");
     file->Append(ID_SAVE_HTML,          "Save &HTML…\tCtrl+Shift+S");
     file->AppendSeparator();
@@ -349,6 +352,13 @@ void MDViewerFrame::LoadAndRender() {
         }
     }
 
+    // Substitute local image files with base64 data URLs (WebView sandbox).
+    {
+        std::string projDir = CurrentProjectDir();
+        if (!projDir.empty())
+            body = SubstituteLocalImages(body, projDir);
+    }
+
     std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
     std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent,
                                   ToDataURLs(ScanPersonaImages()));
@@ -501,6 +511,20 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
     auto images = ScanPersonaImages();
     auto* panel = new PersonaPanel(this, m_darkMode, cats, images,
                                    [this]{ LoadAndRender(); });
+    panel->Show();
+}
+
+void MDViewerFrame::OnManageImages(wxCommandEvent&) {
+    std::string projDir = CurrentProjectDir();
+    if (projDir.empty() || m_filePath.empty()) {
+        wxMessageBox("Open a project file first.",
+                     "StoryTeller", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+    auto* panel = new ImagePanel(this, m_darkMode,
+                                 projDir,
+                                 m_filePath.ToStdString(),
+                                 [this]{ LoadAndRender(); });
     panel->Show();
 }
 

@@ -268,6 +268,14 @@ li,summary,.tidbit-body{overflow-wrap:anywhere;word-break:break-word}
 
 /* ── Media ──────────────────────────────────────────────────────────────── */
 img{max-width:100%;height:auto;border-radius:4px}
+/* Project image size/align classes (set by SubstituteLocalImages) */
+.img-small {width:160px}
+.img-medium{width:320px}
+.img-large {width:560px}
+.img-full  {width:100%}
+.img-left  {float:left;margin:0 16px 12px 0;clear:left}
+.img-right {float:right;margin:0 0 12px 16px;clear:right}
+.img-center{display:block;margin-left:auto;margin-right:auto}
 
 /* ── Rule ───────────────────────────────────────────────────────────────── */
 hr{height:.25em;padding:0;margin:24px 0;background:var(--border);border:0}

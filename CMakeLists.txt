@@ -105,6 +105,7 @@ set(SOURCES
     src/chat_panel.cpp
     src/editor.cpp
     src/notes.cpp
+    src/images.cpp
     src/filemeta.cpp
     src/git_ops.cpp
     src/llm_error.cpp
@@ -115,6 +116,9 @@ set(SOURCES
     src/persona.cpp
     src/persona_panel_html.cpp
     src/persona_panel.cpp
+    src/images.cpp
+    src/image_panel_html.cpp
+    src/image_panel.cpp
 )
 add_executable(story-teller ${SOURCES})
 add_dependencies(story-teller gen_mermaid_header gen_hljs_headers)
@@ -139,6 +143,7 @@ add_executable(test_story-teller
     tests/test_meta.cpp
     tests/test_project_search.cpp
     tests/test_notes.cpp
+    tests/test_images.cpp
     tests/test_filemeta.cpp
     tests/test_logger.cpp
     tests/test_create_panel_html.cpp
@@ -159,6 +164,7 @@ add_executable(test_story-teller
     src/conversation.cpp
     src/editor.cpp
     src/notes.cpp
+    src/images.cpp
     src/git_ops.cpp
     src/llm_error.cpp
     src/llm_response.cpp
