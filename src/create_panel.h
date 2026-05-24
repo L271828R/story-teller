@@ -58,10 +58,12 @@ private:
     void DoSelectProject(const std::string& name);
     void DoGenerate(const std::string& topic, const std::string& style,
                     const std::string& context, const std::string& backend,
-                    const std::string& apiKey, const std::string& ollamaModel);
+                    const std::string& apiKey, const std::string& ollamaModel,
+                    int tidbitsPerChapter);
     void DoCopyPrompt(const std::string& topic, const std::string& style,
                       const std::string& context, const std::string& backend,
-                      const std::string& apiKey, const std::string& ollamaModel);
+                      const std::string& apiKey, const std::string& ollamaModel,
+                      int tidbitsPerChapter);
     void DoSaveContext(const std::string& text);
     void DoSaveState(const std::string& topic, const std::string& style,
                      const std::string& backend, const std::string& apiKey,

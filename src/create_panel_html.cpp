@@ -182,6 +182,12 @@ button:disabled{opacity:.5;cursor:default}
     <option>Tech blog post</option>
   </datalist>
 </div>
+<div class="row mt4">
+  <span class="label">Tidbits / chapter</span>
+  <input type="number" id="tidbitsPerChapter" min="0" max="10" value="1"
+         style="width:60px;text-align:center">
+  <span style="font-size:12px;color:var(--muted)">(0 = none)</span>
+</div>
 
 <hr>
 
@@ -340,12 +346,13 @@ function onBackendChange() {
 // ── Generate / Prompt ─────────────────────────────
 function formData() {
     return {
-        topic:       document.getElementById('topic').value,
-        style:       document.getElementById('style').value,
-        context:     document.getElementById('context').value,
-        backend:     document.getElementById('backend').value,
-        apiKey:      document.getElementById('apiKey').value,
-        ollamaModel: document.getElementById('ollamaModel').value
+        topic:              document.getElementById('topic').value,
+        style:              document.getElementById('style').value,
+        context:            document.getElementById('context').value,
+        backend:            document.getElementById('backend').value,
+        apiKey:             document.getElementById('apiKey').value,
+        ollamaModel:        document.getElementById('ollamaModel').value,
+        tidbitsPerChapter:  parseInt(document.getElementById('tidbitsPerChapter').value) || 0
     };
 }
 function generate()   { send(Object.assign({action:'generate'},   formData())); }

@@ -56,6 +56,16 @@ static std::string ExtractField(const std::string& json, const std::string& key)
     return val;
 }
 
+static int ExtractInt(const std::string& json, const std::string& key, int def = 0) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return def;
+    pos += search.size();
+    while (pos < json.size() && json[pos] == ' ') ++pos;
+    if (pos >= json.size()) return def;
+    try { return std::stoi(json.substr(pos)); } catch (...) { return def; }
+}
+
 static bool ExtractBool(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\":";
     size_t pos = json.find(search);
@@ -398,6 +408,7 @@ void CreatePanel::SaveCharLibrary() const {
 void CreatePanel::HandleMessage(const std::string& json) {
     auto f = [&](const std::string& key) { return ExtractField(json, key); };
     auto b = [&](const std::string& key) { return ExtractBool(json, key); };
+    auto n = [&](const std::string& key, int def) { return ExtractInt(json, key, def); };
 
     std::string action = f("action");
 
@@ -412,8 +423,8 @@ void CreatePanel::HandleMessage(const std::string& json) {
     }
     else if (action == "newProject")       DoNewProject(f("name"));
     else if (action == "selectProject")    DoSelectProject(f("name"));
-    else if (action == "generate")         DoGenerate(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"));
-    else if (action == "copyPrompt")       DoCopyPrompt(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "generate")         DoGenerate(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
+    else if (action == "copyPrompt")       DoCopyPrompt(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
     else if (action == "saveContext")      DoSaveContext(f("text"));
     else if (action == "saveState")        DoSaveState(f("topic"),f("style"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "backendChanged")   DoBackendChanged(f("backend"));
@@ -458,12 +469,14 @@ void CreatePanel::DoSelectProject(const std::string& name) {
 
 void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& style,
                                const std::string& context, const std::string& /*backend*/,
-                               const std::string& /*apiKey*/, const std::string& /*ollamaModel*/) {
+                               const std::string& /*apiKey*/, const std::string& /*ollamaModel*/,
+                               int tidbitsPerChapter) {
     if (topic.empty()) { PushStatus("Enter a topic first."); return; }
     GenerationRequest req;
-    req.topic          = topic;
-    req.style          = style;
-    req.projectContext = context;
+    req.topic              = topic;
+    req.style              = style;
+    req.projectContext     = context;
+    req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
     for (auto& ch : m_checkedChars) req.characters.push_back(ch);
     std::string prompt = BuildPrompt(req, GetLLMReadme());
     if (wxTheClipboard->Open()) {
@@ -587,7 +600,8 @@ void CreatePanel::DoDeleteFile(const std::string& filename) {
 
 void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
                              const std::string& context, const std::string& backend,
-                             const std::string& apiKey, const std::string& ollamaModel) {
+                             const std::string& apiKey, const std::string& ollamaModel,
+                             int tidbitsPerChapter) {
     if (m_generating) return;
     if (topic.empty()) { PushStatus("Enter a topic."); return; }
 
@@ -596,9 +610,10 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     if (!InitProject(projPath)) { PushStatus("Cannot initialise project folder."); return; }
 
     GenerationRequest req;
-    req.topic          = topic;
-    req.style          = style;
-    req.projectContext = context;
+    req.topic              = topic;
+    req.style              = style;
+    req.projectContext     = context;
+    req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
     for (auto& ch : m_checkedChars) req.characters.push_back(ch);
 
     int         chId    = NextChapterId(projPath);

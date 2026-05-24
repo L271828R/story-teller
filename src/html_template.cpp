@@ -185,6 +185,19 @@ details.tidbit summary::-webkit-details-marker{display:none}
 details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 .tidbit-body{padding:12px 16px}
 .tidbit-body p:last-child{margin-bottom:0}
+
+/* ── Tidbit carousel ─────────────────────────────────────────────────────── */
+.tidbit-carousel{border:1px solid var(--border);border-radius:6px;margin-bottom:16px;background:var(--surface)}
+.tidbit-carousel-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-style:italic;color:var(--text-muted);user-select:none}
+.tidbit-carousel-nav{display:flex;align-items:center;gap:6px}
+.tidbit-carousel-counter{font-size:.8em;opacity:.75}
+.tidbit-carousel-arrow{background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:1.1em;padding:0 7px;line-height:1.5}
+.tidbit-carousel-arrow:hover{background:var(--border)}
+.tidbit-carousel-speaker{cursor:pointer}
+.tidbit-carousel-speaker:hover{color:var(--text)}
+.tidbit-carousel-body{padding:12px 16px;border-top:1px solid var(--border)}
+.tidbit-carousel-body p:last-child{margin-bottom:0}
+
 .persona-img{
   float:right;max-width:110px;max-height:110px;
   border-radius:50%;margin:0 0 10px 14px;
@@ -604,8 +617,10 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
   });
 })();
 
-// ── Persona images ───────────────────────────────────────────────────────
+// ── Persona images (set before carousel so lookupPersona has data) ───────
 )HTML" + personaJS + R"HTML(
+
+// ── Tidbit carousel ──────────────────────────────────────────────────────
 (function() {
   function normName(s) {
     return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'');
@@ -613,16 +628,120 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
   function lookupPersona(name) {
     var imgs = window._personaImages;
     if (!imgs) return null;
-    // 1. Exact normalized key
     var src = imgs[normName(name)];
     if (src) return src;
-    // 2. English part from parentheses: "李白 (Li Bai)" → "li_bai"
     var m = name.match(/\(([^)]+)\)/);
     if (m) { src = imgs[normName(m[1])]; if (src) return src; }
-    // 3. Non-ASCII (Chinese) part only
     var nonAscii = name.replace(/[\x00-\x7F]+/g,'').trim();
     if (nonAscii) { src = imgs[normName(nonAscii)]; if (src) return src; }
-    // 4. ASCII words only, strip punctuation
+    var ascii = name.replace(/[^\x00-\x7F]+/g,' ').replace(/[()]/g,' ').trim();
+    if (ascii) { src = imgs[normName(ascii)]; if (src) return src; }
+    return null;
+  }
+
+  var all = Array.from(document.querySelectorAll('details.tidbit'));
+  var visited = new Set();
+  all.forEach(function(el) {
+    if (visited.has(el)) return;
+    var group = [el];
+    var sib = el.nextElementSibling;
+    while (sib && sib.classList && sib.classList.contains('tidbit')) {
+      group.push(sib); sib = sib.nextElementSibling;
+    }
+    group.forEach(function(e) { visited.add(e); });
+    if (group.length < 2) return;
+
+    var speakers = group.map(function(d) {
+      var s = d.querySelector('summary');
+      return s ? s.textContent.trim() : '';
+    });
+    var imgSrcs = speakers.map(function(name) { return lookupPersona(name); });
+    var bodies = group.map(function(d) {
+      var b = d.querySelector('.tidbit-body');
+      return b ? b.innerHTML : '';
+    });
+
+    var cur = 0;
+    var isOpen = false;
+
+    var carousel = document.createElement('div');
+    carousel.className = 'tidbit-carousel';
+
+    // Header: name (clickable to expand) + counter + arrow
+    var header = document.createElement('div');
+    header.className = 'tidbit-carousel-header';
+    var spk = document.createElement('span');
+    spk.className = 'tidbit-carousel-speaker';
+    spk.textContent = '💬 ' + speakers[0];
+    spk.title = 'Click to expand';
+    var nav = document.createElement('div');
+    nav.className = 'tidbit-carousel-nav';
+    var ctr = document.createElement('span');
+    ctr.className = 'tidbit-carousel-counter';
+    ctr.textContent = '1 / ' + group.length;
+    var arr = document.createElement('button');
+    arr.className = 'tidbit-carousel-arrow';
+    arr.textContent = '›';
+    arr.title = 'Next';
+    nav.appendChild(ctr);
+    nav.appendChild(arr);
+    header.appendChild(spk);
+    header.appendChild(nav);
+    carousel.appendChild(header);
+
+    // Single body div — populated on expand, hidden by default
+    var bodyDiv = document.createElement('div');
+    bodyDiv.className = 'tidbit-carousel-body';
+    bodyDiv.style.display = 'none';
+    carousel.appendChild(bodyDiv);
+
+    function renderBody() {
+      bodyDiv.innerHTML = '';
+      if (imgSrcs[cur]) {
+        var img = document.createElement('img');
+        img.src = imgSrcs[cur];
+        img.className = 'persona-img';
+        img.alt = speakers[cur];
+        bodyDiv.appendChild(img);
+      }
+      var textDiv = document.createElement('div');
+      textDiv.innerHTML = bodies[cur];
+      bodyDiv.appendChild(textDiv);
+    }
+
+    spk.addEventListener('click', function() {
+      isOpen = !isOpen;
+      bodyDiv.style.display = isOpen ? '' : 'none';
+      if (isOpen) renderBody();
+    });
+
+    arr.addEventListener('click', function(e) {
+      e.stopPropagation();
+      cur = (cur + 1) % group.length;
+      spk.textContent = '💬 ' + speakers[cur];
+      ctr.textContent = (cur + 1) + ' / ' + group.length;
+      if (isOpen) renderBody();
+    });
+
+    el.parentNode.insertBefore(carousel, el);
+    group.forEach(function(e) { e.parentNode.removeChild(e); });
+  });
+})();
+
+// ── Persona images for individual (non-carousel) tidbits ─────────────────
+(function() {
+  function normName(s) {
+    return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'');
+  }
+  function lookupPersona(name) {
+    var imgs = window._personaImages;
+    if (!imgs) return null;
+    var src = imgs[normName(name)];
+    if (src) return src;
+    var m = name.match(/\(([^)]+)\)/);
+    if (m) { src = imgs[normName(m[1])]; if (src) return src; }
+    var nonAscii = name.replace(/[\x00-\x7F]+/g,'').trim();
+    if (nonAscii) { src = imgs[normName(nonAscii)]; if (src) return src; }
     var ascii = name.replace(/[^\x00-\x7F]+/g,' ').replace(/[()]/g,' ').trim();
     if (ascii) { src = imgs[normName(ascii)]; if (src) return src; }
     return null;
