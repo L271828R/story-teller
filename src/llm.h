@@ -8,6 +8,9 @@ struct LLMConfig {
     std::string apiKey;
     std::string ollamaModel = "llama3";
     std::string ollamaUrl   = "http://localhost:11434";
+    // Monitor metadata — shown in the Process Monitor tab.
+    std::string project;    // e.g. "History/Darwin"
+    std::string action;     // e.g. "translate → French" or "generate"
 };
 
 struct LLMResult {

@@ -35,7 +35,6 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
 
 std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
                                    const std::string& targetLanguage,
-                                   const std::string& llmReadme,
                                    const std::string& extraInstruction = "");
 
 // Returns the extra-instruction string that asks the LLM to add ::pinyin tag lines.

@@ -19,6 +19,8 @@ int test_project_search();
 int test_notes();
 int test_filemeta();
 int test_logger();
+int test_create_panel_html();
+int test_process_monitor();
 
 int main() {
     int failures = 0;
@@ -38,6 +40,8 @@ int main() {
     failures += test_notes();
     failures += test_filemeta();
     failures += test_logger();
+    failures += test_create_panel_html();
+    failures += test_process_monitor();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

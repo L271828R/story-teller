@@ -140,21 +140,20 @@ int test_creator() {
         }
     }
 
-    // BuildTranslationPrompt preserves structure and names the target language.
+    // BuildTranslationPrompt names the target language, includes source, and keeps
+    // tidbit syntax intact without requiring an LLM syntax reference.
     {
         std::string prompt = BuildTranslationPrompt("<!-- ch:0 -->\n## Chapter 1: Hello\n",
                                                     "Spanish",
-                                                    "",
                                                     "Add a pinyin line below each Chinese sentence.");
-        bool hasLang = prompt.find("Spanish") != std::string::npos;
+        bool hasLang   = prompt.find("Spanish") != std::string::npos;
         bool hasMarker = prompt.find("ch:N") != std::string::npos
                       || prompt.find("<!-- ch:0 -->") != std::string::npos;
         bool hasSource = prompt.find("Chapter 1") != std::string::npos;
-        bool hasAdapt = prompt.find("culturally relevant") != std::string::npos
-                     && prompt.find("instead of literal") != std::string::npos;
-        bool hasNewFile = prompt.find("translated markdown document") != std::string::npos;
-        bool hasExtra = prompt.find("pinyin line") != std::string::npos;
-        if (!hasLang || !hasMarker || !hasSource || !hasAdapt || !hasNewFile || !hasExtra) {
+        bool hasTidbit = prompt.find(":::tidbit") != std::string::npos;
+        bool hasExtra  = prompt.find("pinyin line") != std::string::npos;
+        bool noReadme  = prompt.find("MDViewer syntax reference") == std::string::npos;
+        if (!hasLang || !hasMarker || !hasSource || !hasTidbit || !hasExtra || !noReadme) {
             std::cerr << "FAIL [build-translation-prompt]\n";
             ++failures;
         } else {
@@ -609,7 +608,7 @@ int test_creator() {
 
     // BuildTranslationPrompt includes Chinese-with-Pinyin instruction when requested.
     {
-        std::string prompt = BuildTranslationPrompt("## Chapter\n\nText.", "Chinese (Mandarin)", "",
+        std::string prompt = BuildTranslationPrompt("## Chapter\n\nText.", "Chinese (Mandarin)",
                                                     BuildPinyinInstruction());
         bool hasPinyin = prompt.find("Pinyin") != std::string::npos ||
                          prompt.find("pinyin") != std::string::npos;

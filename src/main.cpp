@@ -3,6 +3,7 @@
 #include "mdviewer.h"
 #include "markdown.h"
 #include "logger.h"
+#include "process_monitor.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <spawn.h>
@@ -64,6 +65,11 @@ int main(int argc, char* argv[]) {
     Logger::get().log("=== startup  pid=" + std::to_string(getpid())
                       + "  arg=" + (argc >= 2 ? argv[1] : "(none)")
                       + "  cwd=" + cwd);
+
+    int killed = KillOrphanedProcesses();
+    if (killed > 0)
+        Logger::get().log("startup: killed " + std::to_string(killed)
+                          + " orphaned LLM process(es)");
 
     return wxEntry(argc, argv);
 }

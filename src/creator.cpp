@@ -290,33 +290,20 @@ std::string BuildPatchPrompt(const std::string& originalBlock,
 
 std::string BuildTranslationPrompt(const std::string& sourceMarkdown,
                                    const std::string& targetLanguage,
-                                   const std::string& llmReadme,
                                    const std::string& extraInstruction) {
     std::ostringstream out;
-    out << "## Translation request\n\n"
-        << "Translate the following complete StoryTeller markdown document into "
-        << targetLanguage << ".\n\n"
-        << "Preserve the markdown structure, heading levels, fenced code blocks, image/link URLs, "
-           "and HTML comment markers such as `<!-- ch:N -->` and `<!-- tb:N -->`. "
-           "Translate visible prose and chapter titles. For `:::tidbit[...]` blocks, "
-           "adapt the joke, aside, idiom, voice, and cultural reference so it feels natural, "
-           "authentic, and culturally relevant in the target language instead of literal. "
-           "Keep the tidbit block syntax valid and keep the same speaker name unless the "
-           "source name has a standard target-language rendering. "
-           "Return only the translated markdown document with no prose before or after.\n\n"
-        << "## Additional translation instructions\n\n";
+    out << "Translate the following markdown document into " << targetLanguage << ".\n\n"
+        << "- Translate only visible prose and titles.\n"
+        << "- Preserve all markdown formatting: headings, bullet lists, fenced code blocks, "
+           "image and link syntax.\n"
+        << "- Preserve all block tags unchanged: `:::tidbit[...]` delimiters, "
+           "HTML comment markers like `<!-- ch:N -->` and `<!-- tb:N -->`.\n"
+        << "- Return only the translated document with no preamble or explanation.\n";
 
-    if (trim_copy(extraInstruction).empty()) {
-        out << "None.\n\n";
-    } else {
-        out << extraInstruction << "\n\n";
-    }
+    if (!trim_copy(extraInstruction).empty())
+        out << "\n" << extraInstruction << "\n";
 
-    out << "## Source markdown\n\n"
-        << "```markdown\n" << sourceMarkdown << "\n```\n\n";
-
-    std::string ref = llmReadme.empty() ? GetLLMReadme() : llmReadme;
-    out << "## MDViewer syntax reference\n\n" << ref;
+    out << "\n---\n\n" << sourceMarkdown;
     return out.str();
 }
 

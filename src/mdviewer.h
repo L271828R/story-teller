@@ -11,6 +11,7 @@
 #include "create_panel.h"
 #include "project_panel.h"
 #include "chat_panel.h"
+#include "monitor_panel.h"
 #include <wx/splitter.h>
 
 enum {
@@ -28,6 +29,7 @@ enum {
     ID_FIND_CLOSE,
     ID_SAVE_HTML,
     ID_CHAT_OPEN,
+    ID_NEW_FROM_CLIPBOARD,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -39,8 +41,9 @@ private:
     wxNotebook*   m_notebook    = nullptr;
     wxPanel*      m_viewPage    = nullptr;
     EditPanel*    m_editPage    = nullptr;
-    CreatePanel*  m_createPage  = nullptr;
-    ProjectPanel* m_projectPage = nullptr;
+    CreatePanel*   m_createPage   = nullptr;
+    MonitorPanel*  m_monitorPage  = nullptr;
+    ProjectPanel*  m_projectPage  = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;
@@ -67,6 +70,7 @@ private:
     std::string CurrentProjectDir() const;
 
     void OnOpen(wxCommandEvent& evt);
+    void OnNewFromClipboard(wxCommandEvent& evt);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);
     void OnThemeDark(wxCommandEvent& evt);

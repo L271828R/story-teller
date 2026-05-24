@@ -35,9 +35,17 @@ static LLMResult run_shell(const std::string& cmd) {
         Logger::get().log("run_shell FAILED: popen returned null");
         return {false, "", "popen failed: " + cmd};
     }
+    Logger::get().log("run_shell: pipe opened, waiting for output…");
     std::string out;
     char buf[4096];
-    while (fgets(buf, sizeof(buf), pipe)) out += buf;
+    bool firstChunk = true;
+    while (fgets(buf, sizeof(buf), pipe)) {
+        if (firstChunk) {
+            Logger::get().log("run_shell: first output received");
+            firstChunk = false;
+        }
+        out += buf;
+    }
     int status = pclose(pipe);
     int exitCode = status;
     if (WIFEXITED(status)) {
@@ -81,6 +89,16 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         f << prompt;
         if (!f.good()) return {false, "", "could not write temp file"};
     }
+    // Write a sidecar .meta file the Process Monitor can read.
+    {
+        std::ofstream m(tmpFile + ".meta");
+        m << "project=" << cfg.project << "\n";
+        m << "action="  << cfg.action  << "\n";
+        m << "backend=" << BackendLabel(cfg.backend) << "\n";
+    }
+    std::string savedPrompt = Logger::get().savePrompt(prompt);
+    Logger::get().log("prompt saved: " + savedPrompt
+                      + "  (" + std::to_string(prompt.size()) + " bytes)");
 
     LLMResult result;
 

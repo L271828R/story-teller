@@ -86,6 +86,10 @@ set(SOURCES
     src/main.cpp
     src/mdviewer.cpp
     src/create_panel.cpp
+    src/create_panel_html.cpp
+    src/monitor_panel.cpp
+    src/monitor_panel_html.cpp
+    src/process_monitor.cpp
     src/edit_panel.cpp
     src/project_panel.cpp
     src/llm.cpp
@@ -133,6 +137,10 @@ add_executable(test_story-teller
     tests/test_notes.cpp
     tests/test_filemeta.cpp
     tests/test_logger.cpp
+    tests/test_create_panel_html.cpp
+    tests/test_process_monitor.cpp
+    src/create_panel_html.cpp
+    src/process_monitor.cpp
     src/filemeta.cpp
     src/logger.cpp
     src/config.cpp

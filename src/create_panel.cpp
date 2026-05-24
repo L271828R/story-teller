@@ -1,100 +1,85 @@
 #include "create_panel.h"
 #include "config.h"
-#include "logger.h"
+#include "create_panel_html.h"
 #include "creator.h"
+#include "filemeta.h"
 #include "llm.h"
 #include "llm_response.h"
+#include "logger.h"
 #include "markdown.h"
 #include "meta.h"
 #include "project.h"
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <thread>
-#include <wx/button.h>
-#include <wx/checklst.h>
-#include <wx/choice.h>
-#include <wx/combobox.h>
 #include <wx/clipbrd.h>
 #include <wx/config.h>
 #include <wx/dataobj.h>
-#include <wx/dirdlg.h>
-#include <wx/listbox.h>
-#include <wx/listctrl.h>
-#include "filemeta.h"
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
-#include <wx/statline.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
-#include <wx/textdlg.h>
 #include <wx/tokenzr.h>
+#include <wx/webview.h>
 
 namespace fs = std::filesystem;
 
-enum {
-    ID_CP_NEW_PROJECT = wxID_HIGHEST + 200,
-    ID_CP_PROJECT_SEL,
-    ID_CP_BACKEND,
-    ID_CP_REFRESH_OLLAMA,
-    ID_CP_GENERATE,
-    ID_CP_COPY_PROMPT,
-    ID_CP_SAVE,
-    ID_CP_OPEN_VIEW,
-    ID_CP_CHAPTER_LIST,
-    ID_CP_CAT_LIST,
-    ID_CP_ADD_CAT,
-    ID_CP_DEL_CAT,
-    ID_CP_CHAR_LIST,
-    ID_CP_ADD_CHAR,
-    ID_CP_DEL_CHAR,
-    ID_CP_SAVE_CONTEXT,
-    ID_CP_TRANSLATE,
-    ID_CP_DELETE_FILE,
-};
+// ── JSON helpers ──────────────────────────────────────────────────────────────
 
-wxBEGIN_EVENT_TABLE(CreatePanel, wxPanel)
-    EVT_BUTTON(ID_CP_NEW_PROJECT,    CreatePanel::OnNewProject)
-    EVT_CHOICE(ID_CP_PROJECT_SEL,    CreatePanel::OnProjectSelected)
-    EVT_BUTTON(ID_CP_SAVE,           CreatePanel::OnSave)
-    EVT_LISTBOX(ID_CP_CAT_LIST,      CreatePanel::OnCatSelected)
-    EVT_CHECKLISTBOX(ID_CP_CHAR_LIST, CreatePanel::OnCharToggled)
-    EVT_BUTTON(ID_CP_ADD_CAT,     CreatePanel::OnAddCategory)
-    EVT_BUTTON(ID_CP_DEL_CAT,     CreatePanel::OnDeleteCategory)
-    EVT_BUTTON(ID_CP_ADD_CHAR,    CreatePanel::OnAddCharacter)
-    EVT_BUTTON(ID_CP_DEL_CHAR,    CreatePanel::OnDeleteCharacter)
-    EVT_CHOICE(ID_CP_BACKEND,     CreatePanel::OnBackendChanged)
-    EVT_BUTTON(ID_CP_GENERATE,      CreatePanel::OnGenerate)
-    EVT_BUTTON(ID_CP_COPY_PROMPT,   CreatePanel::OnCopyPrompt)
-    EVT_BUTTON(ID_CP_SAVE_CONTEXT,  CreatePanel::OnSaveContext)
-    EVT_BUTTON(ID_CP_TRANSLATE,     CreatePanel::OnTranslate)
-    EVT_BUTTON(ID_CP_DELETE_FILE,   CreatePanel::OnDeleteFile)
-    EVT_BUTTON(ID_CP_OPEN_VIEW,     CreatePanel::OnOpenInView)
-    EVT_LIST_ITEM_ACTIVATED(ID_CP_CHAPTER_LIST, CreatePanel::OnChapterActivated)
-wxEND_EVENT_TABLE()
-
-static wxArrayString make_styles() {
-    wxArrayString s;
-    for (auto* n : {"Academic essay", "Children's book", "Crime noir",
-                    "Fairy tale", "Horror", "Long-form essay",
-                    "Podcast transcript", "Popular science",
-                    "Socratic dialogue", "Tech blog post"})
-        s.Add(n);
-    return s;
+static std::string ExtractField(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\"";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':')) ++pos;
+    if (pos >= json.size() || json[pos] != '"') return "";
+    ++pos;
+    std::string val;
+    while (pos < json.size()) {
+        char c = json[pos++];
+        if (c == '"') break;
+        if (c == '\\' && pos < json.size()) {
+            char esc = json[pos++];
+            switch (esc) {
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'n':  val += '\n'; break;
+                case 'r':  val += '\r'; break;
+                case 't':  val += '\t'; break;
+                default:   val += esc;  break;
+            }
+        } else {
+            val += c;
+        }
+    }
+    return val;
 }
 
-static wxArrayString make_backends() {
-    wxArrayString s;
-    for (auto* n : {"Clipboard (manual)", "claude -p", "Codex CLI", "Gemini CLI", "Ollama (local)", "Anthropic API"})
-        s.Add(n);
-    return s;
+static bool ExtractBool(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\":";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return false;
+    pos += search.size();
+    while (pos < json.size() && json[pos] == ' ') ++pos;
+    return pos < json.size() && json[pos] == 't';
 }
 
-static LLMBackend backend_from_label(const std::string& label) {
-    return BackendFromLabel(label);
+// Escape a C++ string for embedding in a single-quoted JS string literal.
+static std::string JsStr(const std::string& s) {
+    std::string r = "'";
+    for (char c : s) {
+        if      (c == '\'') r += "\\'";
+        else if (c == '\\') r += "\\\\";
+        else if (c == '\n') r += "\\n";
+        else if (c == '\r') { /* skip */ }
+        else r += c;
+    }
+    r += "'";
+    return r;
 }
+
+// ── Ollama helper ─────────────────────────────────────────────────────────────
 
 static std::vector<std::string> load_ollama_models() {
     FILE* pipe = popen("curl -s --max-time 1 http://localhost:11434/api/tags 2>/dev/null", "r");
@@ -106,451 +91,260 @@ static std::vector<std::string> load_ollama_models() {
     return ParseOllamaTags(out);
 }
 
-static std::string trim_copy(const std::string& s) {
-    const std::string ws = " \t\r\n";
-    auto start = s.find_first_not_of(ws);
-    if (start == std::string::npos) return "";
-    auto end = s.find_last_not_of(ws);
-    return s.substr(start, end - start + 1);
-}
-
-static std::string truncate_for_log(const std::string& s, std::size_t maxLen = 240) {
-    return s.size() <= maxLen ? s : s.substr(0, maxLen) + "...";
-}
-
 static std::string language_from_topic(const std::string& topic) {
     std::string lower = topic;
     std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
-    std::string needle = "language:";
+                   [](unsigned char c){ return (char)std::tolower(c); });
+    const std::string needle = "language:";
     auto pos = lower.find(needle);
     if (pos == std::string::npos) return "(not specified)";
     pos += needle.size();
+    while (pos < topic.size() && topic[pos] == ' ') ++pos;
     auto end = topic.find_first_of(".\n\r", pos);
-    return trim_copy(topic.substr(pos, end == std::string::npos ? std::string::npos : end - pos));
+    std::string lang = topic.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+    while (!lang.empty() && std::isspace((unsigned char)lang.back())) lang.pop_back();
+    return lang.empty() ? "(not specified)" : lang;
 }
 
-// ---------------------------------------------------------------------------
-CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
+// ── Constructor ───────────────────────────────────────────────────────────────
+
+CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated, bool darkMode)
     : wxPanel(parent, wxID_ANY)
     , m_openCallback(std::move(onFileGenerated))
+    , m_darkMode(darkMode)
 {
-    auto* outer = new wxBoxSizer(wxVERTICAL);
-    auto* inner = new wxBoxSizer(wxVERTICAL);
-
-    // ── Project selector ──────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Project:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_projectChoice = new wxChoice(this, ID_CP_PROJECT_SEL,
-                                       wxDefaultPosition, wxSize(240, -1));
-        row->Add(m_projectChoice, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        row->Add(new wxButton(this, ID_CP_NEW_PROJECT, "New…",
-                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-                 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
-
-        m_projectPathLabel = new wxStaticText(this, wxID_ANY, wxEmptyString);
-        wxFont small = m_projectPathLabel->GetFont();
-        small.SetPointSize(small.GetPointSize() - 1);
-        m_projectPathLabel->SetFont(small);
-        inner->Add(m_projectPathLabel, 0, wxBOTTOM, 8);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Topic ─────────────────────────────────────────────────────────────
-    {
-        auto* label = new wxStaticText(this, wxID_ANY,
-                                       "What do you want to learn?");
-        wxFont lf = label->GetFont();
-        lf.SetPointSize(lf.GetPointSize() + 5);
-        lf.SetWeight(wxFONTWEIGHT_BOLD);
-        label->SetFont(lf);
-        inner->Add(label, 0, wxBOTTOM, 6);
-
-        m_topicCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                     wxDefaultPosition, wxSize(-1, 90),
-                                     wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
-        wxFont tf = m_topicCtrl->GetFont();
-        tf.SetPointSize(tf.GetPointSize() + 2);
-        m_topicCtrl->SetFont(tf);
-        m_topicCtrl->SetHint("Describe your topic — be as specific or broad as you like…");
-        inner->Add(m_topicCtrl, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-
-    // ── Project context (context.md) ──────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Project context:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        row->AddStretchSpacer();
-        row->Add(new wxButton(this, ID_CP_SAVE_CONTEXT, "Save",
-                              wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-                 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
-
-        m_contextCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                       wxDefaultPosition, wxSize(-1, 72),
-                                       wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
-        m_contextCtrl->SetHint(
-            "Describe this project — characters, setting, tone. "
-            "Prepended to the LLM prompt for every generation.");
-        inner->Add(m_contextCtrl, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Style ─────────────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Style:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_styleChoice = new wxComboBox(this, wxID_ANY, make_styles()[0],
-                                       wxDefaultPosition, wxSize(200, -1),
-                                       make_styles(), wxCB_DROPDOWN);
-        m_styleChoice->SetSelection(0);
-        row->Add(m_styleChoice, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxBOTTOM, 8);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Characters ────────────────────────────────────────────────────────
-    inner->Add(new wxStaticText(this, wxID_ANY, "Tidbit characters:"),
-               0, wxBOTTOM, 6);
-    {
-        // Two-panel: categories (left) + characters in category (right)
-        auto* cols = new wxBoxSizer(wxHORIZONTAL);
-
-        // Left: category list + add/delete buttons
-        auto* leftCol = new wxBoxSizer(wxVERTICAL);
-        m_catList = new wxListBox(this, ID_CP_CAT_LIST,
-                                  wxDefaultPosition, wxSize(140, 148));
-        leftCol->Add(m_catList, 1, wxEXPAND | wxBOTTOM, 4);
-        auto* catBtns = new wxBoxSizer(wxHORIZONTAL);
-        catBtns->Add(new wxButton(this, ID_CP_ADD_CAT, "+ Category",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0, wxRIGHT, 4);
-        catBtns->Add(new wxButton(this, ID_CP_DEL_CAT, "✕",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0);
-        leftCol->Add(catBtns, 0);
-        cols->Add(leftCol, 0, wxEXPAND | wxRIGHT, 10);
-
-        // Right: character checklist + add/delete buttons
-        auto* rightCol = new wxBoxSizer(wxVERTICAL);
-        m_charList = new wxCheckListBox(this, ID_CP_CHAR_LIST,
-                                        wxDefaultPosition, wxSize(-1, 148));
-        rightCol->Add(m_charList, 1, wxEXPAND | wxBOTTOM, 4);
-        auto* charBtns = new wxBoxSizer(wxHORIZONTAL);
-        charBtns->Add(new wxButton(this, ID_CP_ADD_CHAR, "+ Character",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0, wxRIGHT, 4);
-        charBtns->Add(new wxButton(this, ID_CP_DEL_CHAR, "✕",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0);
-        rightCol->Add(charBtns, 0);
-        cols->Add(rightCol, 1, wxEXPAND);
-
-        inner->Add(cols, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    LoadCharLibrary();
-
-    // ── Backend ───────────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "LLM backend:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_backendChoice = new wxChoice(this, ID_CP_BACKEND, wxDefaultPosition,
-                                       wxDefaultSize, make_backends());
-        m_backendChoice->SetSelection(0);
-        row->Add(m_backendChoice, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxBOTTOM, 6);
-
-        auto* apiRow = new wxBoxSizer(wxHORIZONTAL);
-        apiRow->Add(new wxStaticText(this, wxID_ANY, "API key:"),
-                    0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_apiKeyCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                      wxDefaultPosition, wxSize(280, -1),
-                                      wxTE_PASSWORD);
-        apiRow->Add(m_apiKeyCtrl, 0, wxALIGN_CENTER_VERTICAL);
-        m_apiKeySizer = inner->Add(apiRow, 0, wxBOTTOM, 6);
-        m_apiKeySizer->Show(false);
-
-        auto* ollamaRow = new wxBoxSizer(wxHORIZONTAL);
-        ollamaRow->Add(new wxStaticText(this, wxID_ANY, "Ollama model:"),
-                       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_ollamaModel = new wxComboBox(this, wxID_ANY, "llama3",
-                                       wxDefaultPosition, wxSize(220, -1),
-                                       0, nullptr, wxCB_DROPDOWN);
-        ollamaRow->Add(m_ollamaModel, 0, wxALIGN_CENTER_VERTICAL);
-        ollamaRow->AddSpacer(6);
-        auto* refreshBtn = new wxButton(this, ID_CP_REFRESH_OLLAMA, "Refresh",
-                                        wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        refreshBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-            wxString current = m_ollamaModel->GetValue();
-            m_ollamaModel->Clear();
-            for (auto& name : load_ollama_models())
-                m_ollamaModel->Append(wxString::FromUTF8(name));
-            if (!current.empty())
-                m_ollamaModel->SetValue(current);
-            else if (m_ollamaModel->GetCount() > 0)
-                m_ollamaModel->SetSelection(0);
-            SetStatus(m_ollamaModel->GetCount() > 0
-                      ? "Loaded Ollama models."
-                      : "No Ollama models found at localhost:11434.");
+    m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
+    m_webView->AddScriptMessageHandler("create");
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+        [this](wxWebViewEvent& evt) {
+            if (evt.GetMessageHandler() == "create")
+                HandleMessage(evt.GetString().ToStdString());
         });
-        ollamaRow->Add(refreshBtn, 0, wxALIGN_CENTER_VERTICAL);
-        m_ollamaSizer = inner->Add(ollamaRow, 0, wxBOTTOM, 8);
-        m_ollamaSizer->Show(false);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
-    // ── Buttons ───────────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_generateBtn = new wxButton(this, ID_CP_GENERATE, "Generate");
-        row->Add(m_generateBtn, 0, wxRIGHT, 8);
-        row->Add(new wxButton(this, ID_CP_COPY_PROMPT, "Copy Prompt"), 0, wxRIGHT, 8);
-        row->AddStretchSpacer();
-        row->Add(new wxButton(this, ID_CP_SAVE, "Save"), 0);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(m_webView, 1, wxEXPAND);
+    SetSizer(sizer);
 
-    // ── Chapter list ──────────────────────────────────────────────────────
-    {
-        inner->Add(new wxStaticText(this, wxID_ANY, "Files in project:"),
-                   0, wxBOTTOM, 4);
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_chapterListBox = new wxListCtrl(this, ID_CP_CHAPTER_LIST,
-                                          wxDefaultPosition, wxSize(-1, 110),
-                                          wxLC_REPORT | wxLC_SINGLE_SEL);
-        m_chapterListBox->InsertColumn(0, "File",     wxLIST_FORMAT_LEFT, 200);
-        m_chapterListBox->InsertColumn(1, "Language", wxLIST_FORMAT_LEFT,  90);
-        m_chapterListBox->InsertColumn(2, "Created",  wxLIST_FORMAT_LEFT, 130);
-        m_chapterListBox->InsertColumn(3, "Updated",  wxLIST_FORMAT_LEFT, 130);
-        row->Add(m_chapterListBox, 1, wxEXPAND | wxRIGHT, 6);
-        auto* fileBtns = new wxBoxSizer(wxVERTICAL);
-        fileBtns->Add(new wxButton(this, ID_CP_OPEN_VIEW, "Open in View",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-                      0, wxBOTTOM, 4);
-        m_translateBtn = new wxButton(this, ID_CP_TRANSLATE, "Translate…",
-                                      wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        fileBtns->Add(m_translateBtn, 0, wxBOTTOM, 4);
-        fileBtns->Add(new wxButton(this, ID_CP_DELETE_FILE, "Delete",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-                      0);
-        row->Add(fileBtns, 0, wxALIGN_TOP);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 8);
-
-    // ── Status output ─────────────────────────────────────────────────────
-    m_statusCtrl = new wxTextCtrl(this, wxID_ANY, "Ready.",
-                                  wxDefaultPosition, wxSize(-1, 60),
-                                  wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
-    inner->Add(m_statusCtrl, 1, wxEXPAND);
-
-    outer->Add(inner, 1, wxEXPAND | wxALL, 14);
-    SetSizer(outer);
-
-    // ── Restore last session (all widgets now exist) ───────────────────────
-    {
-        AppConfig cfg = LoadConfig();
-        LoadProjects();
-
-        AppState st = LoadAppState();
-
-        if (!st.currentProject.empty())
-            SelectProject(wxString::FromUTF8(st.currentProject));
-        else if (m_projectChoice->GetCount() > 0)
-            SelectProject(m_projectChoice->GetString(0));
-
-        if (!st.topic.empty())
-            m_topicCtrl->SetValue(wxString::FromUTF8(st.topic));
-        else if (!cfg.defaultPrompt.empty())
-            m_topicCtrl->SetValue(wxString::FromUTF8(cfg.defaultPrompt));
-
-        RestoreFormState(st);
-        LoadChapters();
-        LoadContext();
-    }
-
+    m_webView->SetPage(wxString::FromUTF8(BuildCreatePanelHTML(darkMode)), "");
 }
 
-// ---------------------------------------------------------------------------
-void CreatePanel::SetStatus(const wxString& msg) {
-    m_statusCtrl->SetValue(msg);
-    std::string s = msg.ToStdString();
-    if (s.find("Error") != std::string::npos || s.find("Cannot") != std::string::npos
-        || s.find("could not") != std::string::npos || s.find("not found") != std::string::npos)
-        Logger::get().log("CreatePanel error: " + s);
+// ── Webview bridge ────────────────────────────────────────────────────────────
+
+void CreatePanel::Run(const std::string& js) {
+    if (m_webView && m_ready)
+        m_webView->RunScript(wxString::FromUTF8(js));
 }
 
-void CreatePanel::SetGenerating(bool on) {
+void CreatePanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    Run(std::string("setDarkMode(") + (dark ? "true" : "false") + ")");
+}
+
+// ── State push ────────────────────────────────────────────────────────────────
+
+void CreatePanel::PushStatus(const std::string& msg) {
+    Run("setStatus(" + JsStr(msg) + ")");
+}
+
+void CreatePanel::PushGenerating(bool on) {
     m_generating = on;
-    m_generateBtn->Enable(!on);
-    m_generateBtn->SetLabel(on ? "Generating…" : "Generate");
+    Run(std::string("setGenerating(") + (on ? "true" : "false") + ")");
 }
 
-void CreatePanel::UpdateBackendFields() {
-    std::string label = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
-    m_ollamaSizer->Show(label == "Ollama (local)");
-    m_apiKeySizer->Show(label == "Anthropic API");
-    if (GetSizer()) GetSizer()->Layout();
+void CreatePanel::PushTranslating(bool on) {
+    m_translating = on;
+    Run(std::string("setTranslating(") + (on ? "true" : "false") + ")");
 }
 
-// ---------------------------------------------------------------------------
-void CreatePanel::LoadChapters() {
-    m_chapterListBox->DeleteAllItems();
-    wxString projPath = CurrentProjectPath();
-    if (projPath.empty()) return;
-    std::error_code ec;
-    std::vector<std::string> files;
-    for (auto& e : fs::directory_iterator(projPath.ToStdString(), ec)) {
-        std::string fname = e.path().filename().string();
-        if (e.path().extension() == ".md" && fname[0] != '.' && fname != "context.md")
-            files.push_back(fname);
-    }
-    std::sort(files.begin(), files.end());
-    for (auto& f : files) {
-        std::string fullPath = projPath.ToStdString() + "/" + f;
-        long row = m_chapterListBox->InsertItem(m_chapterListBox->GetItemCount(),
-                                                wxString::FromUTF8(f));
-        m_chapterListBox->SetItem(row, 1,
-            wxString::FromUTF8(ReadLanguage(fullPath)));
-        m_chapterListBox->SetItem(row, 2,
-            wxString::FromUTF8(FileCreatedTime(fullPath)));
-        m_chapterListBox->SetItem(row, 3,
-            wxString::FromUTF8(FileModifiedTime(fullPath)));
-    }
-}
-
-void CreatePanel::LoadContext() {
-    wxString projPath = CurrentProjectPath();
-    if (projPath.empty()) { m_contextCtrl->Clear(); return; }
-    fs::path claudeMd = fs::path(projPath.ToStdString()) / "context.md";
-    std::ifstream f(claudeMd);
-    if (!f) { m_contextCtrl->Clear(); return; }
-    std::string content{std::istreambuf_iterator<char>(f), {}};
-    m_contextCtrl->SetValue(wxString::FromUTF8(content));
-}
-
-void CreatePanel::SaveContext() {
-    wxString projPath = CurrentProjectPath();
-    if (projPath.empty()) return;
-    fs::path claudeMd = fs::path(projPath.ToStdString()) / "context.md";
-    std::ofstream f(claudeMd, std::ios::trunc);
-    if (f) f << m_contextCtrl->GetValue().ToStdString();
-}
-
-void CreatePanel::OnSaveContext(wxCommandEvent&) {
-    SaveContext();
-    SetStatus("Project context saved.");
-}
-
-void CreatePanel::LoadProjects() {
+void CreatePanel::PushProjectList() {
     AppConfig cfg = LoadConfig();
-    m_projectChoice->Clear();
-    if (cfg.defaultFolder.empty()) return;
+    auto projects = ListAllProjects(cfg.defaultFolder);
 
-    for (auto& rel : ListAllProjects(cfg.defaultFolder))
-        m_projectChoice->Append(wxString::FromUTF8(rel));
+    std::string json = "[";
+    for (size_t i = 0; i < projects.size(); ++i) {
+        if (i) json += ",";
+        json += JsStr(projects[i]);
+    }
+    json += "]";
+
+    Run("setProjectList(" + json + ","
+        + JsStr(m_currentProject) + ","
+        + JsStr(CurrentProjectPath()) + ")");
 }
 
-void CreatePanel::SelectProject(const wxString& name) {
-    // Try exact match first (handles relative paths like "Literature/agatha").
-    int idx = m_projectChoice->FindString(name);
-    if (idx == wxNOT_FOUND) {
-        // Fallback: match by last path component for AppState compatibility.
-        wxString lastName = wxString::FromUTF8(
-            fs::path(name.ToStdString()).filename().string());
-        for (int i = 0; i < (int)m_projectChoice->GetCount(); ++i) {
-            wxString item = m_projectChoice->GetString(i);
-            if (wxString::FromUTF8(
-                    fs::path(item.ToStdString()).filename().string()) == lastName) {
-                idx = i;
-                break;
-            }
+void CreatePanel::PushChapters() {
+    std::string projPath = CurrentProjectPath();
+    std::string json = "[";
+    if (!projPath.empty()) {
+        std::error_code ec;
+        std::vector<std::string> files;
+        for (auto& entry : fs::directory_iterator(projPath, ec)) {
+            std::string fn = entry.path().filename().string();
+            if (entry.path().extension() == ".md" && fn[0] != '.' && fn != "context.md")
+                files.push_back(fn);
+        }
+        std::sort(files.begin(), files.end());
+        bool first = true;
+        for (auto& fn : files) {
+            if (!first) json += ",";
+            first = false;
+            std::string fp = projPath + "/" + fn;
+            json += "{\"name\":"     + JsStr(fn)
+                 + ",\"language\":"  + JsStr(ReadLanguage(fp))
+                 + ",\"created\":"   + JsStr(FileCreatedTime(fp))
+                 + ",\"updated\":"   + JsStr(FileModifiedTime(fp))
+                 + "}";
         }
     }
-    if (idx != wxNOT_FOUND) m_projectChoice->SetSelection(idx);
-
-    wxString path = CurrentProjectPath();
-    m_projectPathLabel->SetLabel(path.empty() ? wxString() : path);
-
-    if (!name.empty()) {
-        AppState st = LoadAppState();
-        // Save only the last path component for Projects tab compatibility.
-        st.currentProject = fs::path(name.ToStdString()).filename().string();
-        SaveAppState(st);
-    }
+    json += "]";
+    Run("setChapterList(" + json + ")");
 }
 
-wxString CreatePanel::CurrentProjectPath() const {
+void CreatePanel::PushContext() {
+    std::string projPath = CurrentProjectPath();
+    if (projPath.empty()) { Run("setContext('')"); return; }
+    fs::path ctx = fs::path(projPath) / "context.md";
+    std::ifstream f(ctx);
+    if (!f) { Run("setContext('')"); return; }
+    std::string text{std::istreambuf_iterator<char>(f), {}};
+    Run("setContext(" + JsStr(text) + ")");
+}
+
+void CreatePanel::PushCharLibrary() {
+    // Ensure selected category is valid
+    if (m_charsByCategory.find(m_selectedCat) == m_charsByCategory.end())
+        m_selectedCat = m_charsByCategory.empty() ? "" : m_charsByCategory.begin()->first;
+
+    std::string json = "{\"categories\":[";
+    bool first = true;
+    for (auto& [cat, _] : m_charsByCategory) {
+        if (!first) json += ",";
+        first = false;
+        json += JsStr(cat);
+    }
+    json += "],\"selected\":" + JsStr(m_selectedCat) + ",\"chars\":[";
+
+    auto it = m_charsByCategory.find(m_selectedCat);
+    first = true;
+    if (it != m_charsByCategory.end()) {
+        for (auto& ch : it->second) {
+            if (!first) json += ",";
+            first = false;
+            bool checked = m_checkedChars.count(ch) > 0;
+            json += "{\"name\":" + JsStr(ch)
+                 + ",\"checked\":" + (checked ? "true" : "false") + "}";
+        }
+    }
+    json += "]}";
+    Run("setCharLibrary(" + json + ")");
+}
+
+// ── Initial state ─────────────────────────────────────────────────────────────
+
+void CreatePanel::PushInitialState() {
     AppConfig cfg = LoadConfig();
-    int sel = m_projectChoice->GetSelection();
-    if (cfg.defaultFolder.empty() || sel == wxNOT_FOUND) return wxEmptyString;
-    return wxString::FromUTF8(cfg.defaultFolder) + "/" + m_projectChoice->GetString(sel);
-}
+    AppState  st  = LoadAppState();
 
-void CreatePanel::OnNewProject(wxCommandEvent&) {
-    wxString name = wxGetTextFromUser(
-        "Enter a name for the new project:", "New Project", "", this).Trim();
-    if (name.empty()) return;
+    // Restore form fields
+    std::string stateJs = "restoreFormState({";
+    if (!st.topic.empty())
+        stateJs += "topic:"       + JsStr(st.topic) + ",";
+    else if (!cfg.defaultPrompt.empty())
+        stateJs += "topic:"       + JsStr(cfg.defaultPrompt) + ",";
+    if (!st.style.empty())
+        stateJs += "style:"       + JsStr(st.style) + ",";
+    if (!st.backend.empty())
+        stateJs += "backend:"     + JsStr(st.backend) + ",";
+    if (!st.apiKey.empty())
+        stateJs += "apiKey:"      + JsStr(st.apiKey) + ",";
+    if (!st.ollamaModel.empty())
+        stateJs += "ollamaModel:" + JsStr(st.ollamaModel) + ",";
+    stateJs += "})";
+    Run(stateJs);
 
-    AppConfig cfg = LoadConfig();
-    if (cfg.defaultFolder.empty()) {
-        SetStatus("Set defaultFolder in ~/.config/story-teller/config first.");
-        return;
+    // Load and push character library (with saved checked chars)
+    LoadCharLibrary();
+    if (!st.checkedChars.empty()) {
+        wxStringTokenizer tok(wxString::FromUTF8(st.checkedChars), "|");
+        while (tok.HasMoreTokens())
+            m_checkedChars.insert(tok.GetNextToken().ToStdString());
+    }
+    PushCharLibrary();
+
+    // Select project
+    if (!st.currentProject.empty())
+        SelectProject(st.currentProject);
+    else if (!cfg.defaultFolder.empty()) {
+        auto projects = ListAllProjects(cfg.defaultFolder);
+        if (!projects.empty()) SelectProject(projects[0]);
     }
 
-    if (!CreateProject(cfg.defaultFolder, name.ToStdString())) {
-        SetStatus("Could not create project folder.");
-        return;
-    }
-    std::string backendLabel =
-        m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
-    RecordProjectSource((fs::path(cfg.defaultFolder) / name.ToStdString()).string(),
-                        backendLabel);
-
-    // Refresh list and select the new project.
-    LoadProjects();
-    SelectProject(name);
+    PushProjectList();
+    PushChapters();
+    PushContext();
+    PushStatus("Ready.");
 }
 
-void CreatePanel::OnProjectSelected(wxCommandEvent&) {
-    int sel = m_projectChoice->GetSelection();
-    if (sel == wxNOT_FOUND) return;
-    SelectProject(m_projectChoice->GetString(sel));
-    LoadChapters();
-    LoadContext();
-}
+// ── SyncProject (called by MDViewerFrame on file open) ────────────────────────
 
-// Called by LoadFile whenever the user opens a file (from any tab or on startup).
-// Lookup chain:
-//   1. Derive the project's relative path from the file path (handles nested projects).
-//   2. Fallback: use the project name saved in AppState (last-component match).
 void CreatePanel::SyncProject(const std::string& filePath) {
+    if (!m_ready) {
+        m_pendingSync = filePath;
+        return;
+    }
+    AppConfig cfg = LoadConfig();
     if (!filePath.empty()) {
-        AppConfig cfg = LoadConfig();
         std::string rel = ProjectNameFromFilePath(filePath, cfg.defaultFolder);
         if (!rel.empty()) {
-            SelectProject(wxString::FromUTF8(rel));
-            LoadChapters();
-            LoadContext();
+            SelectProject(rel);
+            PushProjectList();
+            PushChapters();
+            PushContext();
             return;
         }
     }
     AppState st = LoadAppState();
     if (!st.currentProject.empty()) {
-        SelectProject(wxString::FromUTF8(st.currentProject));
-        LoadChapters();
-        LoadContext();
+        SelectProject(st.currentProject);
+        PushProjectList();
+        PushChapters();
+        PushContext();
     }
 }
 
-// ---------------------------------------------------------------------------
-// Character library — persist to wxConfig
-// ---------------------------------------------------------------------------
+// ── Project helpers ───────────────────────────────────────────────────────────
+
+std::string CreatePanel::CurrentProjectPath() const {
+    AppConfig cfg = LoadConfig();
+    if (cfg.defaultFolder.empty() || m_currentProject.empty()) return "";
+    return cfg.defaultFolder + "/" + m_currentProject;
+}
+
+void CreatePanel::SelectProject(const std::string& nameOrRel) {
+    AppConfig cfg = LoadConfig();
+    auto projects = ListAllProjects(cfg.defaultFolder);
+
+    // Exact match first
+    for (auto& p : projects) {
+        if (p == nameOrRel) { m_currentProject = p; goto save; }
+    }
+    // Last-component fallback (AppState compatibility)
+    {
+        std::string base = fs::path(nameOrRel).filename().string();
+        for (auto& p : projects) {
+            if (fs::path(p).filename().string() == base) { m_currentProject = p; goto save; }
+        }
+    }
+    return;
+
+save:
+    AppState st = LoadAppState();
+    st.currentProject = fs::path(m_currentProject).filename().string();
+    SaveAppState(st);
+}
+
+// ── Character library ─────────────────────────────────────────────────────────
+
 static const std::map<std::string, std::vector<std::string>>& default_library() {
     static const std::map<std::string, std::vector<std::string>> lib = {
         {"Science",    {"Albert Einstein", "Marie Curie", "Carl Sagan",
@@ -564,42 +358,31 @@ static const std::map<std::string, std::vector<std::string>>& default_library() 
 void CreatePanel::LoadCharLibrary() {
     wxConfig cfg("StoryTeller");
     cfg.SetPath("/charlib");
-
     wxString catStr;
     if (!cfg.Read("categories", &catStr) || catStr.empty()) {
         m_charsByCategory = default_library();
-    } else {
-        wxStringTokenizer tok(catStr, ",");
-        while (tok.HasMoreTokens()) {
-            std::string cat = tok.GetNextToken().ToStdString();
-            wxString charStr;
-            cfg.Read(wxString::FromUTF8(cat), &charStr);
-            auto& vec = m_charsByCategory[cat];
-            wxStringTokenizer ctok(charStr, "|");
-            while (ctok.HasMoreTokens())
-                vec.push_back(ctok.GetNextToken().ToStdString());
-        }
+        return;
     }
-
-    m_catList->Clear();
-    for (auto& [cat, _] : m_charsByCategory)
-        m_catList->Append(wxString::FromUTF8(cat));
-    if (m_catList->GetCount() > 0) {
-        m_catList->SetSelection(0);
-        RefreshCharList();
+    m_charsByCategory.clear();
+    wxStringTokenizer tok(catStr, ",");
+    while (tok.HasMoreTokens()) {
+        std::string cat = tok.GetNextToken().ToStdString();
+        wxString charStr;
+        cfg.Read(wxString::FromUTF8(cat), &charStr);
+        auto& vec = m_charsByCategory[cat];
+        wxStringTokenizer ctok(charStr, "|");
+        while (ctok.HasMoreTokens())
+            vec.push_back(ctok.GetNextToken().ToStdString());
     }
 }
 
 void CreatePanel::SaveCharLibrary() const {
     wxConfig cfg("StoryTeller");
     cfg.SetPath("/charlib");
-
-    // Build comma-separated category list.
     wxString catStr;
     for (auto& [cat, chars] : m_charsByCategory) {
         if (!catStr.empty()) catStr += ",";
         catStr += wxString::FromUTF8(cat);
-
         wxString charStr;
         for (auto& ch : chars) {
             if (!charStr.empty()) charStr += "|";
@@ -610,201 +393,267 @@ void CreatePanel::SaveCharLibrary() const {
     cfg.Write("categories", catStr);
 }
 
-std::string CreatePanel::SelectedCategory() const {
-    int sel = m_catList->GetSelection();
-    if (sel == wxNOT_FOUND) return "";
-    return m_catList->GetString(sel).ToStdString();
-}
+// ── Message dispatcher ────────────────────────────────────────────────────────
 
-void CreatePanel::RefreshCharList() {
-    m_charList->Clear();
-    std::string cat = SelectedCategory();
-    auto it = m_charsByCategory.find(cat);
-    if (it == m_charsByCategory.end()) return;
-    for (auto& ch : it->second) {
-        unsigned int idx = m_charList->Append(wxString::FromUTF8(ch));
-        m_charList->Check(idx, m_checkedChars.count(ch) > 0);
+void CreatePanel::HandleMessage(const std::string& json) {
+    auto f = [&](const std::string& key) { return ExtractField(json, key); };
+    auto b = [&](const std::string& key) { return ExtractBool(json, key); };
+
+    std::string action = f("action");
+
+    if (action == "ready") {
+        m_ready = true;
+        PushInitialState();
+        if (!m_pendingSync.empty()) {
+            std::string path = m_pendingSync;
+            m_pendingSync.clear();
+            SyncProject(path);
+        }
     }
+    else if (action == "newProject")       DoNewProject(f("name"));
+    else if (action == "selectProject")    DoSelectProject(f("name"));
+    else if (action == "generate")         DoGenerate(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "copyPrompt")       DoCopyPrompt(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "saveContext")      DoSaveContext(f("text"));
+    else if (action == "saveState")        DoSaveState(f("topic"),f("style"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "backendChanged")   DoBackendChanged(f("backend"));
+    else if (action == "refreshOllama")    DoRefreshOllama();
+    else if (action == "selectCategory")   DoSelectCategory(f("name"));
+    else if (action == "addCategory")      DoAddCategory(f("name"));
+    else if (action == "deleteCategory")   DoDeleteCategory(f("name"));
+    else if (action == "addCharacter")     DoAddCharacter(f("category"),f("name"));
+    else if (action == "deleteCharacter")  DoDeleteCharacter(f("category"),f("name"));
+    else if (action == "toggleCharacter")  DoToggleCharacter(f("name"), b("checked"));
+    else if (action == "openFile")         DoOpenFile(f("name"));
+    else if (action == "translateFile")    DoTranslateFile(f("name"),f("language"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "deleteFile")       DoDeleteFile(f("name"));
 }
 
-void CreatePanel::OnCatSelected(wxCommandEvent&) { RefreshCharList(); }
+// ── Action handlers ───────────────────────────────────────────────────────────
 
-void CreatePanel::OnCharToggled(wxCommandEvent& evt) {
-    unsigned int idx = (unsigned int)evt.GetInt();
-    std::string name = m_charList->GetString(idx).ToStdString();
-    if (m_charList->IsChecked(idx))
-        m_checkedChars.insert(name);
-    else
-        m_checkedChars.erase(name);
-}
-
-void CreatePanel::OnAddCategory(wxCommandEvent&) {
-    wxString name = wxGetTextFromUser("Category name:", "Add Category", "", this).Trim();
-    if (name.empty() || m_charsByCategory.count(name.ToStdString())) return;
-    m_charsByCategory[name.ToStdString()];        // insert empty
-    m_catList->Append(name);
-    m_catList->SetSelection((int)m_catList->GetCount() - 1);
-    RefreshCharList();
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnDeleteCategory(wxCommandEvent&) {
-    std::string cat = SelectedCategory();
-    if (cat.empty()) return;
-    if (wxMessageBox("Delete category \"" + cat + "\" and all its characters?",
-                     "Confirm", wxYES_NO | wxNO_DEFAULT, this) != wxYES) return;
-    m_charsByCategory.erase(cat);
-    int sel = m_catList->GetSelection();
-    m_catList->Delete((unsigned int)sel);
-    if (m_catList->GetCount() > 0)
-        m_catList->SetSelection(std::min(sel, (int)m_catList->GetCount() - 1));
-    RefreshCharList();
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnAddCharacter(wxCommandEvent&) {
-    std::string cat = SelectedCategory();
-    if (cat.empty()) { SetStatus("Select a category first."); return; }
-    wxString name = wxGetTextFromUser("Character name:", "Add Character", "", this).Trim();
+void CreatePanel::DoNewProject(const std::string& name) {
     if (name.empty()) return;
-    std::string ch = name.ToStdString();
-    auto& vec = m_charsByCategory[cat];
-    if (std::find(vec.begin(), vec.end(), ch) != vec.end()) return; // duplicate
-    vec.push_back(ch);
-    unsigned int idx = m_charList->Append(name);
-    m_charList->Check(idx, true);
-    m_checkedChars.insert(ch);
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnDeleteCharacter(wxCommandEvent&) {
-    int idx = m_charList->GetSelection();
-    if (idx == wxNOT_FOUND) return;
-    std::string cat = SelectedCategory();
-    std::string ch  = m_charList->GetString(idx).ToStdString();
-    auto& vec = m_charsByCategory[cat];
-    vec.erase(std::remove(vec.begin(), vec.end(), ch), vec.end());
-    m_checkedChars.erase(ch);
-    m_charList->Delete((unsigned int)idx);
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnBackendChanged(wxCommandEvent&) {
-    UpdateBackendFields();
-    if (m_backendChoice->GetString(m_backendChoice->GetSelection()) == "Ollama (local)"
-        && m_ollamaModel->GetCount() == 0) {
-        for (auto& name : load_ollama_models())
-            m_ollamaModel->Append(wxString::FromUTF8(name));
+    AppConfig cfg = LoadConfig();
+    if (cfg.defaultFolder.empty()) {
+        PushStatus("Set defaultFolder in ~/.config/story-teller/config first.");
+        return;
     }
-    // Auto-persist the backend selection so the Edit tab can pick it up immediately.
-    AppState st = LoadAppState();
-    st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
-    SaveAppState(st);
+    if (!CreateProject(cfg.defaultFolder, name)) {
+        PushStatus("Could not create project folder.");
+        return;
+    }
+    LoadCharLibrary();
+    SelectProject(name);
+    PushProjectList();
+    PushChapters();
+    PushContext();
 }
 
-// Build a GenerationRequest from the current form state.
-GenerationRequest CreatePanel::BuildRequest() const {
+void CreatePanel::DoSelectProject(const std::string& name) {
+    SelectProject(name);
+    PushProjectList();
+    PushChapters();
+    PushContext();
+}
+
+void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& style,
+                               const std::string& context, const std::string& /*backend*/,
+                               const std::string& /*apiKey*/, const std::string& /*ollamaModel*/) {
+    if (topic.empty()) { PushStatus("Enter a topic first."); return; }
     GenerationRequest req;
-    req.topic = m_topicCtrl->GetValue().ToStdString();
-    req.style = m_styleChoice->GetValue().ToStdString();
-    for (auto& ch : m_checkedChars)
-        req.characters.push_back(ch);
-    std::string projDir = CurrentProjectPath().ToStdString();
-    fs::path claudeMd = fs::path(projDir) / "context.md";
-    if (fs::exists(claudeMd)) {
-        std::ifstream f(claudeMd);
-        req.projectContext.assign(std::istreambuf_iterator<char>(f), {});
-    }
-    return req;
-}
-
-void CreatePanel::OnCopyPrompt(wxCommandEvent&) {
-    if (m_topicCtrl->GetValue().empty()) { SetStatus("Enter a topic first."); return; }
-    std::string prompt = BuildPrompt(BuildRequest(), GetLLMReadme());
+    req.topic          = topic;
+    req.style          = style;
+    req.projectContext = context;
+    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+    std::string prompt = BuildPrompt(req, GetLLMReadme());
     if (wxTheClipboard->Open()) {
         wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
         wxTheClipboard->Close();
     }
-    SetStatus("Prompt copied to clipboard.\n\n"
-              "Paste into any LLM, then open the result with File > Open.");
+    PushStatus("Prompt copied to clipboard.\n\nPaste into any LLM, then open with File > Open.");
 }
 
-void CreatePanel::OnGenerate(wxCommandEvent&) {
-    if (m_generating) return;
+void CreatePanel::DoSaveContext(const std::string& text) {
+    std::string projPath = CurrentProjectPath();
+    if (projPath.empty()) return;
+    std::ofstream f(fs::path(projPath) / "context.md", std::ios::trunc);
+    if (f) f << text;
+    PushStatus("Project context saved.");
+}
 
-    wxString topic   = m_topicCtrl->GetValue().Trim();
-    wxString projDir = CurrentProjectPath();
-    if (topic.empty())   { SetStatus("Enter a topic."); return; }
-    if (projDir.empty()) { SetStatus("Select or create a project first."); return; }
+void CreatePanel::DoSaveState(const std::string& topic, const std::string& style,
+                              const std::string& backend, const std::string& apiKey,
+                              const std::string& ollamaModel) {
+    AppState st = LoadAppState();
+    st.currentProject = fs::path(m_currentProject).filename().string();
+    st.topic       = topic;
+    st.style       = style;
+    st.backend     = backend;
+    st.apiKey      = apiKey;
+    st.ollamaModel = ollamaModel;
+    std::string chars;
+    for (auto& ch : m_checkedChars) { if (!chars.empty()) chars += "|"; chars += ch; }
+    st.checkedChars = chars;
+    SaveAppState(st);
+    PushStatus("Form saved — will be restored on next launch.");
+}
 
-    if (!InitProject(projDir.ToStdString())) {
-        SetStatus("Cannot initialise project folder: " + projDir); return;
+void CreatePanel::DoBackendChanged(const std::string& backend) {
+    AppState st = LoadAppState();
+    st.backend = backend;
+    SaveAppState(st);
+}
+
+void CreatePanel::DoRefreshOllama() {
+    auto models = load_ollama_models();
+    std::string json = "[";
+    for (size_t i = 0; i < models.size(); ++i) {
+        if (i) json += ",";
+        json += JsStr(models[i]);
     }
+    json += "]";
+    Run("setOllamaModels(" + json + ")");
+    PushStatus(models.empty() ? "No Ollama models found at localhost:11434."
+                               : "Loaded Ollama models.");
+}
 
-    GenerationRequest req    = BuildRequest();
-    int               chId   = NextChapterId(projDir.ToStdString());
-    std::string       prompt = BuildPrompt(req, GetLLMReadme());
-    int               bkIdx   = m_backendChoice->GetSelection();
-    std::string       bkLabel = m_backendChoice->GetString(bkIdx).ToStdString();
-    LLMBackend        backend  = backend_from_label(bkLabel);
+void CreatePanel::DoSelectCategory(const std::string& cat) {
+    m_selectedCat = cat;
+    PushCharLibrary();
+}
 
-    // Clipboard — copy and return immediately.
-    if (backend == LLMBackend::Clipboard) {
+void CreatePanel::DoAddCategory(const std::string& name) {
+    if (name.empty() || m_charsByCategory.count(name)) return;
+    m_charsByCategory[name];
+    m_selectedCat = name;
+    SaveCharLibrary();
+    PushCharLibrary();
+}
+
+void CreatePanel::DoDeleteCategory(const std::string& name) {
+    if (name.empty()) return;
+    m_charsByCategory.erase(name);
+    m_selectedCat = m_charsByCategory.empty() ? "" : m_charsByCategory.begin()->first;
+    SaveCharLibrary();
+    PushCharLibrary();
+}
+
+void CreatePanel::DoAddCharacter(const std::string& cat, const std::string& name) {
+    if (cat.empty() || name.empty()) return;
+    auto& vec = m_charsByCategory[cat];
+    if (std::find(vec.begin(), vec.end(), name) != vec.end()) return;
+    vec.push_back(name);
+    m_checkedChars.insert(name);
+    SaveCharLibrary();
+    PushCharLibrary();
+}
+
+void CreatePanel::DoDeleteCharacter(const std::string& cat, const std::string& name) {
+    auto it = m_charsByCategory.find(cat);
+    if (it == m_charsByCategory.end()) return;
+    auto& vec = it->second;
+    vec.erase(std::remove(vec.begin(), vec.end(), name), vec.end());
+    m_checkedChars.erase(name);
+    SaveCharLibrary();
+    PushCharLibrary();
+}
+
+void CreatePanel::DoToggleCharacter(const std::string& name, bool checked) {
+    if (checked) m_checkedChars.insert(name);
+    else         m_checkedChars.erase(name);
+}
+
+void CreatePanel::DoOpenFile(const std::string& filename) {
+    std::string projPath = CurrentProjectPath();
+    if (projPath.empty() || filename.empty()) return;
+    if (m_openCallback) m_openCallback(projPath + "/" + filename);
+}
+
+void CreatePanel::DoDeleteFile(const std::string& filename) {
+    if (filename.empty()) return;
+    wxString name = wxString::FromUTF8(filename);
+    if (wxMessageBox("Delete \"" + name + "\"?\n\nThis cannot be undone.",
+                     "Confirm Delete", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING,
+                     this) != wxYES) return;
+    std::string projPath = CurrentProjectPath();
+    std::error_code ec;
+    fs::remove(fs::path(projPath) / filename, ec);
+    if (ec) { PushStatus("Could not delete: " + ec.message()); return; }
+    PushStatus("Deleted: " + filename);
+    PushChapters();
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+
+void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
+                             const std::string& context, const std::string& backend,
+                             const std::string& apiKey, const std::string& ollamaModel) {
+    if (m_generating) return;
+    if (topic.empty()) { PushStatus("Enter a topic."); return; }
+
+    std::string projPath = CurrentProjectPath();
+    if (projPath.empty()) { PushStatus("Select or create a project first."); return; }
+    if (!InitProject(projPath)) { PushStatus("Cannot initialise project folder."); return; }
+
+    GenerationRequest req;
+    req.topic          = topic;
+    req.style          = style;
+    req.projectContext = context;
+    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+
+    int         chId    = NextChapterId(projPath);
+    std::string prompt  = BuildPrompt(req, GetLLMReadme());
+    LLMBackend  bk      = BackendFromLabel(backend);
+
+    if (bk == LLMBackend::Clipboard) {
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
             wxTheClipboard->Close();
         }
-        SetStatus("Prompt copied to clipboard.\n\n"
-                  "Paste into any LLM, then open the result with File > Open.");
+        PushStatus("Prompt copied to clipboard.\n\nPaste into any LLM, then open with File > Open.");
         return;
     }
 
     LLMConfig cfg;
-    cfg.backend     = backend;
-    cfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
-    cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
+    cfg.backend     = bk;
+    cfg.apiKey      = apiKey;
+    cfg.ollamaModel = ollamaModel;
+    cfg.project     = m_currentProject;
+    cfg.action      = "generate";
 
-    std::string projDirStr = projDir.ToStdString();
-    std::string topicStr = req.topic;
+    Logger::get().log("Generate: backend=" + backend
+                      + "  project=" + projPath
+                      + "  language=" + language_from_topic(topic));
 
-    SetGenerating(true);
-    SetStatus("Sending to " + m_backendChoice->GetString(bkIdx) + "…");
-    Logger::get().log("Generate: backend=" + bkLabel
-                      + "  project=" + projDirStr
-                      + "  model=" + (backend == LLMBackend::Ollama ? cfg.ollamaModel : "(n/a)")
-                      + "  language=" + language_from_topic(req.topic)
-                      + "  topic=" + truncate_for_log(req.topic));
+    PushGenerating(true);
+    PushStatus("Sending to " + backend + "…");
+
     OpenCallback cb = m_openCallback;
+    std::string  topicStr = topic;
 
-    std::thread([this, prompt, cfg, projDirStr, chId, topicStr, cb]() mutable {
-        auto started = std::chrono::steady_clock::now();
+    std::thread([this, prompt, cfg, projPath, chId, topicStr, cb]() mutable {
+        auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
-        int durationSeconds = (int)std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - started).count();
-        if (res.ok) {
-            RecordProjectSource(projDirStr, cfg.backend == LLMBackend::ClaudeP ? "Claude -p" :
-                                           cfg.backend == LLMBackend::CodexCLI ? "Codex CLI" :
-                                           cfg.backend == LLMBackend::GeminiCLI ? "Gemini CLI" :
-                                           cfg.backend == LLMBackend::Ollama ? "Ollama (local)" :
-                                           cfg.backend == LLMBackend::API ? "Anthropic API" :
-                                           "Clipboard");
-            RecordLLMTiming(projDirStr, "generate", topicStr, durationSeconds);
-        }
+        int elapsed = (int)std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - t0).count();
 
-        wxTheApp->CallAfter([this, res, projDirStr, chId, topicStr, cb]() mutable {
-            SetGenerating(false);
+        if (res.ok)
+            RecordLLMTiming(projPath, "generate", topicStr, elapsed);
+
+        wxTheApp->CallAfter([this, res, projPath, chId, topicStr, cb]() mutable {
+            PushGenerating(false);
             if (!res.ok) {
                 Logger::get().log("Generate FAILED: " + res.error);
-                SetStatus("Error: " + wxString::FromUTF8(res.error));
+                PushStatus("Error: " + res.error);
                 return;
             }
 
-            // Stamp each :::tidbit block with a stable <!-- tb:N --> marker.
-            std::string content = CleanMarkdownResponse(res.text);
+            std::string content  = CleanMarkdownResponse(res.text);
             std::string filename = FilenameFromContent(content, topicStr, chId);
+
+            // Stamp tidbit markers
             std::string stamped;
-            int baseTbId = NextTidbitId(projDirStr);
-            int tbCount  = 0;
+            int baseTbId = NextTidbitId(projPath), tbCount = 0;
             std::size_t pos = 0;
             while (pos < content.size()) {
                 auto tbpos = content.find(":::tidbit[", pos);
@@ -813,8 +662,7 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
                 stamped += "<!-- tb:" + std::to_string(baseTbId + tbCount) + " -->\n";
                 auto endpos = content.find("\n:::", tbpos);
                 if (endpos == std::string::npos) {
-                    stamped += content.substr(tbpos);
-                    pos = content.size();
+                    stamped += content.substr(tbpos); pos = content.size();
                 } else {
                     endpos += 4;
                     stamped += content.substr(tbpos, endpos - tbpos);
@@ -822,256 +670,129 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
                 }
                 ++tbCount;
             }
-
-            // Stamp each ## Chapter N: heading with a <!-- ch:N --> marker.
             auto [chStamped, chCount] = StampChapters(stamped, 0);
             stamped = chStamped;
 
-            std::string path = SaveChapter(projDirStr, filename, stamped);
-            if (path.empty()) { SetStatus("Error: could not save chapter file."); return; }
+            std::string path = SaveChapter(projPath, filename, stamped);
+            if (path.empty()) { PushStatus("Error: could not save chapter file."); return; }
 
             WriteLanguage(path, language_from_topic(topicStr));
-            RegisterChapter(projDirStr, filename);
-            for (int i = 0; i < tbCount; ++i)
-                RegisterTidbit(projDirStr, chId, i);
+            RegisterChapter(projPath, filename);
+            for (int i = 0; i < tbCount; ++i) RegisterTidbit(projPath, chId, i);
 
-            SetStatus("Saved: " + wxString::FromUTF8(filename));
-            LoadChapters();
+            Logger::get().log("Generate saved: " + path);
+            PushStatus("Saved: " + filename);
+            PushChapters();
             if (cb) cb(path);
         });
     }).detach();
 }
 
-// ---------------------------------------------------------------------------
-// Form state persistence
-// ---------------------------------------------------------------------------
-void CreatePanel::SaveFormState() const {
-    AppState st = LoadAppState();
+// ── Translate ─────────────────────────────────────────────────────────────────
 
-    int sel = m_projectChoice->GetSelection();
-    st.currentProject = (sel != wxNOT_FOUND)
-                        ? m_projectChoice->GetString(sel).ToStdString() : "";
-    st.topic   = m_topicCtrl->GetValue().ToStdString();
-    st.style   = m_styleChoice->GetValue().ToStdString();
-    st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
+void CreatePanel::DoTranslateFile(const std::string& filename, const std::string& language,
+                                  const std::string& backend, const std::string& apiKey,
+                                  const std::string& ollamaModel) {
+    if (filename.empty() || language.empty()) return;
+    std::string projPath = CurrentProjectPath();
+    if (projPath.empty()) { PushStatus("No project selected."); return; }
 
-    std::string chars;
-    for (auto& ch : m_checkedChars) {
-        if (!chars.empty()) chars += "|";
-        chars += ch;
-    }
-    st.checkedChars  = chars;
-    st.apiKey        = m_apiKeyCtrl->GetValue().ToStdString();
-    st.ollamaModel   = m_ollamaModel->GetValue().ToStdString();
-
-    SaveAppState(st);
-    Logger::get().log("Form state saved  project=" + st.currentProject
-                      + "  chars=" + st.checkedChars);
-}
-
-void CreatePanel::RestoreFormState(const AppState& st) {
-    if (!st.style.empty()) {
-        int idx = m_styleChoice->FindString(wxString::FromUTF8(st.style));
-        if (idx != wxNOT_FOUND)
-            m_styleChoice->SetSelection(idx);
-        else
-            m_styleChoice->SetValue(wxString::FromUTF8(st.style));
-    }
-    if (!st.backend.empty()) {
-        int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
-        if (idx != wxNOT_FOUND) {
-            m_backendChoice->SetSelection(idx);
-            UpdateBackendFields();
-        }
-    }
-    if (!st.checkedChars.empty()) {
-        wxStringTokenizer tok(wxString::FromUTF8(st.checkedChars), "|");
-        while (tok.HasMoreTokens())
-            m_checkedChars.insert(tok.GetNextToken().ToStdString());
-        RefreshCharList();
-    }
-    if (!st.apiKey.empty())
-        m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
-    if (!st.ollamaModel.empty())
-        m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
-}
-
-void CreatePanel::OnSave(wxCommandEvent&) {
-    SaveFormState();
-    SetStatus("Form saved — will be restored on next launch.");
-}
-
-void CreatePanel::OnOpenInView(wxCommandEvent&) {
-    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel == wxNOT_FOUND) { SetStatus("Select a file first."); return; }
-    wxString path = CurrentProjectPath() + "/" + m_chapterListBox->GetItemText(sel, 0);
-    if (m_openCallback) m_openCallback(path.ToStdString());
-}
-
-void CreatePanel::OnChapterActivated(wxListEvent& evt) {
-    wxString path = CurrentProjectPath() + "/" + evt.GetText();
-    if (m_openCallback) m_openCallback(path.ToStdString());
-}
-
-// ---------------------------------------------------------------------------
-void CreatePanel::OnDeleteFile(wxCommandEvent&) {
-    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel == wxNOT_FOUND) { SetStatus("Select a file to delete first."); return; }
-
-    wxString filename = m_chapterListBox->GetItemText(sel, 0);
-    wxString fullPath = CurrentProjectPath() + "/" + filename;
-
-    if (wxMessageBox("Delete \"" + filename + "\"?\n\nThis cannot be undone.",
-                     "Confirm Delete", wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
-        return;
-
-    std::error_code ec;
-    fs::remove(fullPath.ToStdString(), ec);
-    if (ec) {
-        SetStatus("Could not delete file: " + wxString::FromUTF8(ec.message()));
-        return;
-    }
-    SetStatus("Deleted: " + filename);
-    LoadChapters();
-}
-
-// ---------------------------------------------------------------------------
-void CreatePanel::OnTranslate(wxCommandEvent&) {
-    long sel = m_chapterListBox->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
-    if (sel == wxNOT_FOUND) { SetStatus("Select a file to translate first."); return; }
-
-    wxString projDir = CurrentProjectPath();
-    if (projDir.empty()) { SetStatus("No project selected."); return; }
-
-    wxString sourceFile = m_chapterListBox->GetItemText(sel, 0);
-    std::string sourcePath = projDir.ToStdString() + "/" + sourceFile.ToStdString();
-
-    wxArrayString langs;
-    for (auto* l : {"English", "Spanish", "French", "German", "Italian", "Portuguese",
-                    "Japanese", "Korean", "Chinese (Mandarin)", "Arabic", "Russian"})
-        langs.Add(l);
-
-    wxSingleChoiceDialog dlg(this, "Translate to:", "Translate", langs);
-    if (dlg.ShowModal() != wxID_OK) return;
-    std::string language = dlg.GetStringSelection().ToStdString();
-
+    std::string sourcePath = projPath + "/" + filename;
     std::ifstream ifs(sourcePath);
-    if (!ifs) { SetStatus("Cannot read source file."); return; }
+    if (!ifs) { PushStatus("Cannot read source file."); return; }
     std::string sourceText{std::istreambuf_iterator<char>(ifs), {}};
 
-    int bkIdx = m_backendChoice->GetSelection();
-    std::string bkLabel = m_backendChoice->GetString(bkIdx).ToStdString();
-    LLMBackend backend = backend_from_label(bkLabel);
+    LLMBackend bk = BackendFromLabel(backend);
+    LLMConfig  cfg;
+    cfg.backend     = bk;
+    cfg.apiKey      = apiKey;
+    cfg.ollamaModel = ollamaModel;
+    cfg.project     = m_currentProject;
+    cfg.action      = "translate \xe2\x86\x92 " + language;  // → (UTF-8)
 
-    LLMConfig cfg;
-    cfg.backend     = backend;
-    cfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
-    cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
-
-    bool isChinese = (language == "Chinese (Mandarin)");
-    std::string sourceFilename = sourceFile.ToStdString();
-    std::string projDirStr     = projDir.ToStdString();
-    std::string llmReadme      = GetLLMReadme();
-    OpenCallback cb            = m_openCallback;
-
-    // Chinese always gets ::pinyin annotations so we can produce two files from one call.
+    bool        isChinese  = (language == "Chinese (Mandarin)");
     std::string extraInstr = isChinese ? BuildPinyinInstruction() : "";
+    OpenCallback cb        = m_openCallback;
 
-    if (backend == LLMBackend::Clipboard) {
-        std::string prompt = BuildTranslationPrompt(sourceText, language, llmReadme, extraInstr);
+    if (bk == LLMBackend::Clipboard) {
+        std::string prompt = BuildTranslationPrompt(sourceText, language, extraInstr);
         if (wxTheClipboard->Open()) {
             wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
             wxTheClipboard->Close();
         }
-        SetStatus("Translation prompt copied to clipboard.");
+        PushStatus("Translation prompt copied to clipboard.");
         return;
     }
 
-    std::string bkLabelCopy = bkLabel;
-    Logger::get().log("Translate: backend=" + bkLabelCopy
-                      + "  source=" + sourceFilename
+    Logger::get().log("Translate: backend=" + backend
+                      + "  source=" + filename
                       + "  language=" + language
                       + "  source_bytes=" + std::to_string(sourceText.size()));
-    if (m_translateBtn) {
-        m_translateBtn->Enable(false);
-        m_translateBtn->SetLabel("Translating…");
-    }
-    SetStatus("Translating to " + wxString::FromUTF8(language) + "…");
+    PushTranslating(true);
+    PushStatus("Translating to " + language + "…");
 
-    std::thread([this, sourceText, language, isChinese,
-                 sourceFilename, projDirStr, llmReadme, extraInstr, cfg, cb]() mutable {
-        std::string prompt = BuildTranslationPrompt(sourceText, language, llmReadme, extraInstr);
+    std::thread([this, sourceText, language, isChinese, filename,
+                 projPath, extraInstr, cfg, cb]() mutable {
+        std::string prompt = BuildTranslationPrompt(sourceText, language, extraInstr);
         LLMResult res = InvokeLLM(prompt, cfg);
 
         if (!res.ok) {
             Logger::get().log("Translate FAILED: " + res.error);
-            wxTheApp->CallAfter([this, err = res.error]() {
-                if (m_translateBtn) {
-                    m_translateBtn->Enable(true);
-                    m_translateBtn->SetLabel("Translate…");
-                }
-                SetStatus("Translation error: " + wxString::FromUTF8(err));
+            std::string errMsg = res.error;
+            wxTheApp->CallAfter([this, errMsg]() {
+                PushTranslating(false);
+                PushStatus("Translation error: " + errMsg);
             });
             return;
         }
 
         Logger::get().log("Translate LLM OK: response_bytes=" + std::to_string(res.text.size()));
         std::string tagged = CleanMarkdownResponse(res.text);
-
-        // For Chinese: parse the single tagged response into two files.
-        // tagged  → _Chinese_Pinyin.md (Chinese lines + ::pinyin annotation lines)
-        // stripped → _Chinese.md (Chinese lines only)
-        std::string pinyinPath;
-        std::string mainPath;
+        std::string pinyinPath, mainPath;
 
         if (isChinese) {
-            std::string pinyinFile = TranslationFilename(sourceFilename, "Chinese w/ Pinyin");
-            pinyinPath = SaveChapter(projDirStr, pinyinFile, tagged);
+            std::string pinyinFile = TranslationFilename(filename, "Chinese w/ Pinyin");
+            pinyinPath = SaveChapter(projPath, pinyinFile, tagged);
             if (!pinyinPath.empty()) {
                 WriteLanguage(pinyinPath, "Chinese w/ Pinyin");
                 Logger::get().log("Translate saved (pinyin): " + pinyinPath);
             } else {
-                Logger::get().log("Translate ERROR: SaveChapter failed for " + pinyinFile + " in " + projDirStr);
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + pinyinFile);
             }
-
-            std::string stripped = StripPinyinLines(tagged);
-            std::string chineseFile = TranslationFilename(sourceFilename, "Chinese (Mandarin)");
-            mainPath = SaveChapter(projDirStr, chineseFile, stripped);
+            std::string stripped    = StripPinyinLines(tagged);
+            std::string chineseFile = TranslationFilename(filename, "Chinese (Mandarin)");
+            mainPath = SaveChapter(projPath, chineseFile, stripped);
             if (!mainPath.empty()) {
                 WriteLanguage(mainPath, "Chinese (Mandarin)");
                 Logger::get().log("Translate saved (Chinese): " + mainPath);
             } else {
-                Logger::get().log("Translate ERROR: SaveChapter failed for " + chineseFile + " in " + projDirStr);
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + chineseFile);
             }
         } else {
-            std::string outFile = TranslationFilename(sourceFilename, language);
-            mainPath = SaveChapter(projDirStr, outFile, tagged);
+            std::string outFile = TranslationFilename(filename, language);
+            mainPath = SaveChapter(projPath, outFile, tagged);
             if (!mainPath.empty()) {
                 WriteLanguage(mainPath, language);
                 Logger::get().log("Translate saved: " + mainPath);
             } else {
-                Logger::get().log("Translate ERROR: SaveChapter failed for " + outFile + " in " + projDirStr);
+                Logger::get().log("Translate ERROR: SaveChapter failed for " + outFile);
             }
         }
 
         wxTheApp->CallAfter([this, mainPath, pinyinPath, isChinese, cb]() {
-            if (m_translateBtn) {
-                m_translateBtn->Enable(true);
-                m_translateBtn->SetLabel("Translate…");
-            }
-            LoadChapters();
+            PushTranslating(false);
+            PushChapters();
             if (isChinese && !pinyinPath.empty()) {
-                SetStatus("Translated: " +
-                    wxString::FromUTF8(fs::path(mainPath).filename().string()) +
-                    " and " +
-                    wxString::FromUTF8(fs::path(pinyinPath).filename().string()));
+                PushStatus("Translated: "
+                    + fs::path(mainPath).filename().string()
+                    + " and "
+                    + fs::path(pinyinPath).filename().string());
                 if (cb) cb(pinyinPath);
             } else if (!mainPath.empty()) {
-                SetStatus("Translated: " +
-                    wxString::FromUTF8(fs::path(mainPath).filename().string()));
+                PushStatus("Translated: " + fs::path(mainPath).filename().string());
                 if (cb) cb(mainPath);
             } else {
-                SetStatus("Error: translation completed but file could not be saved. Check View Logs.");
+                PushStatus("Error: translation completed but file could not be saved. Check View Logs.");
             }
         });
     }).detach();

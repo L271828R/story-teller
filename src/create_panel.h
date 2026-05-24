@@ -5,93 +5,78 @@
 #include <string>
 #include <vector>
 #include <wx/wx.h>
-#include <wx/checklst.h>
-#include <wx/combobox.h>
-#include <wx/listctrl.h>
+#include <wx/webview.h>
 #include "config.h"
 #include "creator.h"
 
-// Self-contained form panel for content generation.
-// When a chapter is saved, onFileGenerated is called with its absolute path.
+// Create tab: a wxWebView running create_panel_html.h, communicating with
+// C++ business logic via window.webkit.messageHandlers.create / RunScript.
 class CreatePanel : public wxPanel {
 public:
     using OpenCallback = std::function<void(const std::string& filepath)>;
-    CreatePanel(wxWindow* parent, OpenCallback onFileGenerated);
+    CreatePanel(wxWindow* parent, OpenCallback onFileGenerated, bool darkMode = false);
     void SyncProject(const std::string& filePath = "");
+    void SetDarkMode(bool dark);
 
 private:
-    OpenCallback   m_openCallback;
+    OpenCallback m_openCallback;
+    wxWebView*   m_webView    = nullptr;
+    bool         m_darkMode   = false;
+    bool         m_ready      = false;   // true after JS fires 'ready'
+    bool         m_generating = false;
+    bool         m_translating = false;
+    std::string  m_pendingSync;          // buffered SyncProject path pre-ready
 
-    // ── Form fields ───────────────────────────────────────────────────────
-    wxChoice*        m_projectChoice;
-    wxStaticText*    m_projectPathLabel;
-    wxTextCtrl*      m_topicCtrl;
-    wxComboBox*      m_styleChoice;
-
-    // ── Character library ─────────────────────────────────────────────────
-    wxListBox*       m_catList;     // left: category names
-    wxCheckListBox*  m_charList;    // right: characters in selected category
-
-    // category → ordered list of character names
+    // ── Business state ────────────────────────────────────────────────────
+    std::string  m_currentProject;       // relative path, e.g. "Literature/agatha"
+    std::string  m_selectedCat;
     std::map<std::string, std::vector<std::string>> m_charsByCategory;
-    // names that are checked for inclusion (survives category switches)
     std::set<std::string> m_checkedChars;
 
-    // ── Project context (context.md) ───────────────────────────────────────
-    wxTextCtrl*      m_contextCtrl;
+    // ── Webview helpers ───────────────────────────────────────────────────
+    void Run(const std::string& js);     // RunScript wrapper, no-op if not ready
+    void HandleMessage(const std::string& json);
 
-    // ── Backend ───────────────────────────────────────────────────────────
-    wxChoice*        m_backendChoice;
-    wxTextCtrl*      m_apiKeyCtrl;
-    wxSizerItem*     m_apiKeySizer  = nullptr;
-    wxComboBox*      m_ollamaModel;
-    wxSizerItem*     m_ollamaSizer  = nullptr;
+    // ── State push (C++ → JS) ─────────────────────────────────────────────
+    void PushInitialState();
+    void PushProjectList();
+    void PushChapters();
+    void PushContext();
+    void PushCharLibrary();
+    void PushStatus(const std::string& msg);
+    void PushGenerating(bool on);
+    void PushTranslating(bool on);
 
-    wxButton*        m_generateBtn;
-    wxButton*        m_translateBtn = nullptr;
-    wxListCtrl*      m_chapterListBox;
-    wxTextCtrl*      m_statusCtrl;
-
-    bool m_generating = false;
-
-    // ── Character library helpers ─────────────────────────────────────────
+    // ── Business logic helpers ────────────────────────────────────────────
     void LoadCharLibrary();
     void SaveCharLibrary() const;
-    void RefreshCharList();          // rebuild right panel from selected category
-    std::string SelectedCategory() const;
+    std::string CurrentProjectPath() const;
+    void SelectProject(const std::string& nameOrRel);
 
-    // ── Event handlers ────────────────────────────────────────────────────
-    void OnNewProject(wxCommandEvent&);
-    void OnProjectSelected(wxCommandEvent&);
-    void OnSave(wxCommandEvent&);
-    void OnCatSelected(wxCommandEvent&);
-    void OnCharToggled(wxCommandEvent&);
-    void OnAddCategory(wxCommandEvent&);
-    void OnDeleteCategory(wxCommandEvent&);
-    void OnAddCharacter(wxCommandEvent&);
-    void OnDeleteCharacter(wxCommandEvent&);
-    void OnSaveContext(wxCommandEvent&);
-    void OnBackendChanged(wxCommandEvent&);
-    void OnGenerate(wxCommandEvent&);
-    void OnCopyPrompt(wxCommandEvent&);
-    void OnOpenInView(wxCommandEvent&);
-    void OnChapterActivated(wxListEvent&);
-    void OnTranslate(wxCommandEvent&);
-    void OnDeleteFile(wxCommandEvent&);
-
-    GenerationRequest BuildRequest() const;
-    void UpdateBackendFields();
-    void SetStatus(const wxString& msg);
-    void SetGenerating(bool on);
-
-    void LoadProjects();
-    void LoadChapters();
-    void LoadContext();
-    void SaveContext();
-    void SelectProject(const wxString& name);
-    wxString CurrentProjectPath() const;
-    void SaveFormState() const;
-    void RestoreFormState(const AppState& st);
-
-    wxDECLARE_EVENT_TABLE();
+    // ── Action handlers (dispatched by HandleMessage) ─────────────────────
+    void DoNewProject(const std::string& name);
+    void DoSelectProject(const std::string& name);
+    void DoGenerate(const std::string& topic, const std::string& style,
+                    const std::string& context, const std::string& backend,
+                    const std::string& apiKey, const std::string& ollamaModel);
+    void DoCopyPrompt(const std::string& topic, const std::string& style,
+                      const std::string& context, const std::string& backend,
+                      const std::string& apiKey, const std::string& ollamaModel);
+    void DoSaveContext(const std::string& text);
+    void DoSaveState(const std::string& topic, const std::string& style,
+                     const std::string& backend, const std::string& apiKey,
+                     const std::string& ollamaModel);
+    void DoBackendChanged(const std::string& backend);
+    void DoRefreshOllama();
+    void DoSelectCategory(const std::string& cat);
+    void DoAddCategory(const std::string& name);
+    void DoDeleteCategory(const std::string& name);
+    void DoAddCharacter(const std::string& cat, const std::string& name);
+    void DoDeleteCharacter(const std::string& cat, const std::string& name);
+    void DoToggleCharacter(const std::string& name, bool checked);
+    void DoOpenFile(const std::string& filename);
+    void DoTranslateFile(const std::string& filename, const std::string& language,
+                         const std::string& backend, const std::string& apiKey,
+                         const std::string& ollamaModel);
+    void DoDeleteFile(const std::string& filename);
 };

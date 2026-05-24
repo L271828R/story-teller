@@ -754,7 +754,6 @@ void EditPanel::OnTranslate(wxCommandEvent&) {
     wxString extraInstr = m_instructCtrl->GetValue().Trim();
     std::string prompt = BuildTranslationPrompt(sourceContent,
                                                 lang.ToStdString(),
-                                                "",
                                                 extraInstr.ToStdString());
 
     if (cfg.backend == LLMBackend::Clipboard) {

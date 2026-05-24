@@ -44,7 +44,8 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_FONT_DECREASE, MDViewerFrame::OnFontDecrease)
     EVT_MENU(ID_FONT_RESET,    MDViewerFrame::OnFontReset)
     EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, MDViewerFrame::OnScriptMessage)
-    EVT_MENU(ID_SAVE_HTML,   MDViewerFrame::OnSaveHTML)
+    EVT_MENU(ID_SAVE_HTML,            MDViewerFrame::OnSaveHTML)
+    EVT_MENU(ID_NEW_FROM_CLIPBOARD,   MDViewerFrame::OnNewFromClipboard)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
@@ -75,9 +76,10 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     // ── File menu ────────────────────────────────────────────────────────
     wxMenuBar* bar  = new wxMenuBar();
     wxMenu*    file = new wxMenu();
-    file->Append(wxID_OPEN,  "&Open…\tCtrl+O");
-    file->Append(ID_RELOAD,  "&Reload\tCtrl+R");
-    file->Append(ID_SAVE_HTML, "Save &HTML…\tCtrl+Shift+S");
+    file->Append(wxID_OPEN,             "&Open…\tCtrl+O");
+    file->Append(ID_NEW_FROM_CLIPBOARD, "New from &Clipboard…\tCtrl+Shift+N");
+    file->Append(ID_RELOAD,             "&Reload\tCtrl+R");
+    file->Append(ID_SAVE_HTML,          "Save &HTML…\tCtrl+Shift+S");
     file->AppendSeparator();
     file->Append(wxID_CLOSE, "&Close Window\tCtrl+W");
     file->Append(wxID_EXIT,  "E&xit\tCtrl+Q");
@@ -210,8 +212,12 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         [this](const std::string& path) {
             LoadFile(path);
             if (m_editPage) m_editPage->RefreshChapters();
-        });
+        }, m_darkMode);
     m_notebook->AddPage(m_createPage, "Create");
+
+    // ── Monitor page ──────────────────────────────────────────────────────
+    m_monitorPage = new MonitorPanel(m_notebook, m_darkMode);
+    m_notebook->AddPage(m_monitorPage, "Monitor");
 
     // ── Edit page ─────────────────────────────────────────────────────────
     m_editPage = new EditPanel(m_notebook,
@@ -345,7 +351,7 @@ void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
     std::string html = BuildLogsHTML(ReadFile(logPath), logPath, m_darkMode);
     m_webView->SetPage(wxString::FromUTF8(html), "");
     // Switch to the View tab so the rendered HTML is actually visible.
-    m_notebook->SetSelection(3);
+    m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
     SetStatusText("Viewing logs — use View > View Document to return");
 }
 
@@ -361,8 +367,7 @@ void MDViewerFrame::LoadFile(const std::string& path) {
     if (m_editPage) m_editPage->RefreshChapters();
     if (m_createPage) m_createPage->SyncProject(path);
     wxConfig("MDViewer").Write("lastFile", m_filePath);
-    // View is the last tab (index 3: Projects=0, Create=1, Edit=2, View=3).
-    m_notebook->SetSelection(3);
+    m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
     LoadAndRender();
 }
 
@@ -374,6 +379,8 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", false);
         if (m_chatPanel) m_chatPanel->SetDarkMode(false);
+        if (m_createPage) m_createPage->SetDarkMode(false);
+        if (m_monitorPage) m_monitorPage->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -384,6 +391,8 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", true);
         if (m_chatPanel) m_chatPanel->SetDarkMode(true);
+        if (m_createPage) m_createPage->SetDarkMode(true);
+        if (m_monitorPage) m_monitorPage->SetDarkMode(true);
         LoadAndRender();
     }
 }
@@ -400,6 +409,34 @@ void MDViewerFrame::OnOpen(wxCommandEvent&) {
     SetTitle("MDViewer — " + wxFileName(m_filePath).GetFullName());
     wxConfig("MDViewer").Write("lastFile", m_filePath);
     LoadAndRender();
+}
+
+void MDViewerFrame::OnNewFromClipboard(wxCommandEvent&) {
+    if (!wxTheClipboard->Open()) return;
+    wxTextDataObject data;
+    bool ok = wxTheClipboard->IsSupported(wxDF_TEXT) && wxTheClipboard->GetData(data);
+    wxTheClipboard->Close();
+    if (!ok || data.GetText().empty()) {
+        SetStatusText("Clipboard is empty or contains no text.");
+        return;
+    }
+
+    wxFileDialog dlg(this, "Save clipboard as…", "", "untitled.md",
+                     "Markdown files (*.md)|*.md|All files (*)|*",
+                     wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dlg.ShowModal() == wxID_CANCEL) return;
+
+    std::string path = dlg.GetPath().ToStdString();
+    {
+        std::ofstream f(path);
+        if (!f) {
+            wxMessageBox("Could not write: " + dlg.GetPath(), "StoryTeller",
+                         wxOK | wxICON_ERROR);
+            return;
+        }
+        f << data.GetText().ToStdString();
+    }
+    LoadFile(path);
 }
 
 void MDViewerFrame::OnReload(wxCommandEvent&) { LoadAndRender(); }
