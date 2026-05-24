@@ -238,24 +238,18 @@ h2:hover .chat-btn{opacity:1}
 
 /* ── Notes ─────────────────────────────────────────────────────────────── */
 .note-marker{
-  display:inline-block;font-size:0.7em;vertical-align:super;
-  cursor:pointer;user-select:none;margin-left:1px;
-  color:var(--link);line-height:1;
+  text-decoration:underline dotted var(--link);
+  text-decoration-skip-ink:none;
+  cursor:pointer;
 }
-.note-popover{
+.note-tooltip{
   position:fixed;z-index:5000;
   background:var(--surface);border:1px solid var(--border);
-  border-radius:8px;padding:12px 14px;max-width:320px;
-  box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:0.88em;
-  color:var(--text);line-height:1.5;
+  border-radius:6px;padding:8px 12px;max-width:300px;
+  box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:0.85em;
+  color:var(--text);line-height:1.5;pointer-events:none;
+  white-space:pre-wrap;
 }
-.note-popover-text{margin-bottom:10px;white-space:pre-wrap}
-.note-popover-actions{display:flex;gap:8px;justify-content:flex-end}
-.note-popover-actions button{
-  background:none;border:1px solid var(--border);border-radius:4px;
-  padding:3px 10px;cursor:pointer;font-size:0.9em;color:var(--text-muted);
-}
-.note-popover-actions button:hover{background:var(--border)}
 /* Selection toolbar */
 #note-toolbar{
   position:fixed;z-index:4999;display:none;
@@ -524,10 +518,10 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
 
 // ── Notes ────────────────────────────────────────────────────────────────
 (function() {
-  // Selection toolbar
+  // Selection toolbar — only shown when the selection does not overlap a note.
   var toolbar = document.createElement('div');
   toolbar.id = 'note-toolbar';
-  toolbar.textContent = '📝 Add note';
+  toolbar.textContent = 'Add note';
   document.body.appendChild(toolbar);
 
   var selTimeout = null;
@@ -538,6 +532,12 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       var text = sel ? sel.toString().trim() : '';
       if (!text || text.length < 2) { toolbar.style.display = 'none'; return; }
       var range = sel.getRangeAt(0);
+      // Hide toolbar if the selection is inside or overlaps an existing note marker.
+      var ancestor = range.commonAncestorContainer;
+      var el = ancestor.nodeType === 3 ? ancestor.parentElement : ancestor;
+      if (el && el.closest('.note-marker')) { toolbar.style.display = 'none'; return; }
+      var frag = range.cloneContents();
+      if (frag.querySelector('.note-marker')) { toolbar.style.display = 'none'; return; }
       var rects = range.getClientRects();
       var rect  = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
       if (!rect || (rect.width === 0 && rect.height === 0)) { toolbar.style.display = 'none'; return; }
@@ -565,48 +565,45 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
         JSON.stringify({action:'add', selectedText:selectedText, context:context}));
   });
 
-  var activePopover = null;
   document.addEventListener('mousedown', function(e) {
-    if (activePopover && !activePopover.contains(e.target)) {
-      activePopover.remove(); activePopover = null;
-    }
     if (!e.target.classList.contains('note-marker'))
       toolbar.style.display = 'none';
   });
 
+  // Hover tooltip
+  var tooltip = document.createElement('div');
+  tooltip.className = 'note-tooltip';
+  tooltip.style.display = 'none';
+  document.body.appendChild(tooltip);
+  var tooltipTimer = null;
+
+  document.addEventListener('mouseover', function(e) {
+    var marker = e.target.closest('.note-marker');
+    if (!marker) return;
+    clearTimeout(tooltipTimer);
+    tooltip.textContent = marker.getAttribute('data-note-text') || '';
+    tooltip.style.display = 'block';
+    var rect = marker.getBoundingClientRect();
+    tooltip.style.left = Math.min(rect.left, window.innerWidth - 320) + 'px';
+    tooltip.style.top  = (rect.bottom + 6) + 'px';
+  });
+
+  document.addEventListener('mouseout', function(e) {
+    var marker = e.target.closest('.note-marker');
+    if (!marker) return;
+    tooltipTimer = setTimeout(function() { tooltip.style.display = 'none'; }, 100);
+  });
+
+  // Click on annotated text → edit the note directly (no popover needed).
   document.addEventListener('click', function(e) {
     var marker = e.target.closest('.note-marker');
     if (!marker) return;
     e.stopPropagation();
-    if (activePopover) { activePopover.remove(); activePopover = null; }
-    var noteId  = marker.getAttribute('data-note-id');
-    var noteText= marker.getAttribute('data-note-text') || '(no text)';
-    var pop = document.createElement('div');
-    pop.className = 'note-popover';
-    pop.innerHTML =
-      '<div class="note-popover-text"></div>' +
-      '<div class="note-popover-actions">' +
-        '<button class="note-edit">✏️ Edit</button>' +
-        '<button class="note-delete">🗑️ Delete</button>' +
-      '</div>';
-    pop.querySelector('.note-popover-text').textContent = noteText;
-    var rect = marker.getBoundingClientRect();
-    pop.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
-    pop.style.top  = (rect.bottom + 6) + 'px';
-    document.body.appendChild(pop);
-    activePopover = pop;
-    pop.querySelector('.note-edit').addEventListener('click', function() {
-      pop.remove(); activePopover = null;
-      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
-        window.webkit.messageHandlers.note.postMessage(
-          JSON.stringify({action:'edit', id: parseInt(noteId)}));
-    });
-    pop.querySelector('.note-delete').addEventListener('click', function() {
-      pop.remove(); activePopover = null;
-      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
-        window.webkit.messageHandlers.note.postMessage(
-          JSON.stringify({action:'delete', id: parseInt(noteId)}));
-    });
+    tooltip.style.display = 'none';
+    var noteId = marker.getAttribute('data-note-id');
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
+      window.webkit.messageHandlers.note.postMessage(
+        JSON.stringify({action:'edit', id: parseInt(noteId)}));
   });
   // Close side chat when the user clicks anywhere in the main content.
   document.addEventListener('click', function(e) {

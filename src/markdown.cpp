@@ -562,7 +562,8 @@ std::string RenderMarkdown(const std::string& md) {
 }
 
 std::string InjectNoteSpans(const std::string& renderedHtml,
-                            const std::map<int,std::string>& noteTexts) {
+                            const std::map<int,std::string>& noteTexts,
+                            const std::map<int,std::string>& selectedTexts) {
     // ProcessInline escapes < and > so the comment arrives in the HTML body as
     // the literal text  &lt;!-- note:N --&gt;  — match that form.
     const std::string prefix = "&lt;!-- note:";
@@ -589,11 +590,31 @@ std::string InjectNoteSpans(const std::string& renderedHtml,
         std::string noteText;
         auto it = noteTexts.find(noteId);
         if (it != noteTexts.end()) noteText = it->second;
-        result += "<span class=\"note-marker\" data-note-id=\""
-               + std::to_string(noteId)
-               + "\" data-note-text=\""
-               + EscapeHTML(noteText)
-               + "\">\xf0\x9f\x93\x9d</span>";
+
+        std::string openSpan = "<span class=\"note-marker\" data-note-id=\""
+                             + std::to_string(noteId)
+                             + "\" data-note-text=\""
+                             + EscapeHTML(noteText)
+                             + "\">";
+
+        // If we know the selected text, find it immediately before the marker
+        // and wrap it. Otherwise fall back to inserting a small icon.
+        auto selIt = selectedTexts.find(noteId);
+        if (selIt != selectedTexts.end() && !selIt->second.empty()) {
+            std::string escaped = EscapeHTML(selIt->second);
+            // Search for the selected text ending right at `found`
+            if (!result.empty() && result.size() >= escaped.size() &&
+                result.compare(result.size() - escaped.size(),
+                               escaped.size(), escaped) == 0) {
+                // Remove the selected text we already appended, then re-wrap it
+                result.resize(result.size() - escaped.size());
+                result += openSpan + escaped + "</span>";
+            } else {
+                result += openSpan + escaped + "</span>";
+            }
+        } else {
+            result += openSpan + "\xf0\x9f\x93\x9d</span>";
+        }
         pos = numEnd + suffix.size();
     }
     return result;

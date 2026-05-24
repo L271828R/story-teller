@@ -193,6 +193,23 @@ int test_html_template() {
         }
     }
 
+    // Note markers must use a dotted underline (not an icon) so annotated
+    // text is visually distinct without adding inline clutter.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasUnderline = html.find("text-decoration") != std::string::npos &&
+                            html.find("underline")       != std::string::npos;
+        bool noIcon       = html.find("\xf0\x9f\x93\x9d") == std::string::npos; // no 📝 in CSS/JS
+        if (!hasUnderline || !noIcon) {
+            std::cerr << "FAIL [note-marker-underline]: note-marker CSS must use underline "
+                         "decoration, not a 📝 icon (hasUnderline=" << hasUnderline
+                      << " noIcon=" << noIcon << ")\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [note-marker-underline]\n";
+        }
+    }
+
     // Tidbit carousel must have both a prev (‹) and a next (›) arrow so the
     // user can navigate in both directions.
     {

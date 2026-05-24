@@ -200,7 +200,8 @@ int test_notes() {
         std::map<int,std::string> texts;
         texts[3] = "Note three";
         texts[7] = "Note & \"seven\"";
-        std::string result = InjectNoteSpans(md, texts);
+        std::map<int,std::string> sels; // no selectedTexts — fallback path
+        std::string result = InjectNoteSpans(md, texts, sels);
 
         bool hasSpan3   = result.find("data-note-id=\"3\"") != std::string::npos;
         bool hasSpan7   = result.find("data-note-id=\"7\"") != std::string::npos;
@@ -220,6 +221,33 @@ int test_notes() {
             ++failures;
         } else {
             std::cout << "PASS [notes-inject-spans]\n";
+        }
+    }
+
+    // [notes-inject-spans-wrap] — When selectedTexts are provided, InjectNoteSpans
+    // wraps the selected text in the span instead of emitting an icon after it.
+    {
+        std::string md = "<p>Hello world&lt;!-- note:3 --&gt; end.</p>\n";
+        std::map<int,std::string> texts; texts[3] = "My note";
+        std::map<int,std::string> sels;  sels[3]  = "Hello world";
+        std::string result = InjectNoteSpans(md, texts, sels);
+
+        // The span must wrap "Hello world" — the text must be inside the span,
+        // not bare before it. Check that the span opener precedes the text.
+        bool wrapsText  = result.find(">Hello world</span>") != std::string::npos;
+        bool hasNoteId  = result.find("data-note-id=\"3\"") != std::string::npos;
+        bool noIcon     = result.find("\xf0\x9f\x93\x9d") == std::string::npos; // no 📝
+        bool noComment  = result.find("&lt;!-- note:") == std::string::npos;
+
+        if (!wrapsText || !hasNoteId || !noIcon || !noComment) {
+            std::cerr << "FAIL [notes-inject-spans-wrap]: wrapsText=" << wrapsText
+                      << " hasNoteId=" << hasNoteId
+                      << " noIcon=" << noIcon
+                      << " noComment=" << noComment
+                      << "\n  result: '" << result << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [notes-inject-spans-wrap]\n";
         }
     }
 

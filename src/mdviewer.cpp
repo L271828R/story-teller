@@ -339,9 +339,12 @@ void MDViewerFrame::LoadAndRender() {
             auto notes = LoadNotes(projDir);
             if (!notes.empty()) {
                 std::map<int,std::string> noteTexts;
-                for (const auto& n : notes)
-                    noteTexts[n.id] = n.text;
-                body = InjectNoteSpans(body, noteTexts);
+                std::map<int,std::string> selectedTexts;
+                for (const auto& n : notes) {
+                    noteTexts[n.id]    = n.text;
+                    selectedTexts[n.id] = n.selectedText;
+                }
+                body = InjectNoteSpans(body, noteTexts, selectedTexts);
             }
         }
     }
