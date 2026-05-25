@@ -132,5 +132,35 @@ int test_mdviewer() {
         }
     }
 
+    // OnActivate must suppress wx's internal error dialog when GetTimes fails on
+    // a deleted file. Without wxLogNull the error dialog fires, dismissing it
+    // re-activates the frame, and the dialog loops forever.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        // Find OnActivate and check wxLogNull appears before GetTimes inside it.
+        const std::string sig = "void MDViewerFrame::OnActivate(";
+        auto fnPos = code.find(sig);
+        bool hasLogNull = false;
+        if (fnPos != std::string::npos) {
+            auto fnEnd = code.find("\n}\n", fnPos);
+            if (fnEnd != std::string::npos) {
+                auto logNullPos = code.find("wxLogNull", fnPos);
+                auto getTimesPos = code.find("GetTimes", fnPos);
+                hasLogNull = logNullPos != std::string::npos
+                          && logNullPos < fnEnd
+                          && logNullPos < getTimesPos;
+            }
+        }
+        if (!hasLogNull) {
+            std::cerr << "FAIL [activate-no-error-loop]: OnActivate must use wxLogNull "
+                         "before GetTimes to suppress the wx error dialog on missing files\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [activate-no-error-loop]\n";
+        }
+    }
+
     return failures;
 }

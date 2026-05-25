@@ -23,6 +23,8 @@ int test_create_panel_html();
 int test_process_monitor();
 int test_persona();
 int test_images();
+int test_quiz();
+int test_js_lint();
 
 int main() {
     int failures = 0;
@@ -46,6 +48,8 @@ int main() {
     failures += test_process_monitor();
     failures += test_persona();
     failures += test_images();
+    failures += test_quiz();
+    failures += test_js_lint();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

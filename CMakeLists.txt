@@ -119,6 +119,7 @@ set(SOURCES
     src/images.cpp
     src/image_panel_html.cpp
     src/image_panel.cpp
+    src/quiz.cpp
 )
 add_executable(story-teller ${SOURCES})
 add_dependencies(story-teller gen_mermaid_header gen_hljs_headers)
@@ -149,6 +150,8 @@ add_executable(test_story-teller
     tests/test_create_panel_html.cpp
     tests/test_process_monitor.cpp
     tests/test_persona.cpp
+    tests/test_quiz.cpp
+    tests/test_js_lint.cpp
     src/persona.cpp
     src/persona_panel_html.cpp
     src/create_panel_html.cpp
@@ -169,6 +172,9 @@ add_executable(test_story-teller
     src/llm_error.cpp
     src/llm_response.cpp
     src/meta.cpp
+    src/quiz.cpp
+    src/monitor_panel_html.cpp
+    src/edit_panel_html.cpp
 )
 add_dependencies(test_story-teller gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})

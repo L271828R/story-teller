@@ -14,6 +14,7 @@ private:
     bool       m_ready    = false;
 
     void PushProcessList();
+    void PushTimingLog();
     void HandleMessage(const std::string& json);
     void Run(const std::string& js);
 };

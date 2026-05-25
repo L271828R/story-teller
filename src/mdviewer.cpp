@@ -534,7 +534,8 @@ void MDViewerFrame::OnActivate(wxActivateEvent& evt) {
     evt.Skip();
     if (!evt.GetActive() || m_filePath.empty()) return;
     wxDateTime mt;
-    if (!wxFileName(m_filePath).GetTimes(nullptr, &mt, nullptr) || !mt.IsValid()) return;
+    { wxLogNull noLog; // suppress wx error dialog if file was deleted
+      if (!wxFileName(m_filePath).GetTimes(nullptr, &mt, nullptr) || !mt.IsValid()) return; }
     if (m_fileMtime.IsValid() && mt != m_fileMtime) {
         m_fileMtime = mt;
         LoadAndRender();

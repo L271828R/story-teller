@@ -2,10 +2,19 @@
 #include <string>
 #include <vector>
 
+struct CharacterEntry {
+    std::string name;
+    std::string description; // optional disambiguation shown to the LLM
+    CharacterEntry() = default;
+    CharacterEntry(const char* n) : name(n) {}  // allows {"Name"} initializer-list syntax
+    CharacterEntry(std::string n, std::string d = "")
+        : name(std::move(n)), description(std::move(d)) {}
+};
+
 struct GenerationRequest {
     std::string topic;
     std::string style;
-    std::vector<std::string> characters;
+    std::vector<CharacterEntry> characters;
     std::string projectContext;
     int tidbitsPerChapter = 1;
 };

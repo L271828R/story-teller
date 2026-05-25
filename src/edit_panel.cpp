@@ -1,6 +1,7 @@
 #include "edit_panel.h"
 #include "config.h"
 #include "creator.h"
+#include "quiz.h"
 #include "edit_panel_html.h"
 #include "editor.h"
 #include "git_ops.h"
@@ -201,6 +202,7 @@ void EditPanel::HandleMessage(const std::string& json) {
     if (action == "checkout")            { OnCheckout(ExtractField(json,"commit"), ExtractField(json,"shortHash"), ExtractField(json,"subject")); return; }
     if (action == "stash")               { OnStash(); return; }
     if (action == "unstash")             { OnUnstash(); return; }
+    if (action == "quiz")                { OnQuiz(json); return; }
 }
 
 // ── State pushers ─────────────────────────────────────────────────────────────
@@ -585,14 +587,15 @@ void EditPanel::OnRewrite(const std::string& json) {
         std::string chapPath = path;
         OpenCallback cb = m_openCallback;
 
-        std::thread([this, prompt, cfg, chapPath, filename, cb]() mutable {
+        std::string backend = st.backend;
+        std::thread([this, prompt, cfg, chapPath, filename, cb, backend]() mutable {
             auto t0 = std::chrono::steady_clock::now();
             LLMResult res = InvokeLLM(prompt, cfg);
             int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - t0).count();
             if (res.ok)
                 RecordLLMTiming(fs::path(chapPath).parent_path().string(),
-                                "rewrite-doc", filename, secs);
+                                "rewrite-doc", filename, secs, backend);
 
             wxTheApp->CallAfter([this, res, chapPath, filename, cb]() mutable {
                 PushBusy(false);
@@ -648,14 +651,15 @@ void EditPanel::OnRewrite(const std::string& json) {
     std::string chapPath = path;
     OpenCallback cb = m_openCallback;
 
-    std::thread([this, prompt, cfg, chapPath, chapterMode, id, cb, filename]() mutable {
+    std::string backend = st.backend;
+    std::thread([this, prompt, cfg, chapPath, chapterMode, id, cb, filename, backend]() mutable {
         auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
         int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - t0).count();
         if (res.ok)
             RecordLLMTiming(fs::path(chapPath).parent_path().string(),
-                            "patch", (chapterMode?"chapter ":"tidbit ")+std::to_string(id), secs);
+                            "patch", (chapterMode?"chapter ":"tidbit ")+std::to_string(id), secs, backend);
 
         wxTheApp->CallAfter([this, res, chapPath, chapterMode, id, cb, filename]() mutable {
             PushBusy(false);
@@ -719,14 +723,15 @@ void EditPanel::OnTranslate(const std::string& json) {
     PushBusy(true);
     PushStatus("Translating to " + language + "…");
 
-    std::thread([this, prompt, cfg, outPath, cb]() mutable {
+    std::string backend = st.backend;
+    std::thread([this, prompt, cfg, outPath, cb, backend]() mutable {
         auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
         int secs = (int)std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - t0).count();
         if (res.ok)
             RecordLLMTiming(outPath.parent_path().string(),
-                            "translate", outPath.filename().string(), secs);
+                            "translate", outPath.filename().string(), secs, backend);
         wxTheApp->CallAfter([this, res, outPath, cb]() mutable {
             PushBusy(false);
             if (!res.ok) {
@@ -739,6 +744,60 @@ void EditPanel::OnTranslate(const std::string& json) {
             DoRefresh();
             PushStatus("Translated file saved: " + outPath.filename().string());
             if (cb) cb(outPath.string());
+        });
+    }).detach();
+}
+
+// ── Quiz ──────────────────────────────────────────────────────────────────────
+
+void EditPanel::OnQuiz(const std::string& json) {
+    std::string filename = ExtractField(json, "file");
+    int         n        = ExtractInt(json, "n", 5);
+    std::string extra    = ExtractField(json, "extra");
+
+    std::string path = ChapterPath(filename);
+    if (path.empty()) return;
+
+    std::string content;
+    { std::ifstream f(path); if (!f) { PushStatus("Cannot read file."); return; }
+      content.assign(std::istreambuf_iterator<char>(f), {}); }
+
+    AppState  st  = LoadAppState();
+    LLMConfig cfg = llm_config_from_state(st);
+    std::string stripped = StripTidbits(content);
+    std::string prompt   = BuildQuizPrompt(stripped, n, extra);
+
+    if (cfg.backend == LLMBackend::Clipboard) {
+        if (wxTheClipboard->Open()) {
+            wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
+            wxTheClipboard->Close();
+        }
+        PushStatus("Quiz prompt copied to clipboard.\nPaste into any LLM, copy the result, "
+                   "then paste it back and append it manually as a '## Quiz' section.");
+        return;
+    }
+
+    Logger::get().log("EditPanel quiz: file=" + filename + " n=" + std::to_string(n));
+    PushBusy(true);
+    PushStatus("Generating " + std::to_string(n) + "-question quiz via " + st.backend + "…");
+
+    OpenCallback cb = m_openCallback;
+
+    std::thread([this, prompt, cfg, path, content, cb, filename]() mutable {
+        LLMResult res = InvokeLLM(prompt, cfg);
+        wxTheApp->CallAfter([this, res, path, content, cb, filename]() mutable {
+            PushBusy(false);
+            if (!res.ok) {
+                Logger::get().log("EditPanel quiz FAILED: " + res.error);
+                PushStatus("Error: " + res.error);
+                return;
+            }
+            std::string updated = AppendQuizToMarkdown(content, CleanMarkdownResponse(res.text));
+            { std::ofstream f(path, std::ios::trunc);
+              f << updated;
+              if (!f.good()) { PushStatus("Could not write file."); return; } }
+            PushStatus("Quiz appended to " + filename);
+            if (cb) cb(path);
         });
     }).detach();
 }

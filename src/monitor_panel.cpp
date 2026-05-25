@@ -1,6 +1,8 @@
 #include "monitor_panel.h"
 #include "monitor_panel_html.h"
 #include "process_monitor.h"
+#include "config.h"
+#include "meta.h"
 #include <sstream>
 #include <wx/sizer.h>
 #include <wx/webview.h>
@@ -10,8 +12,10 @@
 static std::string js_str(const std::string& s) {
     std::string out = "'";
     for (char c : s) {
-        if (c == '\'') out += "\\'";
+        if      (c == '\'') out += "\\'";
         else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') { /* skip */ }
         else out += c;
     }
     return out + "'";
@@ -77,8 +81,19 @@ void MonitorPanel::HandleMessage(const std::string& json) {
     if (action == "ready") {
         m_ready = true;
         PushProcessList();
+        PushTimingLog();
     } else if (action == "refresh") {
         PushProcessList();
+        PushTimingLog();
+    } else if (action == "archiveTiming") {
+        AppConfig cfg = LoadConfig();
+        std::string proj = act("project");
+        std::string ts   = act("ts");
+        bool doArchive = json.find("\"archived\":true") != std::string::npos
+                      || json.find("\"archived\": true") != std::string::npos;
+        if (!proj.empty() && !ts.empty() && !cfg.defaultFolder.empty())
+            ArchiveTimingEntry(cfg.defaultFolder, proj, ts, doArchive);
+        PushTimingLog();
     } else if (action == "kill") {
         // pid is a number, not a string — extract directly.
         auto pos = json.find("\"pid\":");
@@ -88,6 +103,32 @@ void MonitorPanel::HandleMessage(const std::string& json) {
             PushProcessList();
         }
     }
+}
+
+void MonitorPanel::PushTimingLog() {
+    AppConfig cfg = LoadConfig();
+    if (cfg.defaultFolder.empty()) {
+        Run("setTimingLog([])");
+        return;
+    }
+    auto entries = ScanAllTimings(cfg.defaultFolder);
+    std::ostringstream json;
+    json << "[";
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (i) json << ",";
+        const auto& t = entries[i];
+        json << "{"
+             << "\"ts\":"       << js_str(t.timestamp)       << ","
+             << "\"project\":"  << js_str(t.project)         << ","
+             << "\"backend\":"  << js_str(t.backend)         << ","
+             << "\"op\":"       << js_str(t.operation)       << ","
+             << "\"topic\":"    << js_str(t.topic)           << ","
+             << "\"secs\":"     << t.durationSeconds         << ","
+             << "\"archived\":" << (t.archived ? "true" : "false")
+             << "}";
+    }
+    json << "]";
+    Run("setTimingLog(" + json.str() + ")");
 }
 
 void MonitorPanel::SetDarkMode(bool dark) {

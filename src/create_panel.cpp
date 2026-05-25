@@ -241,8 +241,12 @@ void CreatePanel::PushCharLibrary() {
             if (!first) json += ",";
             first = false;
             bool checked = m_checkedChars.count(ch) > 0;
+            std::string desc;
+            auto dit = m_charDescriptions.find(ch);
+            if (dit != m_charDescriptions.end()) desc = dit->second;
             json += "{\"name\":" + JsStr(ch)
-                 + ",\"checked\":" + (checked ? "true" : "false") + "}";
+                 + ",\"checked\":" + (checked ? "true" : "false")
+                 + ",\"description\":" + JsStr(desc) + "}";
         }
     }
     json += "]}";
@@ -384,6 +388,19 @@ void CreatePanel::LoadCharLibrary() {
         while (ctok.HasMoreTokens())
             vec.push_back(ctok.GetNextToken().ToStdString());
     }
+
+    // Load descriptions (stored under /charlib_descriptions/<name>)
+    m_charDescriptions.clear();
+    wxConfig dcfg("StoryTeller");
+    dcfg.SetPath("/charlib_descriptions");
+    wxString descKey, descVal;
+    long idx = 0;
+    if (dcfg.GetFirstEntry(descKey, idx)) {
+        do {
+            dcfg.Read(descKey, &descVal);
+            m_charDescriptions[descKey.ToStdString()] = descVal.ToStdString();
+        } while (dcfg.GetNextEntry(descKey, idx));
+    }
 }
 
 void CreatePanel::SaveCharLibrary() const {
@@ -401,6 +418,15 @@ void CreatePanel::SaveCharLibrary() const {
         cfg.Write(wxString::FromUTF8(cat), charStr);
     }
     cfg.Write("categories", catStr);
+
+    // Save descriptions (delete and rewrite to purge stale entries)
+    wxConfig dcfg("StoryTeller");
+    dcfg.DeleteGroup("/charlib_descriptions");
+    dcfg.SetPath("/charlib_descriptions");
+    for (auto& [name, desc] : m_charDescriptions) {
+        if (!desc.empty())
+            dcfg.Write(wxString::FromUTF8(name), wxString::FromUTF8(desc));
+    }
 }
 
 // ── Message dispatcher ────────────────────────────────────────────────────────
@@ -435,6 +461,7 @@ void CreatePanel::HandleMessage(const std::string& json) {
     else if (action == "addCharacter")     DoAddCharacter(f("category"),f("name"));
     else if (action == "deleteCharacter")  DoDeleteCharacter(f("category"),f("name"));
     else if (action == "toggleCharacter")  DoToggleCharacter(f("name"), b("checked"));
+    else if (action == "setCharDescription") DoSetCharDescription(f("name"), f("description"));
     else if (action == "openFile")         DoOpenFile(f("name"));
     else if (action == "translateFile")    DoTranslateFile(f("name"),f("language"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "deleteFile")       DoDeleteFile(f("name"));
@@ -477,7 +504,10 @@ void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& styl
     req.style              = style;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
-    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+    for (auto& ch : m_checkedChars) {
+        auto dit = m_charDescriptions.find(ch);
+        req.characters.push_back({ch, dit != m_charDescriptions.end() ? dit->second : ""});
+    }
     std::string prompt = BuildPrompt(req, GetLLMReadme());
     if (wxTheClipboard->Open()) {
         wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
@@ -576,6 +606,12 @@ void CreatePanel::DoToggleCharacter(const std::string& name, bool checked) {
     else         m_checkedChars.erase(name);
 }
 
+void CreatePanel::DoSetCharDescription(const std::string& name, const std::string& desc) {
+    if (name.empty()) return;
+    m_charDescriptions[name] = desc;
+    SaveCharLibrary();
+}
+
 void CreatePanel::DoOpenFile(const std::string& filename) {
     std::string projPath = CurrentProjectPath();
     if (projPath.empty() || filename.empty()) return;
@@ -614,7 +650,10 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     req.style              = style;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
-    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+    for (auto& ch : m_checkedChars) {
+        auto dit = m_charDescriptions.find(ch);
+        req.characters.push_back({ch, dit != m_charDescriptions.end() ? dit->second : ""});
+    }
 
     int         chId    = NextChapterId(projPath);
     std::string prompt  = BuildPrompt(req, GetLLMReadme());
@@ -646,14 +685,14 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     OpenCallback cb = m_openCallback;
     std::string  topicStr = topic;
 
-    std::thread([this, prompt, cfg, projPath, chId, topicStr, cb]() mutable {
+    std::thread([this, prompt, cfg, projPath, chId, topicStr, cb, backend]() mutable {
         auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
         int elapsed = (int)std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - t0).count();
 
         if (res.ok)
-            RecordLLMTiming(projPath, "generate", topicStr, elapsed);
+            RecordLLMTiming(projPath, "generate", topicStr, elapsed, backend);
 
         wxTheApp->CallAfter([this, res, projPath, chId, topicStr, cb]() mutable {
             PushGenerating(false);

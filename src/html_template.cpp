@@ -282,6 +282,19 @@ img{max-width:100%;height:auto;border-radius:4px}
 /* ── Rule ───────────────────────────────────────────────────────────────── */
 hr{height:.25em;padding:0;margin:24px 0;background:var(--border);border:0}
 
+/* ── Quiz interactive ───────────────────────────────────────────────────── */
+.quiz-options{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.quiz-opt{
+  background:var(--surface);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;
+  padding:6px 16px;font-size:0.95em;cursor:pointer;font-family:inherit;
+  transition:background .12s,border-color .12s;
+}
+.quiz-opt:hover:not(:disabled){background:var(--link);color:#fff;border-color:var(--link)}
+.quiz-opt:disabled{cursor:default}
+.quiz-correct{background:#22c55e!important;color:#fff!important;border-color:#22c55e!important}
+.quiz-wrong  {background:#ef4444!important;color:#fff!important;border-color:#ef4444!important}
+
 /* ── Focus / reading mode ───────────────────────────────────────────────── */
 .focus-line{
   background:rgba(255,215,0,.38);border-radius:2px;
@@ -908,6 +921,63 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       var i = focusBlocks.indexOf(chunk);
       if (i !== -1) moveFocus(i);
     }
+  });
+})();
+
+// ── Quiz interactive ──────────────────────────────────────────────────────
+(function initQuiz() {
+  var ps = Array.from(document.querySelectorAll('p'));
+  ps.forEach(function(p) {
+    var str = p.querySelector('strong');
+    if (!str) return;
+    if (str.textContent.trim().replace(':','') !== 'Answer') return;
+
+    var answerText = p.textContent.replace(/^Answer:\s*/i, '').trim();
+    var answerLetter = answerText.charAt(0).toUpperCase();
+
+    var optionsPara = p.previousElementSibling;
+    if (!optionsPara || optionsPara.tagName !== 'P') return;
+    var optText = optionsPara.textContent;
+    var parts = optText.split(/(?=[A-D]\))/).filter(function(s) {
+      return /^[A-D]\)/.test(s);
+    });
+    if (parts.length < 2) return;
+
+    // Hide the answer paragraph until answered
+    p.style.visibility = 'hidden';
+    p.dataset.answer = answerLetter;
+    var answerPara = p;
+
+    var container = document.createElement('div');
+    container.className = 'quiz-options';
+
+    parts.forEach(function(opt) {
+      var m = opt.match(/^([A-D])\)\s*([\s\S]*)/);
+      if (!m) return;
+      var letter = m[1];
+      var text = m[2].trim();
+      var btn = document.createElement('button');
+      btn.className = 'quiz-opt';
+      btn.dataset.letter = letter;
+      btn.textContent = letter + ') ' + text;
+      btn.addEventListener('click', function() {
+        if (container.dataset.answered) return;
+        container.dataset.answered = '1';
+        var correct = letter === answerPara.dataset.answer;
+        container.querySelectorAll('.quiz-opt').forEach(function(b) {
+          if (b.dataset.letter === answerPara.dataset.answer) {
+            b.classList.add('quiz-correct');
+          } else if (b === btn && !correct) {
+            b.classList.add('quiz-wrong');
+          }
+          b.disabled = true;
+        });
+        answerPara.style.visibility = 'visible';
+      });
+      container.appendChild(btn);
+    });
+
+    optionsPara.replaceWith(container);
   });
 })();
 </script>

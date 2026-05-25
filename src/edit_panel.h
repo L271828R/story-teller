@@ -73,4 +73,5 @@ private:
                     const std::string& subject);
     void OnStash();
     void OnUnstash();
+    void OnQuiz(const std::string& json);
 };

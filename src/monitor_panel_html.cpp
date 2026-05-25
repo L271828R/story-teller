@@ -56,6 +56,20 @@ tr.orphaned td { background: var(--orphan-bg); }
 .empty { padding: 24px; text-align: center; color: var(--muted);
          background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
 #lastChecked { color: var(--muted); font-size: 11px; }
+.timing-log { margin-top: 24px; }
+.timing-log h2 { margin-bottom: 10px; }
+.badge {
+  display: inline-block; padding: 1px 7px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; background: var(--accent);
+  color: #fff; white-space: nowrap;
+}
+.secs { font-variant-numeric: tabular-nums; color: var(--text); }
+.archived-row { opacity: 0.45; }
+.btn-archive { font-size: 11px; padding: 1px 7px; cursor: pointer;
+               border:1px solid var(--border); border-radius: 4px;
+               background: transparent; color: var(--muted); }
+.btn-archive:hover { background: var(--border); }
+.show-archived-row { margin-bottom: 6px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body class=")HTML" + std::string(bodyClass) + R"HTML(">
@@ -65,6 +79,14 @@ tr.orphaned td { background: var(--orphan-bg); }
   <span id="lastChecked"></span>
 </div>
 <div id="content"><div class="empty">Loading…</div></div>
+
+<div class="timing-log">
+  <h2>Timing Log</h2>
+  <div class="show-archived-row">
+    <label><input type="checkbox" id="showArchived" onchange="renderTimingLog()"> Show archived</label>
+  </div>
+  <div id="timing-log"><div class="empty">No timing data yet.</div></div>
+</div>
 
 <script>
 function send(obj) {
@@ -115,6 +137,57 @@ function setProcessList(procs) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+var _timingEntries = [];
+
+function setTimingLog(entries) {
+  _timingEntries = entries || [];
+  renderTimingLog();
+}
+
+function renderTimingLog() {
+  var el = document.getElementById('timing-log');
+  var showArchived = document.getElementById('showArchived').checked;
+  var visible = _timingEntries.filter(function(e) {
+    return showArchived || !e.archived;
+  });
+  if (visible.length === 0) {
+    el.innerHTML = '<div class="empty">No completed LLM runs recorded yet.</div>';
+    return;
+  }
+  var rows = visible.map(function(e) {
+    var mins = Math.floor(e.secs / 60);
+    var secs = e.secs % 60;
+    var dur  = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+    var archLabel = e.archived ? 'Unarchive' : 'Archive';
+    var newVal    = e.archived ? 'false' : 'true';
+    var rowClass  = e.archived ? 'archived-row' : '';
+    return '<tr class="' + rowClass + '">' +
+      '<td class="muted">' + escHtml(e.ts.replace('T',' ')) + '</td>' +
+      '<td>' + escHtml(e.project) + '</td>' +
+      '<td><span class="badge">' + escHtml(e.backend || '—') + '</span></td>' +
+      '<td>' + escHtml(e.op) + '</td>' +
+      '<td class="muted">' + escHtml(e.topic) + '</td>' +
+      '<td class="secs">' + dur + '</td>' +
+      '<td><button class="btn-archive" onclick="archiveEntry(\'' +
+        escAttr(e.project) + '\',\'' + escAttr(e.ts) + '\',' + newVal + ')">' +
+        archLabel + '</button></td>' +
+      '</tr>';
+  }).join('');
+  el.innerHTML =
+    '<table>' +
+    '<thead><tr><th>When</th><th>Project</th><th>Backend</th><th>Operation</th><th>Topic</th><th>Duration</th><th></th></tr></thead>' +
+    '<tbody>' + rows + '</tbody>' +
+    '</table>';
+}
+
+function escAttr(s) {
+  return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+function archiveEntry(project, ts, archived) {
+  send({action:'archiveTiming', project:project, ts:ts, archived:archived});
 }
 
 function setDarkMode(dark) {

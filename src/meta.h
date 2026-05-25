@@ -7,6 +7,9 @@ struct LLMTiming {
     std::string operation;       // "generate", "patch", "translate", "chat"
     std::string topic;
     int         durationSeconds = 0;
+    std::string backend;         // "Claude -p", "Codex CLI", "Ollama", etc.
+    bool        archived        = false;
+    std::string project;         // populated by ScanAllTimings, empty otherwise
 };
 
 struct ProjectMeta {
@@ -36,4 +39,16 @@ void RecordProjectSource(const std::string& projectDir, const std::string& sourc
 void RecordLLMTiming(const std::string& projectDir,
                      const std::string& operation,
                      const std::string& topic,
-                     int durationSeconds);
+                     int durationSeconds,
+                     const std::string& backend = "");
+
+// Collect timings from all project subdirectories under defaultFolder,
+// sorted newest-first. Each entry has its project field set to the folder name.
+std::vector<LLMTiming> ScanAllTimings(const std::string& defaultFolder);
+
+// Set the archived flag on the timing entry identified by (project, timestamp).
+// project is a path relative to defaultFolder (e.g. "History/Mozart").
+void ArchiveTimingEntry(const std::string& defaultFolder,
+                        const std::string& project,
+                        const std::string& timestamp,
+                        bool archived);

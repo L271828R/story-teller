@@ -107,6 +107,12 @@ button:disabled{opacity:.5;cursor:default}
 .char-item:hover{background:var(--btn-hover)}
 .char-item input[type=checkbox]{cursor:pointer;margin:0}
 
+/* Character description textareas */
+.char-desc-list{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.char-desc-row{display:flex;flex-direction:column;gap:2px}
+.char-desc-label{font-size:12px;font-weight:500;color:var(--muted)}
+.char-desc-ta{min-height:40px;font-size:12px;resize:vertical}
+
 /* File table */
 .files-layout{display:flex;gap:8px;align-items:flex-start}
 .table-wrap{flex:1;border:1px solid var(--border);border-radius:6px;
@@ -213,6 +219,7 @@ button:disabled{opacity:.5;cursor:default}
     </div>
   </div>
 </div>
+<div id="charDescList" class="char-desc-list"></div>
 
 <hr>
 
@@ -457,6 +464,10 @@ function setContext(text) {
     document.getElementById('context').value = text;
 }
 
+function setCharDescription(name, desc) {
+    send({action:'setCharDescription', name:name, description:desc});
+}
+
 function setCharLibrary(data) {
     _cat = data.selected || '';
     document.getElementById('catList').innerHTML = data.categories.map(function(c) {
@@ -469,6 +480,25 @@ function setCharLibrary(data) {
              + (c.checked?' checked':'')
              + ' onchange="toggleChar(\'' + ej(c.name) + '\',this.checked)">'
              + '<span>' + e(c.name) + '</span></label>';
+    }).join('');
+
+    // Description textareas for checked characters
+    var checked = data.chars.filter(function(c) { return c.checked; });
+    var descEl = document.getElementById('charDescList');
+    if (!descEl) return;
+    if (checked.length === 0) {
+        descEl.innerHTML = '';
+        return;
+    }
+    descEl.innerHTML = checked.map(function(c) {
+        return '<div class="char-desc-row">'
+             + '<div class="char-desc-label">' + e(c.name) + '</div>'
+             + '<textarea class="char-desc-ta" data-char="' + e(c.name) + '"'
+             + ' placeholder="Who is ' + e(c.name) + '? (optional — e.g. role, era, expertise)"'
+             + ' onblur="setCharDescription(\'' + ej(c.name) + '\',this.value)">'
+             + e(c.description || '')
+             + '</textarea>'
+             + '</div>';
     }).join('');
 }
 

@@ -134,6 +134,19 @@ input[type=radio]{cursor:pointer}
 
 <hr>
 
+<!-- ── Quiz ──────────────────────────────────────────────────────────────── -->
+<div style="margin-bottom:6px">
+  <div class="sec-title">Generate quiz</div>
+  <textarea id="quiz-extra" placeholder="Extra instructions — e.g. Write the quiz in Spanish, focus on financial topics…"></textarea>
+</div>
+<div class="btn-row" style="margin-bottom:10px">
+  <input id="quiz-n" type="number" min="1" max="30" value="5" style="width:60px">
+  <span class="muted">questions</span>
+  <button id="quiz-btn" onclick="doQuiz()">Generate Quiz</button>
+</div>
+
+<hr>
+
 <!-- ── Git history ───────────────────────────────────────────────────────── -->
 <div class="sec-title">
   Version history
@@ -399,6 +412,15 @@ function doCheckout() {
   send({action:'checkout', commit:c.hash, shortHash:c.shortHash, subject:c.subject});
 }
 
+function doQuiz() {
+  if (_busy) return;
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var n = parseInt(document.getElementById('quiz-n').value, 10);
+  if (isNaN(n) || n < 1) { setStatus('Enter a valid question count.'); return; }
+  var extra = document.getElementById('quiz-extra').value.trim();
+  send({action:'quiz', file:_files[_selFile], n:n, extra:extra});
+}
+
 // ── State pushed from C++ ─────────────────────────────────────────────────────
 
 window.setStatus = function(msg) {
@@ -411,6 +433,8 @@ window.setBusy = function(on) {
   document.querySelectorAll('button').forEach(function(b) { b.disabled = on; });
   var rb = document.getElementById('rewrite-btn');
   if (rb) rb.textContent = on ? 'Rewriting…' : 'Rewrite';
+  var qb = document.getElementById('quiz-btn');
+  if (qb) qb.textContent = on ? 'Generating…' : 'Generate Quiz';
 };
 
 window.clearCommitMsg = function() {

@@ -63,6 +63,34 @@ int test_creator() {
         }
     }
 
+    // BuildPrompt includes character description when provided.
+    {
+        GenerationRequest req;
+        req.topic = "science history";
+        req.characters = {
+            {"Albert Einstein", "theoretical physicist (1879-1955), German-Swiss-American"},
+            {"Marie Curie"}  // no description — should just emit the name
+        };
+        std::string prompt = BuildPrompt(req, "");
+        bool hasDesc  = prompt.find("theoretical physicist") != std::string::npos;
+        bool hasEin   = prompt.find("Albert Einstein")       != std::string::npos;
+        bool hasMarie = prompt.find("Marie Curie")           != std::string::npos;
+        // Marie has no description, so a bare colon after her name should NOT appear.
+        std::string marieBlock = "Marie Curie:";
+        bool noSpuriousColon = prompt.find(marieBlock) == std::string::npos;
+        if (!hasDesc || !hasEin || !hasMarie || !noSpuriousColon) {
+            std::cerr << "FAIL [build-prompt-char-description]:"
+                      << " hasDesc=" << hasDesc << " hasEin=" << hasEin
+                      << " hasMarie=" << hasMarie << " noSpuriousColon=" << noSpuriousColon
+                      << "\n  prompt snippet: '"
+                      << prompt.substr(prompt.find("Tidbit"), std::min((size_t)400, prompt.size() - prompt.find("Tidbit")))
+                      << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-char-description]\n";
+        }
+    }
+
     // BuildPrompt includes a reminder to use the mdviewer/story-teller skill.
     {
         GenerationRequest req;

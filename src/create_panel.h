@@ -31,7 +31,8 @@ private:
     std::string  m_currentProject;       // relative path, e.g. "Literature/agatha"
     std::string  m_selectedCat;
     std::map<std::string, std::vector<std::string>> m_charsByCategory;
-    std::set<std::string> m_checkedChars;
+    std::set<std::string>                           m_checkedChars;
+    std::map<std::string, std::string>              m_charDescriptions;
 
     // ── Webview helpers ───────────────────────────────────────────────────
     void Run(const std::string& js);     // RunScript wrapper, no-op if not ready
@@ -76,6 +77,7 @@ private:
     void DoAddCharacter(const std::string& cat, const std::string& name);
     void DoDeleteCharacter(const std::string& cat, const std::string& name);
     void DoToggleCharacter(const std::string& name, bool checked);
+    void DoSetCharDescription(const std::string& name, const std::string& desc);
     void DoOpenFile(const std::string& filename);
     void DoTranslateFile(const std::string& filename, const std::string& language,
                          const std::string& backend, const std::string& apiKey,

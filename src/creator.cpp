@@ -201,8 +201,12 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
         out << "## Tidbit characters\n\n"
             << "Use the following characters for the `:::tidbit` sections. "
                "Each character must appear at least once; give them a distinct voice:\n\n";
-        for (auto& ch : req.characters)
-            out << "- " << ch << "\n";
+        for (auto& ch : req.characters) {
+            out << "- " << ch.name;
+            if (!ch.description.empty())
+                out << ": " << ch.description;
+            out << "\n";
+        }
         out << "\n";
     }
 

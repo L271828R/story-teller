@@ -53,6 +53,18 @@ static std::string extractStr(const std::string& line, const std::string& key) {
     return {};
 }
 
+// Extract the value of a JSON boolean field from a single line.
+static bool extractBool(const std::string& line, const std::string& key) {
+    for (const auto& needle : { "\"" + key + "\": ", "\"" + key + "\":" }) {
+        auto pos = line.find(needle);
+        if (pos == std::string::npos) continue;
+        pos += needle.size();
+        while (pos < line.size() && line[pos] == ' ') ++pos;
+        return pos < line.size() && line[pos] == 't';
+    }
+    return false;
+}
+
 // Extract the value of a JSON integer field from a single line.
 static int extractInt(const std::string& line, const std::string& key) {
     for (const auto& needle : { "\"" + key + "\": ", "\"" + key + "\":" }) {
@@ -126,6 +138,8 @@ ProjectMeta LoadProjectMeta(const std::string& projectDir) {
             t.operation       = extractStr(line, "op");
             t.topic           = extractStr(line, "topic");
             t.durationSeconds = extractInt(line, "secs");
+            t.backend         = extractStr(line, "backend");
+            t.archived        = extractBool(line, "archived");
             if (!t.timestamp.empty()) meta.timings.push_back(t);
         }
     }
@@ -147,6 +161,8 @@ void SaveProjectMeta(const std::string& projectDir, const ProjectMeta& meta) {
         f << "    {\"ts\": \""    << jsonEscape(t.timestamp)  << "\", "
           <<  "\"op\": \""        << jsonEscape(t.operation)  << "\", "
           <<  "\"topic\": \""     << jsonEscape(t.topic)      << "\", "
+          <<  "\"backend\": \""   << jsonEscape(t.backend)    << "\", "
+          <<  "\"archived\": "   << (t.archived ? "true" : "false") << ", "
           <<  "\"secs\": "        << t.durationSeconds        << "}";
         if (i + 1 < meta.timings.size()) f << ",";
         f << "\n";
@@ -189,7 +205,8 @@ void RecordProjectSource(const std::string& projectDir, const std::string& sourc
 void RecordLLMTiming(const std::string& projectDir,
                      const std::string& operation,
                      const std::string& topic,
-                     int durationSeconds) {
+                     int durationSeconds,
+                     const std::string& backend) {
     auto meta = LoadProjectMeta(projectDir);
     if (meta.created.empty()) meta.created = fallbackCreatedTime(projectDir);
     LLMTiming t;
@@ -197,10 +214,56 @@ void RecordLLMTiming(const std::string& projectDir,
     t.operation       = operation;
     t.topic           = topic;
     t.durationSeconds = durationSeconds;
+    t.backend         = backend;
     meta.timings.push_back(std::move(t));
     // Cap at 100 entries to avoid unbounded growth.
     if (meta.timings.size() > 100)
         meta.timings.erase(meta.timings.begin(),
                            meta.timings.begin() + (meta.timings.size() - 100));
     SaveProjectMeta(projectDir, meta);
+}
+
+// ---------------------------------------------------------------------------
+void ArchiveTimingEntry(const std::string& defaultFolder,
+                        const std::string& project,
+                        const std::string& timestamp,
+                        bool archived) {
+    std::string projDir = defaultFolder + "/" + project;
+    auto meta = LoadProjectMeta(projDir);
+    for (auto& t : meta.timings) {
+        if (t.timestamp == timestamp) {
+            t.archived = archived;
+            break;
+        }
+    }
+    SaveProjectMeta(projDir, meta);
+}
+
+// ---------------------------------------------------------------------------
+std::vector<LLMTiming> ScanAllTimings(const std::string& defaultFolder) {
+    std::vector<LLMTiming> all;
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(defaultFolder, ec)) {
+        if (!entry.is_directory()) continue;
+        std::string projName = entry.path().filename().string();
+        auto meta = LoadProjectMeta(entry.path().string());
+        for (auto& t : meta.timings) {
+            t.project = projName;
+            all.push_back(t);
+        }
+        // Also scan one level of subdirectories (nested project folders)
+        for (auto& sub : fs::directory_iterator(entry.path(), ec)) {
+            if (!sub.is_directory()) continue;
+            auto subMeta = LoadProjectMeta(sub.path().string());
+            for (auto& t : subMeta.timings) {
+                t.project = projName + "/" + sub.path().filename().string();
+                all.push_back(t);
+            }
+        }
+    }
+    // Sort newest-first by timestamp string (ISO format sorts lexicographically)
+    std::sort(all.begin(), all.end(), [](const LLMTiming& a, const LLMTiming& b) {
+        return a.timestamp > b.timestamp;
+    });
+    return all;
 }
