@@ -14,6 +14,7 @@
 #include "image_panel.h"
 #include "image_tab.h"
 #include "quiz_tab.h"
+#include "prompts_tab.h"
 #include "project_panel.h"
 #include "chat_panel.h"
 #include "monitor_panel.h"
@@ -55,6 +56,7 @@ private:
     ProjectPanel*  m_projectPage    = nullptr;
     ImageTab*      m_imageTab       = nullptr;
     QuizTab*       m_quizTab        = nullptr;
+    PromptsTab*    m_promptsTab     = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;

@@ -30,6 +30,8 @@ int test_js_lint();
 int test_edit_panel_html();
 int test_image_tab_html();
 int test_quiz_tab_html();
+int test_prompt_store();
+int test_prompts_tab_html();
 
 int main() {
     int failures = 0;
@@ -60,6 +62,8 @@ int main() {
     failures += test_edit_panel_html();
     failures += test_image_tab_html();
     failures += test_quiz_tab_html();
+    failures += test_prompt_store();
+    failures += test_prompts_tab_html();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

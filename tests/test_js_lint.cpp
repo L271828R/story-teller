@@ -5,6 +5,7 @@
 #include "../src/persona_panel_html.h"
 #include "../src/image_tab_html.h"
 #include "../src/quiz_tab_html.h"
+#include "../src/prompts_tab_html.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -62,6 +63,7 @@ int test_js_lint() {
     check("main-viewer",   lint_js("main_viewer",   BuildHTML("<p>test</p>", "t", false, 100)));
     check("image-tab",     lint_js("image_tab",     BuildImageTabHTML({}, {}, "", false)));
     check("quiz-tab",      lint_js("quiz_tab",      BuildQuizTabHTML({}, "", false)));
+    check("prompts-tab",   lint_js("prompts_tab",   BuildPromptsTabHTML({}, false)));
 
     return failures;
 }

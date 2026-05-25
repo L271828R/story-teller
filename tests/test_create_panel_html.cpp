@@ -72,5 +72,10 @@ int test_create_panel_html() {
               charTab.find("description")  != std::string::npos);
     }
 
+    // Create panel has a setPrompts JS function and a saved-prompts select
+    check("create-html-saved-prompts",
+          light.find("setPrompts")   != std::string::npos &&
+          light.find("prompt-sel")   != std::string::npos);
+
     return failures;
 }

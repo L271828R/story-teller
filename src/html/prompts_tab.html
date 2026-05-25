@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f6f8fa;--border:#d0d7de;
+  --text:#1f2328;--muted:#656d76;--accent:#0969da;
+  --btn:#f6f8fa;--btn-border:#d0d7de;--btn-hover:#e9ecef;
+  --danger:#d1242f;--danger-hover:#a81922;
+}
+.dark{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --btn:#21262d;--btn-border:#30363d;--btn-hover:#30363d;
+  --danger:#f85149;--danger-hover:#da3633;
+}
+body{background:var(--bg);color:var(--text);
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     font-size:13px;line-height:1.5;padding:16px;max-width:680px}
+.sec-title{font-size:11px;font-weight:600;color:var(--muted);
+           text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+button{
+  background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+  border-radius:6px;padding:4px 12px;font-size:12px;font-family:inherit;
+  cursor:pointer;white-space:nowrap}
+button:hover{background:var(--btn-hover)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary:hover{opacity:.88}
+button.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+button.danger:hover{background:var(--danger-hover)}
+input[type=text],textarea{
+  width:100%;background:var(--btn);color:var(--text);
+  border:1px solid var(--btn-border);border-radius:6px;
+  padding:6px 9px;font-size:12px;font-family:inherit;outline:none}
+input[type=text]:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px}
+.prompt-card{
+  border:1px solid var(--border);border-radius:8px;
+  margin-bottom:12px;overflow:hidden}
+.prompt-header{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface);padding:9px 14px;
+  border-bottom:1px solid var(--border)}
+.prompt-title{
+  flex:1;font-weight:600;font-size:13px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prompt-preview{
+  padding:10px 14px;font-size:12px;color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;
+  max-height:72px;overflow:hidden;cursor:pointer}
+.prompt-editor{padding:10px 14px;border-top:1px solid var(--border)}
+.prompt-editor label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+.prompt-editor .field{margin-bottom:10px}
+.prompt-editor .btn-row{display:flex;gap:6px}
+.empty-msg{color:var(--muted);font-style:italic;font-size:12px;padding:12px 0}
+hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+.add-form .field{margin-bottom:10px}
+.add-form label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+.add-form .btn-row{display:flex;gap:6px;margin-top:10px}
+#status{margin-top:12px;font-size:12px;color:var(--muted);min-height:16px}
+</style>
+</head>
+<body class="{{BODY_CLASS}}">
+
+<div class="sec-title">Saved Prompts</div>
+<div id="prompt-list">{{PROMPTS_HTML}}</div>
+
+<hr>
+
+<div class="sec-title" style="margin-top:0">Add New Prompt</div>
+<div class="add-form">
+  <div class="field">
+    <label>Name</label>
+    <input id="new-title" type="text" placeholder="e.g. Python quiz intro…">
+  </div>
+  <div class="field">
+    <label>Prompt text</label>
+    <textarea id="new-text" placeholder="Paste or type your prompt here…"></textarea>
+  </div>
+  <div class="btn-row">
+    <button class="primary" onclick="addPrompt()">Add Prompt</button>
+  </div>
+</div>
+
+<div id="status"></div>
+
+<script>
+function send(obj) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.promptstab) {
+    window.webkit.messageHandlers.promptstab.postMessage(JSON.stringify(obj));
+  }
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function editPrompt(id) {
+  var card = document.getElementById('pc-' + id);
+  if (!card) return;
+  card.querySelector('.prompt-preview').style.display = 'none';
+  card.querySelector('.prompt-editor').style.display = '';
+}
+
+function cancelEdit(id) {
+  var card = document.getElementById('pc-' + id);
+  if (!card) return;
+  card.querySelector('.prompt-preview').style.display = '';
+  card.querySelector('.prompt-editor').style.display = 'none';
+}
+
+function savePrompt(id) {
+  var card = document.getElementById('pc-' + id);
+  if (!card) return;
+  var title = card.querySelector('.edit-title').value.trim();
+  var text  = card.querySelector('.edit-text').value.trim();
+  if (!title) { setStatus('Name cannot be empty.'); return; }
+  send({action:'updatePrompt', id:id, title:title, text:text});
+  setStatus('Saving…');
+}
+
+function deletePrompt(id) {
+  send({action:'deletePrompt', id:id});
+}
+
+function addPrompt() {
+  var title = document.getElementById('new-title').value.trim();
+  var text  = document.getElementById('new-text').value.trim();
+  if (!title) { setStatus('Please enter a name for the prompt.'); return; }
+  if (!text)  { setStatus('Please enter the prompt text.'); return; }
+  send({action:'addPrompt', title:title, text:text});
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-text').value  = '';
+  setStatus('Adding…');
+}
+</script>
+</body></html>

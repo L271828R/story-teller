@@ -2,6 +2,7 @@
 #include "character_tab.h"
 #include "config.h"
 #include "create_panel_html.h"
+#include "prompt_store.h"
 #include "creator.h"
 #include "filemeta.h"
 #include "llm.h"
@@ -257,7 +258,21 @@ void CreatePanel::PushInitialState() {
     PushProjectList();
     PushChapters();
     PushContext();
+    PushPrompts();
     PushStatus("Ready.");
+}
+
+void CreatePanel::PushPrompts() {
+    auto prompts = LoadPrompts();
+    std::string json = "[";
+    for (size_t i = 0; i < prompts.size(); ++i) {
+        if (i) json += ",";
+        json += "{\"id\":" + std::to_string(prompts[i].id)
+             + ",\"title\":" + JsStr(prompts[i].title)
+             + ",\"text\":"  + JsStr(prompts[i].text) + "}";
+    }
+    json += "]";
+    Run("setPrompts(" + json + ")");
 }
 
 // ── SyncProject (called by MDViewerFrame on file open) ────────────────────────
@@ -347,6 +362,14 @@ void CreatePanel::HandleMessage(const std::string& json) {
     else if (action == "openFile")         DoOpenFile(f("name"));
     else if (action == "translateFile")    DoTranslateFile(f("name"),f("language"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "deleteFile")       DoDeleteFile(f("name"));
+    else if (action == "savePrompt") {
+        std::string title = f("title");
+        std::string text  = f("text");
+        if (!title.empty() && !text.empty()) {
+            AddPrompt(title, text);
+            PushPrompts();
+        }
+    }
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────

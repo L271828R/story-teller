@@ -244,6 +244,11 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_imageTab = new ImageTab(m_notebook, m_darkMode);
     m_notebook->AddPage(m_imageTab, "Images");
 
+    // ── Prompts page ──────────────────────────────────────────────────────
+    m_promptsTab = new PromptsTab(m_notebook, m_darkMode);
+    m_promptsTab->SetOnChanged([this]{ if (m_createPage) m_createPage->PushPrompts(); });
+    m_notebook->AddPage(m_promptsTab, "Prompts");
+
     // ── Quiz page ─────────────────────────────────────────────────────────
     m_quizTab = new QuizTab(m_notebook, m_darkMode);
     m_notebook->AddPage(m_quizTab, "Quiz");
@@ -270,6 +275,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
             m_imageTab->Reload();
         else if (m_quizTab && page == m_quizTab)
             m_quizTab->Reload();
+        else if (m_promptsTab && page == m_promptsTab)
+            m_promptsTab->Reload();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────
@@ -461,6 +468,7 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         if (m_characterTab)  m_characterTab->SetDarkMode(false);
         if (m_imageTab)      m_imageTab->SetDarkMode(false);
         if (m_quizTab)       m_quizTab->SetDarkMode(false);
+        if (m_promptsTab)    m_promptsTab->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -477,6 +485,7 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         if (m_characterTab)  m_characterTab->SetDarkMode(true);
         if (m_imageTab)      m_imageTab->SetDarkMode(true);
         if (m_quizTab)       m_quizTab->SetDarkMode(true);
+        if (m_promptsTab)    m_promptsTab->SetDarkMode(true);
         LoadAndRender();
     }
 }

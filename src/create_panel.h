@@ -17,6 +17,7 @@ public:
                 CharacterTab* characterTab, bool darkMode = false);
     void SyncProject(const std::string& filePath = "");
     void SetDarkMode(bool dark);
+    void PushPrompts();
 
 private:
     OpenCallback   m_openCallback;
