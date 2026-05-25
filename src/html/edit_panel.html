@@ -125,6 +125,12 @@ input[type=radio]{cursor:pointer}
   <button id="translate-btn" onclick="doTranslate()">Translate file</button>
 </div>
 
+<div class="btn-row" style="margin-bottom:10px">
+  <span class="muted">Quiz questions:</span>
+  <input id="quiz-n" type="number" value="5" min="1" max="20" style="width:60px">
+  <button id="quiz-btn" onclick="doQuiz()">Generate Quiz</button>
+</div>
+
 <hr>
 
 <div class="sec-title">
@@ -328,6 +334,13 @@ function doRewrite() {
         target:_rewriteTarget, id:id, instruction:instr});
 }
 
+function doQuiz() {
+  if (_busy) return;
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var n = parseInt(document.getElementById('quiz-n').value, 10) || 5;
+  send({action:'quiz', file:_files[_selFile], n:n, extra:''});
+}
+
 function doTranslate() {
   if (_busy) return;
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
@@ -392,6 +405,8 @@ window.setBusy = function(on) {
   document.querySelectorAll('button').forEach(function(b) { b.disabled = on; });
   var rb = document.getElementById('rewrite-btn');
   if (rb) rb.textContent = on ? 'Rewriting…' : 'Rewrite';
+  var qb = document.getElementById('quiz-btn');
+  if (qb) qb.textContent = on ? 'Generating…' : 'Generate Quiz';
 };
 
 window.clearCommitMsg = function() {

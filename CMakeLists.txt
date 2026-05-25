@@ -195,6 +195,7 @@ add_executable(test_story-teller
     src/js_util.cpp
     tests/test_quiz.cpp
     tests/test_js_lint.cpp
+    tests/test_edit_panel_html.cpp
     src/persona.cpp
     src/persona_panel_html.cpp
     src/character_tab_html.cpp

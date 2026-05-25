@@ -27,6 +27,7 @@ int test_character_tab_html();
 int test_js_util();
 int test_quiz();
 int test_js_lint();
+int test_edit_panel_html();
 
 int main() {
     int failures = 0;
@@ -54,6 +55,7 @@ int main() {
     failures += test_js_util();
     failures += test_quiz();
     failures += test_js_lint();
+    failures += test_edit_panel_html();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }
