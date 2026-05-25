@@ -37,5 +37,17 @@ int test_edit_panel_html() {
           light.find("quiz-btn") != std::string::npos ||
           light.find("quizBtn")  != std::string::npos);
 
+    // File list must show creation and modification timestamps from the data.
+    check("edit-html-file-dates",
+          light.find(".created") != std::string::npos ||
+          light.find(".modified") != std::string::npos ||
+          (light.find("e.created") != std::string::npos &&
+           light.find("e.modified") != std::string::npos));
+
+    // File list should use a table so dates can be column-aligned.
+    check("edit-html-file-table",
+          light.find("<table") != std::string::npos ||
+          light.find("file-table") != std::string::npos);
+
     return failures;
 }

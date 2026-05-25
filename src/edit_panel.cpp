@@ -1,6 +1,7 @@
 #include "edit_panel.h"
 #include "config.h"
 #include "creator.h"
+#include "filemeta.h"
 #include "quiz.h"
 #include "edit_panel_html.h"
 #include "editor.h"
@@ -208,10 +209,15 @@ void EditPanel::HandleMessage(const std::string& json) {
 // ── State pushers ─────────────────────────────────────────────────────────────
 
 void EditPanel::PushFiles() {
+    std::string proj = CurrentProjectPath();
     std::string js = "setFiles([";
     for (size_t i = 0; i < m_files.size(); ++i) {
         if (i) js += ",";
-        js += jsq(m_files[i]);
+        std::string path = proj.empty() ? "" : proj + "/" + m_files[i];
+        js += "{name:" + jsq(m_files[i])
+            + ",created:"  + jsq(path.empty() ? "" : FileCreatedTime(path))
+            + ",modified:" + jsq(path.empty() ? "" : FileModifiedTime(path))
+            + "}";
     }
     js += "]," + std::to_string(m_selFile) + ");";
     Run(js);

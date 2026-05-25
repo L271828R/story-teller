@@ -59,6 +59,17 @@ button.danger:hover:not(:disabled){background:var(--danger);color:#fff}
   border-left-color:var(--sel-border)}
 .list-box li.empty-item{color:var(--muted);cursor:default;font-style:italic}
 .list-box li.empty-item:hover{background:transparent}
+.file-table{width:100%;border-collapse:collapse;font-size:12px}
+.file-table td{padding:3px 6px;white-space:nowrap;border-left:2px solid transparent;cursor:pointer}
+.file-table tr:hover td{background:var(--btn-hover)}
+.file-table tr.selected td{background:var(--sel-bg);color:var(--sel-text);border-left-color:var(--sel-border)}
+.file-table .fname{max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.file-table .fdate{color:var(--muted);font-size:11px}
+.file-table tr.selected .fdate{color:var(--sel-text);opacity:.8}
+.file-table th{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;
+               letter-spacing:.03em;padding:2px 6px;border-bottom:1px solid var(--border);
+               text-align:left;cursor:default}
+.file-table .empty-row td{color:var(--muted);font-style:italic;cursor:default}
 .history-box{max-height:120px}
 .history-box li.selected{
   background:var(--sel-bg);color:var(--sel-text);
@@ -81,7 +92,10 @@ input[type=radio]{cursor:pointer}
   <div class="left-pane">
     <div class="sec-title">Files</div>
     <div class="list-box" id="file-box">
-      <ul id="file-list"><li class="empty-item">Loading…</li></ul>
+      <table class="file-table" id="file-table">
+        <thead><tr><th>File</th><th>Created</th><th>Modified</th></tr></thead>
+        <tbody id="file-list"><tr class="empty-row"><td colspan="3">Loading…</td></tr></tbody>
+      </table>
     </div>
     <div class="btn-row">
       <button title="Move up"   onclick="moveFile('up')">↑</button>
@@ -183,24 +197,26 @@ function esc(s) {
 }
 
 window.setFiles = function(files, selIdx) {
-  _files = files;
-  _selFile = (selIdx >= 0 && selIdx < files.length) ? selIdx : -1;
+  _files = files.map(function(f) { return typeof f === 'string' ? {name:f,created:'',modified:''} : f; });
+  _selFile = (selIdx >= 0 && selIdx < _files.length) ? selIdx : -1;
   renderFiles();
 };
 
 function renderFiles() {
-  var ul = document.getElementById('file-list');
+  var tbody = document.getElementById('file-list');
   if (!_files.length) {
-    ul.innerHTML = '<li class="empty-item">No .md files found.</li>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No .md files found.</td></tr>';
     return;
   }
-  ul.innerHTML = _files.map(function(f, i) {
+  tbody.innerHTML = _files.map(function(f, i) {
     var sel = (i === _selFile);
-    return '<li class="' + (sel ? 'selected' : '') + '"' +
-           ' data-idx="' + i + '"' +
+    return '<tr class="' + (sel ? 'selected' : '') + '"' +
            ' onclick="clickFile(' + i + ')"' +
            ' ondblclick="openFile(' + i + ')">' +
-           esc(f) + '</li>';
+           '<td class="fname">' + esc(f.name) + '</td>' +
+           '<td class="fdate">' + esc(f.created  || '—') + '</td>' +
+           '<td class="fdate">' + esc(f.modified || '—') + '</td>' +
+           '</tr>';
   }).join('');
 }
 
@@ -208,17 +224,17 @@ function clickFile(idx) {
   if (_busy) return;
   _selFile = idx;
   renderFiles();
-  send({action:'select_file', file:_files[idx]});
+  send({action:'select_file', file:_files[idx].name});
 }
 
 function openFile(idx) {
   if (_busy || idx < 0 || idx >= _files.length) return;
-  send({action:'open_file', file:_files[idx], mode:_openMode});
+  send({action:'open_file', file:_files[idx].name, mode:_openMode});
 }
 
 function moveFile(dir) {
   if (_busy || _selFile < 0) return;
-  send({action:'move_file', file:_files[_selFile], direction:dir});
+  send({action:'move_file', file:_files[_selFile].name, direction:dir});
 }
 
 function setOpenMode(val) {
@@ -320,7 +336,7 @@ function doRewrite() {
   var instr = document.getElementById('instruct').value.trim();
   if (!instr) { setStatus('Enter an instruction first.'); return; }
   if (_rewriteTarget === 'document') {
-    send({action:'rewrite', file:_files[_selFile],
+    send({action:'rewrite', file:_files[_selFile].name,
           target:'document', id:-1, instruction:instr});
     return;
   }
@@ -330,7 +346,7 @@ function doRewrite() {
     setStatus('Select a ' + what + ' from the list first.');
     return;
   }
-  send({action:'rewrite', file:_files[_selFile],
+  send({action:'rewrite', file:_files[_selFile].name,
         target:_rewriteTarget, id:id, instruction:instr});
 }
 
@@ -338,7 +354,7 @@ function doQuiz() {
   if (_busy) return;
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
   var n = parseInt(document.getElementById('quiz-n').value, 10) || 5;
-  send({action:'quiz', file:_files[_selFile], n:n, extra:''});
+  send({action:'quiz', file:_files[_selFile].name, n:n, extra:''});
 }
 
 function doTranslate() {
@@ -348,7 +364,7 @@ function doTranslate() {
   if (!lang) { setStatus('Enter a target language first.'); return; }
   var instr = document.getElementById('instruct').value.trim();
   var commit = (_selCommits.length === 1) ? _history[_selCommits[0]].hash : '';
-  send({action:'translate', file:_files[_selFile],
+  send({action:'translate', file:_files[_selFile].name,
         language:lang, instruction:instr, commit:commit});
 }
 
@@ -357,7 +373,7 @@ function doCommit() {
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
   var msg = document.getElementById('commit-msg').value.trim();
   if (!msg) { setStatus('Enter a commit message first.'); return; }
-  send({action:'commit', file:_files[_selFile], message:msg});
+  send({action:'commit', file:_files[_selFile].name, message:msg});
 }
 
 function doViewVersion() {
@@ -369,14 +385,14 @@ function doViewVersion() {
 function doDiff() {
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
   if (_selCommits.length === 0) {
-    send({action:'diff', file:_files[_selFile], commit1:'HEAD', commit2:''});
+    send({action:'diff', file:_files[_selFile].name, commit1:'HEAD', commit2:''});
   } else if (_selCommits.length === 1) {
-    send({action:'diff', file:_files[_selFile],
+    send({action:'diff', file:_files[_selFile].name,
           commit1:_history[_selCommits[0]].hash, commit2:''});
   } else {
     var a = _selCommits[0], b = _selCommits[1];
     if (a > b) { var t = a; a = b; b = t; }
-    send({action:'diff', file:_files[_selFile],
+    send({action:'diff', file:_files[_selFile].name,
           commit1:_history[b].hash, commit2:_history[a].hash});
   }
 }
@@ -385,7 +401,7 @@ function doRestore() {
   if (_selCommits.length !== 1) { setStatus('Select exactly one commit to restore.'); return; }
   if (_selFile < 0) { setStatus('Select a file first.'); return; }
   var c = _history[_selCommits[0]];
-  send({action:'restore', file:_files[_selFile],
+  send({action:'restore', file:_files[_selFile].name,
         commit:c.hash, shortHash:c.shortHash, subject:c.subject});
 }
 
