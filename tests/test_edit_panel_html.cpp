@@ -49,5 +49,16 @@ int test_edit_panel_html() {
           light.find("<table") != std::string::npos ||
           light.find("file-table") != std::string::npos);
 
+    // Column headers must be clickable to sort.
+    check("edit-html-file-sort",
+          light.find("sortFiles") != std::string::npos ||
+          light.find("_sortCol")  != std::string::npos);
+
+    // Sort direction indicator must toggle (▲/▼ or similar).
+    check("edit-html-file-sort-indicator",
+          light.find("▲") != std::string::npos ||
+          light.find("▼") != std::string::npos ||
+          light.find("asc") != std::string::npos);
+
     return failures;
 }

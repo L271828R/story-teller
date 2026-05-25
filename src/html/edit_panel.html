@@ -93,7 +93,11 @@ input[type=radio]{cursor:pointer}
     <div class="sec-title">Files</div>
     <div class="list-box" id="file-box">
       <table class="file-table" id="file-table">
-        <thead><tr><th>File</th><th>Created</th><th>Modified</th></tr></thead>
+        <thead><tr>
+          <th onclick="sortFiles('name')"    style="cursor:pointer" id="th-name">File</th>
+          <th onclick="sortFiles('created')" style="cursor:pointer" id="th-created">Created</th>
+          <th onclick="sortFiles('modified')" style="cursor:pointer" id="th-modified">Modified</th>
+        </tr></thead>
         <tbody id="file-list"><tr class="empty-row"><td colspan="3">Loading…</td></tr></tbody>
       </table>
     </div>
@@ -177,6 +181,8 @@ input[type=radio]{cursor:pointer}
 <script>
 var _files = [];
 var _selFile = -1;
+var _sortCol = 'name';
+var _sortAsc = true;
 var _items = [];
 var _selItem = -1;
 var _history = [];
@@ -202,14 +208,27 @@ window.setFiles = function(files, selIdx) {
   renderFiles();
 };
 
+function sortFiles(col) {
+  if (_sortCol === col) _sortAsc = !_sortAsc;
+  else { _sortCol = col; _sortAsc = true; }
+  renderFiles();
+}
+
 function renderFiles() {
   var tbody = document.getElementById('file-list');
   if (!_files.length) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No .md files found.</td></tr>';
+    updateSortHeaders();
     return;
   }
-  tbody.innerHTML = _files.map(function(f, i) {
-    var sel = (i === _selFile);
+  var indices = _files.map(function(_, i) { return i; });
+  var col = _sortCol, asc = _sortAsc;
+  indices.sort(function(a, b) {
+    var va = _files[a][col] || '', vb = _files[b][col] || '';
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+  tbody.innerHTML = indices.map(function(i) {
+    var f = _files[i], sel = (i === _selFile);
     return '<tr class="' + (sel ? 'selected' : '') + '"' +
            ' onclick="clickFile(' + i + ')"' +
            ' ondblclick="openFile(' + i + ')">' +
@@ -218,6 +237,17 @@ function renderFiles() {
            '<td class="fdate">' + esc(f.modified || '—') + '</td>' +
            '</tr>';
   }).join('');
+  updateSortHeaders();
+}
+
+function updateSortHeaders() {
+  ['name','created','modified'].forEach(function(col) {
+    var th = document.getElementById('th-' + col);
+    if (!th) return;
+    var labels = {name:'File', created:'Created', modified:'Modified'};
+    var ind = col === _sortCol ? (_sortAsc ? ' ▲' : ' ▼') : '';
+    th.textContent = labels[col] + ind;
+  });
 }
 
 function clickFile(idx) {
