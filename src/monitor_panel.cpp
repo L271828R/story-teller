@@ -1,21 +1,11 @@
 #include "monitor_panel.h"
 #include "monitor_panel_html.h"
 #include "process_monitor.h"
+#include "meta.h"
+#include "js_util.h"
 #include <sstream>
 #include <wx/sizer.h>
 #include <wx/webview.h>
-
-// ── JSON helpers ──────────────────────────────────────────────────────────────
-
-static std::string js_str(const std::string& s) {
-    std::string out = "'";
-    for (char c : s) {
-        if (c == '\'') out += "\\'";
-        else if (c == '\\') out += "\\\\";
-        else out += c;
-    }
-    return out + "'";
-}
 
 // ── MonitorPanel ──────────────────────────────────────────────────────────────
 
@@ -51,10 +41,10 @@ void MonitorPanel::PushProcessList() {
         const auto& p = procs[i];
         json << "{"
              << "\"pid\":"      << p.pid << ","
-             << "\"project\":"  << js_str(p.project) << ","
-             << "\"action\":"   << js_str(p.action)  << ","
-             << "\"backend\":"  << js_str(p.backend) << ","
-             << "\"elapsed\":"  << js_str(p.elapsed) << ","
+             << "\"project\":"  << JsStr(p.project) << ","
+             << "\"action\":"   << JsStr(p.action)  << ","
+             << "\"backend\":"  << JsStr(p.backend) << ","
+             << "\"elapsed\":"  << JsStr(p.elapsed) << ","
              << "\"orphaned\":" << (p.orphaned ? "true" : "false")
              << "}";
     }
@@ -77,8 +67,10 @@ void MonitorPanel::HandleMessage(const std::string& json) {
     if (action == "ready") {
         m_ready = true;
         PushProcessList();
+        PushTimingLog();
     } else if (action == "refresh") {
         PushProcessList();
+        PushTimingLog();
     } else if (action == "kill") {
         // pid is a number, not a string — extract directly.
         auto pos = json.find("\"pid\":");
@@ -95,6 +87,32 @@ void MonitorPanel::SetDarkMode(bool dark) {
     Run(std::string("setDarkMode(") + (dark ? "true" : "false") + ")");
 }
 
+void MonitorPanel::SetProject(const std::string& projectDir) {
+    m_projectDir = projectDir;
+    if (m_ready) PushTimingLog();
+}
+
+void MonitorPanel::PushTimingLog() {
+    if (m_projectDir.empty()) return;
+    auto meta = LoadProjectMeta(m_projectDir);
+    std::ostringstream json;
+    json << "[";
+    for (size_t i = 0; i < meta.timings.size(); ++i) {
+        if (i) json << ",";
+        const auto& t = meta.timings[i];
+        json << "{"
+             << "\"ts\":"      << JsStr(t.timestamp)  << ","
+             << "\"op\":"      << JsStr(t.operation)  << ","
+             << "\"topic\":"   << JsStr(t.topic)      << ","
+             << "\"secs\":"    << t.durationSeconds     << ","
+             << "\"backend\":" << JsStr(t.backend)
+             << "}";
+    }
+    json << "]";
+    Run("setTimingLog(" + json.str() + ")");
+}
+
 void MonitorPanel::Refresh() {
     PushProcessList();
+    PushTimingLog();
 }

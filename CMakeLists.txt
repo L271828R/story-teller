@@ -82,6 +82,41 @@ add_custom_target(gen_hljs_headers ALL
     DEPENDS "${HLJS_JS_H}" "${HLJS_CSS_LIGHT_H}" "${HLJS_CSS_DARK_H}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Panel HTML — JS syntax-checked with node, then embedded via xxd ───────────
+find_program(NODE node REQUIRED)
+find_program(PYTHON3 python3 REQUIRED)
+set(EXTRACT_JS "${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_js.py")
+
+set(_PANEL_HEADERS)
+foreach(_PANEL IN ITEMS
+    "monitor_panel||monitor_panel_html_data"
+    "character_tab||character_tab_html_data"
+    "create_panel||create_panel_html_data"
+    "edit_panel||edit_panel_html_data"
+    "persona_panel||persona_panel_html_data"
+    "image_panel||image_panel_html_data"
+)
+    string(REPLACE "||" ";" _P "${_PANEL}")
+    list(GET _P 0 _STEM)
+    list(GET _P 1 _SYM)
+    set(_HTML    "${CMAKE_CURRENT_SOURCE_DIR}/src/html/${_STEM}.html")
+    set(_CHECK   "${CMAKE_CURRENT_BINARY_DIR}/${_STEM}_check.js")
+    set(_HEADER  "${CMAKE_CURRENT_BINARY_DIR}/${_SYM}.h")
+    add_custom_command(
+        OUTPUT  "${_HEADER}"
+        COMMAND ${PYTHON3} "${EXTRACT_JS}" "${_HTML}" "${_CHECK}"
+        COMMAND ${NODE} --check "${_CHECK}"
+        COMMAND ${XXD} -i -n ${_SYM} "${_HTML}" > "${_HEADER}"
+        DEPENDS "${_HTML}" "${EXTRACT_JS}"
+        COMMENT "JS check + embed ${_STEM}.html"
+        VERBATIM
+    )
+    list(APPEND _PANEL_HEADERS "${_HEADER}")
+endforeach()
+
+add_custom_target(gen_panel_headers ALL DEPENDS ${_PANEL_HEADERS})
+# ─────────────────────────────────────────────────────────────────────────────
+
 set(SOURCES
     src/main.cpp
     src/mdviewer.cpp
@@ -119,9 +154,13 @@ set(SOURCES
     src/images.cpp
     src/image_panel_html.cpp
     src/image_panel.cpp
+    src/character_tab.cpp
+    src/character_tab_html.cpp
+    src/thumbnail.cpp
+    src/js_util.cpp
 )
 add_executable(story-teller ${SOURCES})
-add_dependencies(story-teller gen_mermaid_header gen_hljs_headers)
+add_dependencies(story-teller gen_mermaid_header gen_hljs_headers gen_panel_headers)
 
 target_include_directories(story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(story-teller PRIVATE ${wxWidgets_LIBRARIES})
@@ -149,8 +188,13 @@ add_executable(test_story-teller
     tests/test_create_panel_html.cpp
     tests/test_process_monitor.cpp
     tests/test_persona.cpp
+    tests/test_character_tab_html.cpp
+    tests/thumbnail_stub.cpp
+    tests/test_js_util.cpp
+    src/js_util.cpp
     src/persona.cpp
     src/persona_panel_html.cpp
+    src/character_tab_html.cpp
     src/create_panel_html.cpp
     src/process_monitor.cpp
     src/filemeta.cpp
@@ -170,7 +214,7 @@ add_executable(test_story-teller
     src/llm_response.cpp
     src/meta.cpp
 )
-add_dependencies(test_story-teller gen_mermaid_header gen_hljs_headers)
+add_dependencies(test_story-teller gen_mermaid_header gen_hljs_headers gen_panel_headers)
 target_include_directories(test_story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
 
 enable_testing()

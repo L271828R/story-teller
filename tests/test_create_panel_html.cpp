@@ -26,9 +26,10 @@ int test_create_panel_html() {
           light.find("id=\"style\"") != std::string::npos &&
           light.find("id=\"styleList\"") != std::string::npos);
 
-    check("create-html-characters",
-          light.find("id=\"catList\"") != std::string::npos &&
-          light.find("id=\"charList\"") != std::string::npos);
+    // Character management moved to the Personas tab; create panel has no char panel.
+    check("create-html-no-char-panel",
+          light.find("id=\"catList\"") == std::string::npos &&
+          light.find("id=\"charList\"") == std::string::npos);
 
     check("create-html-backend-select",
           light.find("id=\"backend\"") != std::string::npos &&

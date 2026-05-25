@@ -1,40 +1,38 @@
 #pragma once
 #include <functional>
-#include <map>
-#include <set>
 #include <string>
-#include <vector>
 #include <wx/wx.h>
 #include <wx/webview.h>
 #include "config.h"
 #include "creator.h"
+
+class CharacterTab;
 
 // Create tab: a wxWebView running create_panel_html.h, communicating with
 // C++ business logic via window.webkit.messageHandlers.create / RunScript.
 class CreatePanel : public wxPanel {
 public:
     using OpenCallback = std::function<void(const std::string& filepath)>;
-    CreatePanel(wxWindow* parent, OpenCallback onFileGenerated, bool darkMode = false);
+    CreatePanel(wxWindow* parent, OpenCallback onFileGenerated,
+                CharacterTab* characterTab, bool darkMode = false);
     void SyncProject(const std::string& filePath = "");
     void SetDarkMode(bool dark);
 
 private:
-    OpenCallback m_openCallback;
-    wxWebView*   m_webView    = nullptr;
-    bool         m_darkMode   = false;
-    bool         m_ready      = false;   // true after JS fires 'ready'
-    bool         m_generating = false;
-    bool         m_translating = false;
-    std::string  m_pendingSync;          // buffered SyncProject path pre-ready
+    OpenCallback   m_openCallback;
+    CharacterTab*  m_characterTab  = nullptr;
+    wxWebView*     m_webView       = nullptr;
+    bool           m_darkMode      = false;
+    bool           m_ready         = false;
+    bool           m_generating    = false;
+    bool           m_translating   = false;
+    std::string    m_pendingSync;
 
     // ── Business state ────────────────────────────────────────────────────
-    std::string  m_currentProject;       // relative path, e.g. "Literature/agatha"
-    std::string  m_selectedCat;
-    std::map<std::string, std::vector<std::string>> m_charsByCategory;
-    std::set<std::string> m_checkedChars;
+    std::string  m_currentProject;
 
     // ── Webview helpers ───────────────────────────────────────────────────
-    void Run(const std::string& js);     // RunScript wrapper, no-op if not ready
+    void Run(const std::string& js);
     void HandleMessage(const std::string& json);
 
     // ── State push (C++ → JS) ─────────────────────────────────────────────
@@ -42,14 +40,11 @@ private:
     void PushProjectList();
     void PushChapters();
     void PushContext();
-    void PushCharLibrary();
     void PushStatus(const std::string& msg);
     void PushGenerating(bool on);
     void PushTranslating(bool on);
 
     // ── Business logic helpers ────────────────────────────────────────────
-    void LoadCharLibrary();
-    void SaveCharLibrary() const;
     std::string CurrentProjectPath() const;
     void SelectProject(const std::string& nameOrRel);
 
@@ -70,12 +65,6 @@ private:
                      const std::string& ollamaModel);
     void DoBackendChanged(const std::string& backend);
     void DoRefreshOllama();
-    void DoSelectCategory(const std::string& cat);
-    void DoAddCategory(const std::string& name);
-    void DoDeleteCategory(const std::string& name);
-    void DoAddCharacter(const std::string& cat, const std::string& name);
-    void DoDeleteCharacter(const std::string& cat, const std::string& name);
-    void DoToggleCharacter(const std::string& name, bool checked);
     void DoOpenFile(const std::string& filename);
     void DoTranslateFile(const std::string& filename, const std::string& language,
                          const std::string& backend, const std::string& apiKey,

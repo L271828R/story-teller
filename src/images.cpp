@@ -1,4 +1,5 @@
 #include "images.h"
+#include "thumbnail.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -155,14 +156,16 @@ std::string SubstituteLocalImages(const std::string& html,
         std::string ext = lowerExt(src);
         if (!isImageExt(ext)) { result += tag; continue; }
 
-        fs::path imgPath = fs::path(projectDir) / src;
-        std::ifstream f(imgPath, std::ios::binary);
+        fs::path imgPath  = fs::path(projectDir) / src;
+        std::string thumb = EnsureThumb(imgPath.string());
+        std::ifstream f(thumb, std::ios::binary);
         if (!f) { result += tag; continue; }
         std::vector<unsigned char> bytes(
             (std::istreambuf_iterator<char>(f)),
              std::istreambuf_iterator<char>());
 
-        std::string dataUrl = "data:" + mimeType(ext) + ";base64," + base64Encode(bytes);
+        std::string thumbExt = lowerExt(thumb);
+        std::string dataUrl  = "data:" + mimeType(thumbExt) + ";base64," + base64Encode(bytes);
 
         // Parse alt text for size/align: "|medium|center"
         std::string cssClass;

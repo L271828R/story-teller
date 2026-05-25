@@ -7,6 +7,7 @@ struct LLMTiming {
     std::string operation;       // "generate", "patch", "translate", "chat"
     std::string topic;
     int         durationSeconds = 0;
+    std::string backend;         // "Claude Code", "Anthropic API", "Ollama", etc.
 };
 
 struct ProjectMeta {
@@ -36,4 +37,5 @@ void RecordProjectSource(const std::string& projectDir, const std::string& sourc
 void RecordLLMTiming(const std::string& projectDir,
                      const std::string& operation,
                      const std::string& topic,
-                     int durationSeconds);
+                     int durationSeconds,
+                     const std::string& backend = "");

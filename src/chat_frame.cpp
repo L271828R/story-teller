@@ -197,7 +197,7 @@ void ChatFrame::OnSend(wxCommandEvent&) {
             std::chrono::steady_clock::now() - started).count();
         if (res.ok) {
             RecordLLMTiming(fs::path(filePath).parent_path().string(),
-                            "chat", chTitle, durationSeconds);
+                            "chat", chTitle, durationSeconds, BackendLabel(cfg.backend));
         }
 
         wxTheApp->CallAfter([this, res, filePath, chId, chTitle, question]() {

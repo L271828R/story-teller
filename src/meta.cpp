@@ -126,6 +126,7 @@ ProjectMeta LoadProjectMeta(const std::string& projectDir) {
             t.operation       = extractStr(line, "op");
             t.topic           = extractStr(line, "topic");
             t.durationSeconds = extractInt(line, "secs");
+            t.backend         = extractStr(line, "backend");
             if (!t.timestamp.empty()) meta.timings.push_back(t);
         }
     }
@@ -144,10 +145,11 @@ void SaveProjectMeta(const std::string& projectDir, const ProjectMeta& meta) {
     f << "  \"timings\": [\n";
     for (std::size_t i = 0; i < meta.timings.size(); ++i) {
         const auto& t = meta.timings[i];
-        f << "    {\"ts\": \""    << jsonEscape(t.timestamp)  << "\", "
+        f << "    {\"ts\": \""      << jsonEscape(t.timestamp)  << "\", "
           <<  "\"op\": \""        << jsonEscape(t.operation)  << "\", "
           <<  "\"topic\": \""     << jsonEscape(t.topic)      << "\", "
-          <<  "\"secs\": "        << t.durationSeconds        << "}";
+          <<  "\"secs\": "        << t.durationSeconds        << ", "
+          <<  "\"backend\": \""   << jsonEscape(t.backend)    << "\"}";
         if (i + 1 < meta.timings.size()) f << ",";
         f << "\n";
     }
@@ -189,7 +191,8 @@ void RecordProjectSource(const std::string& projectDir, const std::string& sourc
 void RecordLLMTiming(const std::string& projectDir,
                      const std::string& operation,
                      const std::string& topic,
-                     int durationSeconds) {
+                     int durationSeconds,
+                     const std::string& backend) {
     auto meta = LoadProjectMeta(projectDir);
     if (meta.created.empty()) meta.created = fallbackCreatedTime(projectDir);
     LLMTiming t;
@@ -197,6 +200,7 @@ void RecordLLMTiming(const std::string& projectDir,
     t.operation       = operation;
     t.topic           = topic;
     t.durationSeconds = durationSeconds;
+    t.backend         = backend;
     meta.timings.push_back(std::move(t));
     // Cap at 100 entries to avoid unbounded growth.
     if (meta.timings.size() > 100)

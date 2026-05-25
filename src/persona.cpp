@@ -1,4 +1,5 @@
 #include "persona.h"
+#include "thumbnail.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -79,7 +80,8 @@ std::map<std::string, std::string> ScanPersonaImages() {
         if (!isImageExt(ext)) continue;
         std::string norm = NormalizePersonaName(stem(filename));
         if (norm.empty()) continue;
-        result[norm] = "file://" + dir + "/" + filename;
+        std::string thumbPath = EnsureThumb(dir + "/" + filename);
+        result[norm] = "file://" + thumbPath;
     }
     closedir(d);
     return result;

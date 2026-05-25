@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f6f8fa;--border:#d0d7de;
+  --text:#1f2328;--muted:#656d76;--accent:#0969da;
+  --btn:#f6f8fa;--btn-border:#d0d7de;--btn-hover:#e9ecef;
+  --danger:#d1242f;--in-bg:#ffffff;--in-border:#d0d7de;
+  --sel-bg:#dbeafe;--sel-text:#1d4ed8;--sel-border:#0969da;
+}
+.dark{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --btn:#21262d;--btn-border:#30363d;--btn-hover:#30363d;
+  --danger:#f85149;--in-bg:#0d1117;--in-border:#30363d;
+  --sel-bg:#1d3a6e;--sel-text:#93c5fd;--sel-border:#58a6ff;
+}
+body{background:var(--bg);color:var(--text);
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     font-size:13px;line-height:1.5;overflow-y:scroll}
+#panel{padding:14px 16px;max-width:1000px}
+hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:11px}
+.sec-title{font-size:11px;font-weight:600;color:var(--muted);
+           text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+input,textarea{
+  background:var(--in-bg);color:var(--text);
+  border:1px solid var(--in-border);border-radius:6px;
+  padding:4px 8px;font-size:13px;font-family:inherit;outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;width:100%;min-height:52px}
+button{
+  background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+  border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;
+  white-space:nowrap;font-family:inherit}
+button:hover:not(:disabled){background:var(--btn-hover)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary:hover:not(:disabled){opacity:.88}
+button.danger{color:var(--danger);border-color:var(--danger)}
+button.danger:hover:not(:disabled){background:var(--danger);color:#fff}
+.two-col{display:flex;gap:12px}
+.left-pane{flex:0 0 42%;display:flex;flex-direction:column;gap:6px}
+.right-pane{flex:1;display:flex;flex-direction:column;gap:6px}
+.list-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  overflow-y:auto;max-height:155px;padding:2px 0;flex:1}
+.list-box ul{list-style:none;padding:0;margin:0}
+.list-box li{
+  padding:3px 8px;cursor:pointer;border-left:2px solid transparent;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.list-box li:hover{background:var(--btn-hover)}
+.list-box li.selected{
+  background:var(--sel-bg);color:var(--sel-text);
+  border-left-color:var(--sel-border)}
+.list-box li.empty-item{color:var(--muted);cursor:default;font-style:italic}
+.list-box li.empty-item:hover{background:transparent}
+.history-box{max-height:120px}
+.history-box li.selected{
+  background:var(--sel-bg);color:var(--sel-text);
+  border-left-color:var(--sel-border)}
+.btn-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.label-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+label{display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px}
+input[type=radio]{cursor:pointer}
+.status-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  padding:8px 10px;font-size:12px;color:var(--muted);
+  min-height:44px;white-space:pre-wrap;word-break:break-word}
+.stretch{flex:1}
+</style>
+</head>
+<body class="{{BODY_CLASS}}">
+<div id="panel">
+
+<div class="two-col">
+  <div class="left-pane">
+    <div class="sec-title">Files</div>
+    <div class="list-box" id="file-box">
+      <ul id="file-list"><li class="empty-item">Loading…</li></ul>
+    </div>
+    <div class="btn-row">
+      <button title="Move up"   onclick="moveFile('up')">↑</button>
+      <button title="Move down" onclick="moveFile('down')">↓</button>
+      <button onclick="send({action:'rename_file'})">Rename</button>
+      <button class="danger" onclick="send({action:'delete_file'})">Delete</button>
+    </div>
+    <div class="label-row">
+      <span class="muted">Open:</span>
+      <label><input type="radio" name="om" value="view" checked onchange="setOpenMode('view')"> View tab</label>
+      <label><input type="radio" name="om" value="vim"        onchange="setOpenMode('vim')"> Vim</label>
+    </div>
+  </div>
+  <div class="right-pane">
+    <div class="sec-title" id="items-title">Tidbits</div>
+    <div class="list-box" id="item-box">
+      <ul id="item-list"><li class="empty-item">Select a file.</li></ul>
+    </div>
+  </div>
+</div>
+<div class="btn-row" style="margin-top:8px">
+  <span class="muted">Rewrite target:</span>
+  <label><input type="radio" name="rt" value="tidbit"   checked onchange="setRewriteTarget('tidbit')"> Selected tidbit</label>
+  <label><input type="radio" name="rt" value="chapter"          onchange="setRewriteTarget('chapter')"> Selected chapter</label>
+  <label><input type="radio" name="rt" value="document"         onchange="setRewriteTarget('document')"> Entire document</label>
+  <span class="stretch"></span>
+  <button onclick="send({action:'refresh'})">↺ Refresh</button>
+</div>
+
+<hr>
+
+<div style="margin-bottom:6px">
+  <div class="sec-title" id="rewrite-label">Instruction — selected tidbit</div>
+  <textarea id="instruct" placeholder="e.g. Translate only the tidbit blocks to English, keep chapters in Chinese…"></textarea>
+</div>
+<div class="btn-row" style="margin-bottom:10px">
+  <button id="rewrite-btn" class="primary" onclick="doRewrite()">Rewrite</button>
+  <span class="stretch"></span>
+  <span class="muted">Translate file to:</span>
+  <input id="translate-lang" type="text" placeholder="Spanish, Chinese…" style="width:160px">
+  <button id="translate-btn" onclick="doTranslate()">Translate file</button>
+</div>
+
+<hr>
+
+<div class="sec-title">
+  Version history
+  <span id="sel-count" class="muted" style="text-transform:none;letter-spacing:0">(click to select, up to 2)</span>
+</div>
+<div class="list-box history-box" id="history-box">
+  <ul id="history-list"><li class="empty-item">Select a file.</li></ul>
+</div>
+<div class="btn-row" style="margin-top:6px">
+  <input id="commit-msg" type="text" placeholder="Commit message…" style="flex:1">
+  <button id="commit-btn" onclick="doCommit()">Save to git</button>
+</div>
+<div class="btn-row" style="margin-top:6px">
+  <button onclick="doViewVersion()">View version</button>
+  <button onclick="doDiff()">Diff</button>
+  <button onclick="doRestore()">Restore</button>
+  <button onclick="doCheckout()">Checkout</button>
+  <button onclick="send({action:'stash'})">Stash</button>
+  <button onclick="send({action:'unstash'})">Unstash</button>
+</div>
+
+<hr>
+
+<div class="sec-title">Status</div>
+<div class="status-box" id="status">Select a file to begin.</div>
+
+</div><!-- #panel -->
+
+<script>
+var _files = [];
+var _selFile = -1;
+var _items = [];
+var _selItem = -1;
+var _history = [];
+var _selCommits = [];
+var _openMode = 'view';
+var _rewriteTarget = 'tidbit';
+var _busy = false;
+
+function send(obj) {
+  window.webkit.messageHandlers.edit.postMessage(JSON.stringify(obj));
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+
+window.setFiles = function(files, selIdx) {
+  _files = files;
+  _selFile = (selIdx >= 0 && selIdx < files.length) ? selIdx : -1;
+  renderFiles();
+};
+
+function renderFiles() {
+  var ul = document.getElementById('file-list');
+  if (!_files.length) {
+    ul.innerHTML = '<li class="empty-item">No .md files found.</li>';
+    return;
+  }
+  ul.innerHTML = _files.map(function(f, i) {
+    var sel = (i === _selFile);
+    return '<li class="' + (sel ? 'selected' : '') + '"' +
+           ' data-idx="' + i + '"' +
+           ' onclick="clickFile(' + i + ')"' +
+           ' ondblclick="openFile(' + i + ')">' +
+           esc(f) + '</li>';
+  }).join('');
+}
+
+function clickFile(idx) {
+  if (_busy) return;
+  _selFile = idx;
+  renderFiles();
+  send({action:'select_file', file:_files[idx]});
+}
+
+function openFile(idx) {
+  if (_busy || idx < 0 || idx >= _files.length) return;
+  send({action:'open_file', file:_files[idx], mode:_openMode});
+}
+
+function moveFile(dir) {
+  if (_busy || _selFile < 0) return;
+  send({action:'move_file', file:_files[_selFile], direction:dir});
+}
+
+function setOpenMode(val) {
+  _openMode = val;
+}
+
+window.setItems = function(items, target) {
+  _items = items;
+  _selItem = -1;
+  if (target) {
+    _rewriteTarget = target;
+    var radio = document.querySelector('input[name="rt"][value="' + target + '"]');
+    if (radio) radio.checked = true;
+  }
+  document.getElementById('items-title').textContent =
+    _rewriteTarget === 'chapter' ? 'Chapters' : 'Tidbits';
+  renderItems();
+};
+
+function renderItems() {
+  var ul = document.getElementById('item-list');
+  if (!_items.length) {
+    ul.innerHTML = '<li class="empty-item">None found.</li>';
+    return;
+  }
+  ul.innerHTML = _items.map(function(item, i) {
+    var sel = (i === _selItem);
+    return '<li class="' + (sel ? 'selected' : '') + '"' +
+           ' onclick="clickItem(' + i + ')">' +
+           esc(item.label) + '</li>';
+  }).join('');
+}
+
+function clickItem(idx) {
+  if (_busy) return;
+  _selItem = idx;
+  renderItems();
+}
+
+function setRewriteTarget(val) {
+  _rewriteTarget = val;
+  var itemsTitle = val === 'chapter' ? 'Chapters'
+                 : val === 'document' ? 'Tidbits (browse only)'
+                 : 'Tidbits';
+  document.getElementById('items-title').textContent = itemsTitle;
+  var rwLabel = val === 'document'
+    ? 'Instruction — entire document (structural tokens preserved)'
+    : val === 'chapter'
+    ? 'Instruction — selected chapter'
+    : 'Instruction — selected tidbit';
+  document.getElementById('rewrite-label').textContent = rwLabel;
+  send({action:'set_rewrite_target', target:val});
+}
+
+window.setHistory = function(commits) {
+  _history = commits;
+  _selCommits = [];
+  renderHistory();
+  updateSelCount();
+};
+
+function renderHistory() {
+  var ul = document.getElementById('history-list');
+  if (!_history.length) {
+    ul.innerHTML = '<li class="empty-item">No commits found.</li>';
+    return;
+  }
+  ul.innerHTML = _history.map(function(c, i) {
+    var sel = _selCommits.indexOf(i) !== -1;
+    return '<li class="' + (sel ? 'selected' : '') + '"' +
+           ' onclick="clickCommit(' + i + ')">' +
+           esc(c.date) + ' ' + esc(c.shortHash) + ' ' + esc(c.subject) +
+           '</li>';
+  }).join('');
+}
+
+function clickCommit(idx) {
+  var pos = _selCommits.indexOf(idx);
+  if (pos !== -1) {
+    _selCommits.splice(pos, 1);
+  } else {
+    if (_selCommits.length >= 2) _selCommits.shift();
+    _selCommits.push(idx);
+  }
+  renderHistory();
+  updateSelCount();
+}
+
+function updateSelCount() {
+  var el = document.getElementById('sel-count');
+  if (el) el.textContent = _selCommits.length
+    ? '(' + _selCommits.length + ' selected)'
+    : '(click to select, up to 2)';
+}
+
+function doRewrite() {
+  if (_busy) return;
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var instr = document.getElementById('instruct').value.trim();
+  if (!instr) { setStatus('Enter an instruction first.'); return; }
+  if (_rewriteTarget === 'document') {
+    send({action:'rewrite', file:_files[_selFile],
+          target:'document', id:-1, instruction:instr});
+    return;
+  }
+  var id = (_selItem >= 0 && _items.length) ? _items[_selItem].id : -1;
+  if (id < 0) {
+    var what = _rewriteTarget === 'chapter' ? 'chapter' : 'tidbit';
+    setStatus('Select a ' + what + ' from the list first.');
+    return;
+  }
+  send({action:'rewrite', file:_files[_selFile],
+        target:_rewriteTarget, id:id, instruction:instr});
+}
+
+function doTranslate() {
+  if (_busy) return;
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var lang = document.getElementById('translate-lang').value.trim();
+  if (!lang) { setStatus('Enter a target language first.'); return; }
+  var instr = document.getElementById('instruct').value.trim();
+  var commit = (_selCommits.length === 1) ? _history[_selCommits[0]].hash : '';
+  send({action:'translate', file:_files[_selFile],
+        language:lang, instruction:instr, commit:commit});
+}
+
+function doCommit() {
+  if (_busy) return;
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var msg = document.getElementById('commit-msg').value.trim();
+  if (!msg) { setStatus('Enter a commit message first.'); return; }
+  send({action:'commit', file:_files[_selFile], message:msg});
+}
+
+function doViewVersion() {
+  if (_selCommits.length === 0) { setStatus('Select a commit first.'); return; }
+  var idx = _selCommits[0];
+  send({action:'view_version', commit:_history[idx].hash});
+}
+
+function doDiff() {
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  if (_selCommits.length === 0) {
+    send({action:'diff', file:_files[_selFile], commit1:'HEAD', commit2:''});
+  } else if (_selCommits.length === 1) {
+    send({action:'diff', file:_files[_selFile],
+          commit1:_history[_selCommits[0]].hash, commit2:''});
+  } else {
+    var a = _selCommits[0], b = _selCommits[1];
+    if (a > b) { var t = a; a = b; b = t; }
+    send({action:'diff', file:_files[_selFile],
+          commit1:_history[b].hash, commit2:_history[a].hash});
+  }
+}
+
+function doRestore() {
+  if (_selCommits.length !== 1) { setStatus('Select exactly one commit to restore.'); return; }
+  if (_selFile < 0) { setStatus('Select a file first.'); return; }
+  var c = _history[_selCommits[0]];
+  send({action:'restore', file:_files[_selFile],
+        commit:c.hash, shortHash:c.shortHash, subject:c.subject});
+}
+
+function doCheckout() {
+  if (_selCommits.length !== 1) { setStatus('Select exactly one commit to checkout.'); return; }
+  var c = _history[_selCommits[0]];
+  send({action:'checkout', commit:c.hash, shortHash:c.shortHash, subject:c.subject});
+}
+
+window.setStatus = function(msg) {
+  var el = document.getElementById('status');
+  if (el) el.textContent = msg;
+};
+
+window.setBusy = function(on) {
+  _busy = on;
+  document.querySelectorAll('button').forEach(function(b) { b.disabled = on; });
+  var rb = document.getElementById('rewrite-btn');
+  if (rb) rb.textContent = on ? 'Rewriting…' : 'Rewrite';
+};
+
+window.clearCommitMsg = function() {
+  var el = document.getElementById('commit-msg');
+  if (el) el.value = '';
+};
+
+window.setDarkMode = function(dark) {
+  document.body.classList.toggle('dark', dark);
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  send({action:'ready'});
+});
+</script>
+</body>
+</html>

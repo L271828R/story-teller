@@ -2,10 +2,19 @@
 #include <string>
 #include <vector>
 
+struct CharacterSpec {
+    std::string name;
+    std::string description;
+    CharacterSpec() = default;
+    CharacterSpec(const char* n) : name(n) {}
+    CharacterSpec(std::string n) : name(std::move(n)) {}
+    CharacterSpec(std::string n, std::string d) : name(std::move(n)), description(std::move(d)) {}
+};
+
 struct GenerationRequest {
     std::string topic;
     std::string style;
-    std::vector<std::string> characters;
+    std::vector<CharacterSpec> characters;
     std::string projectContext;
     int tidbitsPerChapter = 1;
 };

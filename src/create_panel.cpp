@@ -1,4 +1,5 @@
 #include "create_panel.h"
+#include "character_tab.h"
 #include "config.h"
 #include "create_panel_html.h"
 #include "creator.h"
@@ -118,9 +119,11 @@ static std::string language_from_topic(const std::string& topic) {
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated, bool darkMode)
+CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated,
+                         CharacterTab* characterTab, bool darkMode)
     : wxPanel(parent, wxID_ANY)
     , m_openCallback(std::move(onFileGenerated))
+    , m_characterTab(characterTab)
     , m_darkMode(darkMode)
 {
     m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
@@ -220,35 +223,6 @@ void CreatePanel::PushContext() {
     Run("setContext(" + JsStr(text) + ")");
 }
 
-void CreatePanel::PushCharLibrary() {
-    // Ensure selected category is valid
-    if (m_charsByCategory.find(m_selectedCat) == m_charsByCategory.end())
-        m_selectedCat = m_charsByCategory.empty() ? "" : m_charsByCategory.begin()->first;
-
-    std::string json = "{\"categories\":[";
-    bool first = true;
-    for (auto& [cat, _] : m_charsByCategory) {
-        if (!first) json += ",";
-        first = false;
-        json += JsStr(cat);
-    }
-    json += "],\"selected\":" + JsStr(m_selectedCat) + ",\"chars\":[";
-
-    auto it = m_charsByCategory.find(m_selectedCat);
-    first = true;
-    if (it != m_charsByCategory.end()) {
-        for (auto& ch : it->second) {
-            if (!first) json += ",";
-            first = false;
-            bool checked = m_checkedChars.count(ch) > 0;
-            json += "{\"name\":" + JsStr(ch)
-                 + ",\"checked\":" + (checked ? "true" : "false") + "}";
-        }
-    }
-    json += "]}";
-    Run("setCharLibrary(" + json + ")");
-}
-
 // ── Initial state ─────────────────────────────────────────────────────────────
 
 void CreatePanel::PushInitialState() {
@@ -271,15 +245,6 @@ void CreatePanel::PushInitialState() {
         stateJs += "ollamaModel:" + JsStr(st.ollamaModel) + ",";
     stateJs += "})";
     Run(stateJs);
-
-    // Load and push character library (with saved checked chars)
-    LoadCharLibrary();
-    if (!st.checkedChars.empty()) {
-        wxStringTokenizer tok(wxString::FromUTF8(st.checkedChars), "|");
-        while (tok.HasMoreTokens())
-            m_checkedChars.insert(tok.GetNextToken().ToStdString());
-    }
-    PushCharLibrary();
 
     // Select project
     if (!st.currentProject.empty())
@@ -353,56 +318,6 @@ save:
     SaveAppState(st);
 }
 
-// ── Character library ─────────────────────────────────────────────────────────
-
-static const std::map<std::string, std::vector<std::string>>& default_library() {
-    static const std::map<std::string, std::vector<std::string>> lib = {
-        {"Science",    {"Albert Einstein", "Marie Curie", "Carl Sagan",
-                        "Richard Feynman", "Nikola Tesla", "Charles Darwin"}},
-        {"Literature", {"Sherlock Holmes", "Agatha Christie", "Edgar Allan Poe"}},
-        {"History",    {"Ada Lovelace", "Napoleon Bonaparte", "Cleopatra"}},
-    };
-    return lib;
-}
-
-void CreatePanel::LoadCharLibrary() {
-    wxConfig cfg("StoryTeller");
-    cfg.SetPath("/charlib");
-    wxString catStr;
-    if (!cfg.Read("categories", &catStr) || catStr.empty()) {
-        m_charsByCategory = default_library();
-        return;
-    }
-    m_charsByCategory.clear();
-    wxStringTokenizer tok(catStr, ",");
-    while (tok.HasMoreTokens()) {
-        std::string cat = tok.GetNextToken().ToStdString();
-        wxString charStr;
-        cfg.Read(wxString::FromUTF8(cat), &charStr);
-        auto& vec = m_charsByCategory[cat];
-        wxStringTokenizer ctok(charStr, "|");
-        while (ctok.HasMoreTokens())
-            vec.push_back(ctok.GetNextToken().ToStdString());
-    }
-}
-
-void CreatePanel::SaveCharLibrary() const {
-    wxConfig cfg("StoryTeller");
-    cfg.SetPath("/charlib");
-    wxString catStr;
-    for (auto& [cat, chars] : m_charsByCategory) {
-        if (!catStr.empty()) catStr += ",";
-        catStr += wxString::FromUTF8(cat);
-        wxString charStr;
-        for (auto& ch : chars) {
-            if (!charStr.empty()) charStr += "|";
-            charStr += wxString::FromUTF8(ch);
-        }
-        cfg.Write(wxString::FromUTF8(cat), charStr);
-    }
-    cfg.Write("categories", catStr);
-}
-
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
 void CreatePanel::HandleMessage(const std::string& json) {
@@ -429,12 +344,6 @@ void CreatePanel::HandleMessage(const std::string& json) {
     else if (action == "saveState")        DoSaveState(f("topic"),f("style"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "backendChanged")   DoBackendChanged(f("backend"));
     else if (action == "refreshOllama")    DoRefreshOllama();
-    else if (action == "selectCategory")   DoSelectCategory(f("name"));
-    else if (action == "addCategory")      DoAddCategory(f("name"));
-    else if (action == "deleteCategory")   DoDeleteCategory(f("name"));
-    else if (action == "addCharacter")     DoAddCharacter(f("category"),f("name"));
-    else if (action == "deleteCharacter")  DoDeleteCharacter(f("category"),f("name"));
-    else if (action == "toggleCharacter")  DoToggleCharacter(f("name"), b("checked"));
     else if (action == "openFile")         DoOpenFile(f("name"));
     else if (action == "translateFile")    DoTranslateFile(f("name"),f("language"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "deleteFile")       DoDeleteFile(f("name"));
@@ -453,7 +362,6 @@ void CreatePanel::DoNewProject(const std::string& name) {
         PushStatus("Could not create project folder.");
         return;
     }
-    LoadCharLibrary();
     SelectProject(name);
     PushProjectList();
     PushChapters();
@@ -477,7 +385,13 @@ void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& styl
     req.style              = style;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
-    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+    if (m_characterTab) {
+        auto descs = m_characterTab->GetCharDescriptions();
+        for (auto& ch : m_characterTab->GetCheckedChars()) {
+            auto it = descs.find(ch);
+            req.characters.push_back({ch, it != descs.end() ? it->second : ""});
+        }
+    }
     std::string prompt = BuildPrompt(req, GetLLMReadme());
     if (wxTheClipboard->Open()) {
         wxTheClipboard->SetData(new wxTextDataObject(wxString::FromUTF8(prompt)));
@@ -504,9 +418,6 @@ void CreatePanel::DoSaveState(const std::string& topic, const std::string& style
     st.backend     = backend;
     st.apiKey      = apiKey;
     st.ollamaModel = ollamaModel;
-    std::string chars;
-    for (auto& ch : m_checkedChars) { if (!chars.empty()) chars += "|"; chars += ch; }
-    st.checkedChars = chars;
     SaveAppState(st);
     PushStatus("Form saved — will be restored on next launch.");
 }
@@ -528,52 +439,6 @@ void CreatePanel::DoRefreshOllama() {
     Run("setOllamaModels(" + json + ")");
     PushStatus(models.empty() ? "No Ollama models found at localhost:11434."
                                : "Loaded Ollama models.");
-}
-
-void CreatePanel::DoSelectCategory(const std::string& cat) {
-    m_selectedCat = cat;
-    PushCharLibrary();
-}
-
-void CreatePanel::DoAddCategory(const std::string& name) {
-    if (name.empty() || m_charsByCategory.count(name)) return;
-    m_charsByCategory[name];
-    m_selectedCat = name;
-    SaveCharLibrary();
-    PushCharLibrary();
-}
-
-void CreatePanel::DoDeleteCategory(const std::string& name) {
-    if (name.empty()) return;
-    m_charsByCategory.erase(name);
-    m_selectedCat = m_charsByCategory.empty() ? "" : m_charsByCategory.begin()->first;
-    SaveCharLibrary();
-    PushCharLibrary();
-}
-
-void CreatePanel::DoAddCharacter(const std::string& cat, const std::string& name) {
-    if (cat.empty() || name.empty()) return;
-    auto& vec = m_charsByCategory[cat];
-    if (std::find(vec.begin(), vec.end(), name) != vec.end()) return;
-    vec.push_back(name);
-    m_checkedChars.insert(name);
-    SaveCharLibrary();
-    PushCharLibrary();
-}
-
-void CreatePanel::DoDeleteCharacter(const std::string& cat, const std::string& name) {
-    auto it = m_charsByCategory.find(cat);
-    if (it == m_charsByCategory.end()) return;
-    auto& vec = it->second;
-    vec.erase(std::remove(vec.begin(), vec.end(), name), vec.end());
-    m_checkedChars.erase(name);
-    SaveCharLibrary();
-    PushCharLibrary();
-}
-
-void CreatePanel::DoToggleCharacter(const std::string& name, bool checked) {
-    if (checked) m_checkedChars.insert(name);
-    else         m_checkedChars.erase(name);
 }
 
 void CreatePanel::DoOpenFile(const std::string& filename) {
@@ -614,7 +479,13 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     req.style              = style;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
-    for (auto& ch : m_checkedChars) req.characters.push_back(ch);
+    if (m_characterTab) {
+        auto descs = m_characterTab->GetCharDescriptions();
+        for (auto& ch : m_characterTab->GetCheckedChars()) {
+            auto it = descs.find(ch);
+            req.characters.push_back({ch, it != descs.end() ? it->second : ""});
+        }
+    }
 
     int         chId    = NextChapterId(projPath);
     std::string prompt  = BuildPrompt(req, GetLLMReadme());
@@ -646,14 +517,14 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     OpenCallback cb = m_openCallback;
     std::string  topicStr = topic;
 
-    std::thread([this, prompt, cfg, projPath, chId, topicStr, cb]() mutable {
+    std::thread([this, prompt, cfg, projPath, chId, topicStr, cb, backend]() mutable {
         auto t0 = std::chrono::steady_clock::now();
         LLMResult res = InvokeLLM(prompt, cfg);
         int elapsed = (int)std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - t0).count();
 
         if (res.ok)
-            RecordLLMTiming(projPath, "generate", topicStr, elapsed);
+            RecordLLMTiming(projPath, "generate", topicStr, elapsed, backend);
 
         wxTheApp->CallAfter([this, res, projPath, chId, topicStr, cb]() mutable {
             PushGenerating(false);

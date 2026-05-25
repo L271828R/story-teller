@@ -8,6 +8,7 @@
 #include <wx/datetime.h>
 #include <string>
 #include "logger.h"
+#include "character_tab.h"
 #include "edit_panel.h"
 #include "create_panel.h"
 #include "image_panel.h"
@@ -43,12 +44,13 @@ public:
     void LoadFile(const std::string& path);
 
 private:
-    wxNotebook*   m_notebook    = nullptr;
-    wxPanel*      m_viewPage    = nullptr;
-    EditPanel*    m_editPage    = nullptr;
-    CreatePanel*   m_createPage   = nullptr;
-    MonitorPanel*  m_monitorPage  = nullptr;
-    ProjectPanel*  m_projectPage  = nullptr;
+    wxNotebook*    m_notebook       = nullptr;
+    wxPanel*       m_viewPage       = nullptr;
+    EditPanel*     m_editPage       = nullptr;
+    CharacterTab*  m_characterTab   = nullptr;
+    CreatePanel*   m_createPage     = nullptr;
+    MonitorPanel*  m_monitorPage    = nullptr;
+    ProjectPanel*  m_projectPage    = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;

@@ -132,5 +132,25 @@ int test_mdviewer() {
         }
     }
 
+    // Window title must include the process PID so the user can tell two running
+    // instances apart.  Both the constructor title and SetTitle calls in LoadFile
+    // must embed "[<pid>]".
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool usesGetpid  = code.find("getpid()") != std::string::npos;
+        bool hasPidBrace = code.find("[%d]")     != std::string::npos ||
+                           code.find("[\" +")    != std::string::npos ||
+                           code.find("\"[\"")    != std::string::npos;
+        if (!usesGetpid || !hasPidBrace) {
+            std::cerr << "FAIL [title-has-pid]: window title must embed getpid() "
+                         "in [PID] brackets so multiple instances are distinguishable\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [title-has-pid]\n";
+        }
+    }
+
     return failures;
 }

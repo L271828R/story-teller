@@ -23,6 +23,7 @@
 #include <wx/textdlg.h>
 #include <algorithm>
 #include <fstream>
+#include <unistd.h>
 #include <map>
 #include <set>
 #include <sstream>
@@ -62,10 +63,14 @@ wxEND_EVENT_TABLE()
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
+static wxString PidTag() {
+    return wxString::Format(" [%d]", (int)getpid());
+}
+
 MDViewerFrame::MDViewerFrame(const wxString& filePath)
     : wxFrame(nullptr, wxID_ANY,
-              filePath.empty() ? wxString("StoryTeller")
-                               : wxString("StoryTeller — " + wxFileName(filePath).GetFullName()),
+              filePath.empty() ? wxString("StoryTeller") + PidTag()
+                               : wxString("StoryTeller — " + wxFileName(filePath).GetFullName()) + PidTag(),
               wxDefaultPosition, wxDefaultSize,
               wxDEFAULT_FRAME_STYLE)
     , m_darkMode(false)
@@ -219,12 +224,16 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         [this](const std::string& path) { LoadFile(path); });
     m_notebook->AddPage(m_projectPage, "Projects");
 
+    // ── Characters/Personas page ──────────────────────────────────────────
+    m_characterTab = new CharacterTab(m_notebook, m_darkMode);
+    m_notebook->AddPage(m_characterTab, "Personas");
+
     // ── Create page ───────────────────────────────────────────────────────
     m_createPage = new CreatePanel(m_notebook,
         [this](const std::string& path) {
             LoadFile(path);
             if (m_editPage) m_editPage->RefreshChapters();
-        }, m_darkMode);
+        }, m_characterTab, m_darkMode);
     m_notebook->AddPage(m_createPage, "Create");
 
     // ── Monitor page ──────────────────────────────────────────────────────
@@ -245,6 +254,10 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
             m_editPage->RefreshChapters();
         else if (m_projectPage && page == m_projectPage)
             m_projectPage->RefreshProjects();
+        else if (m_monitorPage && page == m_monitorPage)
+            m_monitorPage->SetProject(CurrentProjectDir());
+        else if (m_characterTab && page == m_characterTab)
+            m_characterTab->Activate();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────
@@ -392,7 +405,7 @@ void MDViewerFrame::OnClearLogs(wxCommandEvent&) {
 
 void MDViewerFrame::LoadFile(const std::string& path) {
     m_filePath = wxString::FromUTF8(path);
-    SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName());
+    SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName() + PidTag());
     if (m_editPage) m_editPage->RefreshChapters();
     if (m_createPage) m_createPage->SyncProject(path);
     wxConfig("MDViewer").Write("lastFile", m_filePath);
@@ -407,10 +420,11 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         m_darkMode = false;
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", false);
-        if (m_chatPanel) m_chatPanel->SetDarkMode(false);
-        if (m_createPage) m_createPage->SetDarkMode(false);
-        if (m_editPage) m_editPage->SetDarkMode(false);
-        if (m_monitorPage) m_monitorPage->SetDarkMode(false);
+        if (m_chatPanel)     m_chatPanel->SetDarkMode(false);
+        if (m_createPage)    m_createPage->SetDarkMode(false);
+        if (m_editPage)      m_editPage->SetDarkMode(false);
+        if (m_monitorPage)   m_monitorPage->SetDarkMode(false);
+        if (m_characterTab)  m_characterTab->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -420,10 +434,11 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         m_darkMode = true;
         wxConfig cfg("MDViewer");
         cfg.Write("darkMode", true);
-        if (m_chatPanel) m_chatPanel->SetDarkMode(true);
-        if (m_createPage) m_createPage->SetDarkMode(true);
-        if (m_editPage) m_editPage->SetDarkMode(true);
-        if (m_monitorPage) m_monitorPage->SetDarkMode(true);
+        if (m_chatPanel)     m_chatPanel->SetDarkMode(true);
+        if (m_createPage)    m_createPage->SetDarkMode(true);
+        if (m_editPage)      m_editPage->SetDarkMode(true);
+        if (m_monitorPage)   m_monitorPage->SetDarkMode(true);
+        if (m_characterTab)  m_characterTab->SetDarkMode(true);
         LoadAndRender();
     }
 }
@@ -437,7 +452,7 @@ void MDViewerFrame::OnOpen(wxCommandEvent&) {
                      wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (dlg.ShowModal() == wxID_CANCEL) return;
     m_filePath = dlg.GetPath();
-    SetTitle("MDViewer — " + wxFileName(m_filePath).GetFullName());
+    SetTitle("MDViewer — " + wxFileName(m_filePath).GetFullName() + PidTag());
     wxConfig("MDViewer").Write("lastFile", m_filePath);
     LoadAndRender();
 }
@@ -471,47 +486,11 @@ void MDViewerFrame::OnNewFromClipboard(wxCommandEvent&) {
 }
 
 void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
-    AppConfig cfg = LoadConfig();
-    std::map<std::string, std::vector<std::string>> cats;
-    if (!cfg.defaultFolder.empty())
-        cats = ExtractTidbitNamesByCategory(cfg.defaultFolder);
-
-    if (cats.empty() && !m_filePath.empty()) {
-        std::string content = ReadFile(m_filePath.ToStdString());
-        auto names = ExtractTidbitNames(content);
-        if (!names.empty())
-            cats["(Current File)"] = names;
+    if (m_characterTab && m_notebook) {
+        int idx = m_notebook->FindPage(m_characterTab);
+        if (idx != wxNOT_FOUND)
+            m_notebook->SetSelection(idx);
     }
-
-    // Merge the Create tab character library so characters appear here
-    // even before they've been used in a generated story.
-    {
-        wxConfig wxcfg("StoryTeller");
-        wxcfg.SetPath("/charlib");
-        wxString catStr;
-        if (wxcfg.Read("categories", &catStr) && !catStr.empty()) {
-            wxStringTokenizer tok(catStr, ",");
-            while (tok.HasMoreTokens()) {
-                std::string cat = tok.GetNextToken().ToStdString();
-                wxString charStr;
-                wxcfg.Read(wxString::FromUTF8(cat), &charStr);
-                auto& vec = cats[cat];
-                wxStringTokenizer ctok(charStr, "|");
-                while (ctok.HasMoreTokens()) {
-                    std::string name = ctok.GetNextToken().ToStdString();
-                    if (!name.empty() &&
-                        std::find(vec.begin(), vec.end(), name) == vec.end())
-                        vec.push_back(name);
-                }
-                std::sort(vec.begin(), vec.end());
-            }
-        }
-    }
-
-    auto images = ScanPersonaImages();
-    auto* panel = new PersonaPanel(this, m_darkMode, cats, images,
-                                   [this]{ LoadAndRender(); });
-    panel->Show();
 }
 
 void MDViewerFrame::OnManageImages(wxCommandEvent&) {

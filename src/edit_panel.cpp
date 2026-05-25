@@ -592,7 +592,7 @@ void EditPanel::OnRewrite(const std::string& json) {
                 std::chrono::steady_clock::now() - t0).count();
             if (res.ok)
                 RecordLLMTiming(fs::path(chapPath).parent_path().string(),
-                                "rewrite-doc", filename, secs);
+                                "rewrite-doc", filename, secs, BackendLabel(cfg.backend));
 
             wxTheApp->CallAfter([this, res, chapPath, filename, cb]() mutable {
                 PushBusy(false);
@@ -655,7 +655,8 @@ void EditPanel::OnRewrite(const std::string& json) {
             std::chrono::steady_clock::now() - t0).count();
         if (res.ok)
             RecordLLMTiming(fs::path(chapPath).parent_path().string(),
-                            "patch", (chapterMode?"chapter ":"tidbit ")+std::to_string(id), secs);
+                            "patch", (chapterMode?"chapter ":"tidbit ")+std::to_string(id), secs,
+                            BackendLabel(cfg.backend));
 
         wxTheApp->CallAfter([this, res, chapPath, chapterMode, id, cb, filename]() mutable {
             PushBusy(false);
@@ -726,7 +727,8 @@ void EditPanel::OnTranslate(const std::string& json) {
             std::chrono::steady_clock::now() - t0).count();
         if (res.ok)
             RecordLLMTiming(outPath.parent_path().string(),
-                            "translate", outPath.filename().string(), secs);
+                            "translate", outPath.filename().string(), secs,
+                            BackendLabel(cfg.backend));
         wxTheApp->CallAfter([this, res, outPath, cb]() mutable {
             PushBusy(false);
             if (!res.ok) {
