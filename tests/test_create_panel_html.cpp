@@ -61,5 +61,12 @@ int test_create_panel_html() {
     check("create-html-generate-action",
           light.find("generate()") != std::string::npos);
 
+    // Character description: setCharLibrary must render a description field,
+    // and setCharDescription JS action must be wired up.
+    check("create-html-char-description",
+          light.find("setCharDescription") != std::string::npos ||
+          light.find("charDescription")    != std::string::npos ||
+          light.find("char-desc")          != std::string::npos);
+
     return failures;
 }

@@ -25,6 +25,8 @@ int test_persona();
 int test_images();
 int test_character_tab_html();
 int test_js_util();
+int test_quiz();
+int test_js_lint();
 
 int main() {
     int failures = 0;
@@ -50,6 +52,8 @@ int main() {
     failures += test_images();
     failures += test_character_tab_html();
     failures += test_js_util();
+    failures += test_quiz();
+    failures += test_js_lint();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

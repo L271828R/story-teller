@@ -231,5 +231,38 @@ int test_html_template() {
         }
     }
 
+    // Quiz interactive: CSS classes for option buttons must be present.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasOptClass     = html.find("quiz-opt")     != std::string::npos;
+        bool hasCorrectClass = html.find("quiz-correct") != std::string::npos;
+        bool hasWrongClass   = html.find("quiz-wrong")   != std::string::npos;
+        if (!hasOptClass || !hasCorrectClass || !hasWrongClass) {
+            std::cerr << "FAIL [quiz-interactive-css]: quiz CSS missing:"
+                      << " quiz-opt="     << hasOptClass
+                      << " quiz-correct=" << hasCorrectClass
+                      << " quiz-wrong="   << hasWrongClass << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [quiz-interactive-css]\n";
+        }
+    }
+
+    // Quiz interactive: initQuiz JS function must be present and hide answers.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasInitQuiz  = html.find("initQuiz")  != std::string::npos;
+        bool hidesAnswer  = html.find("Answer:")   != std::string::npos ||
+                            html.find("visibility") != std::string::npos;
+        if (!hasInitQuiz || !hidesAnswer) {
+            std::cerr << "FAIL [quiz-interactive-js]: initQuiz JS function missing or"
+                      << " answer hiding logic absent (hasInitQuiz=" << hasInitQuiz
+                      << " hidesAnswer=" << hidesAnswer << ")\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [quiz-interactive-js]\n";
+        }
+    }
+
     return failures;
 }

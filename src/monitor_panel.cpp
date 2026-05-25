@@ -1,6 +1,7 @@
 #include "monitor_panel.h"
 #include "monitor_panel_html.h"
 #include "process_monitor.h"
+#include "config.h"
 #include "meta.h"
 #include "js_util.h"
 #include <sstream>
@@ -70,6 +71,15 @@ void MonitorPanel::HandleMessage(const std::string& json) {
         PushTimingLog();
     } else if (action == "refresh") {
         PushProcessList();
+        PushTimingLog();
+    } else if (action == "archiveTiming") {
+        AppConfig cfg = LoadConfig();
+        std::string proj = act("project");
+        std::string ts   = act("ts");
+        bool doArchive = json.find("\"archived\":true") != std::string::npos
+                      || json.find("\"archived\": true") != std::string::npos;
+        if (!proj.empty() && !ts.empty() && !cfg.defaultFolder.empty())
+            ArchiveTimingEntry(cfg.defaultFolder, proj, ts, doArchive);
         PushTimingLog();
     } else if (action == "kill") {
         // pid is a number, not a string — extract directly.

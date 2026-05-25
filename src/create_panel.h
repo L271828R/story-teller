@@ -29,7 +29,7 @@ private:
     std::string    m_pendingSync;
 
     // ── Business state ────────────────────────────────────────────────────
-    std::string  m_currentProject;
+    std::string  m_currentProject;       // relative path, e.g. "Literature/agatha"
 
     // ── Webview helpers ───────────────────────────────────────────────────
     void Run(const std::string& js);

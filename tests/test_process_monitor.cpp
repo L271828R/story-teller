@@ -1,4 +1,5 @@
 #include "../src/process_monitor.h"
+#include "../src/monitor_panel_html.h"
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -54,6 +55,41 @@ int test_process_monitor() {
             ++failures;
         } else {
             std::cout << "PASS [kill-orphaned-no-crash]  (" << killed << " killed)\n";
+        }
+    }
+
+    // Monitor HTML must include a timing log pane with setTimingLog JS function.
+    {
+        std::string html = BuildMonitorPanelHTML(false);
+        bool hasPane       = html.find("timing-log") != std::string::npos ||
+                             html.find("timingLog")   != std::string::npos ||
+                             html.find("timing_log")  != std::string::npos;
+        bool hasSetFn      = html.find("setTimingLog") != std::string::npos;
+        bool hasBackendCol = html.find("Backend")      != std::string::npos ||
+                             html.find("backend")      != std::string::npos;
+        if (!hasPane || !hasSetFn || !hasBackendCol) {
+            std::cerr << "FAIL [monitor-timing-log]: hasPane=" << hasPane
+                      << " hasSetFn=" << hasSetFn
+                      << " hasBackendCol=" << hasBackendCol << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [monitor-timing-log]\n";
+        }
+    }
+
+    // Monitor HTML must have archive button and show-archived toggle in timing log.
+    {
+        std::string html = BuildMonitorPanelHTML(false);
+        bool hasArchiveAction = html.find("archiveTiming") != std::string::npos;
+        bool hasShowArchived  = html.find("showArchived")  != std::string::npos ||
+                                html.find("show-archived") != std::string::npos ||
+                                html.find("show_archived") != std::string::npos;
+        if (!hasArchiveAction || !hasShowArchived) {
+            std::cerr << "FAIL [monitor-archive-ui]: hasArchiveAction=" << hasArchiveAction
+                      << " hasShowArchived=" << hasShowArchived << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [monitor-archive-ui]\n";
         }
     }
 
