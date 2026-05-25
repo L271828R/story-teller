@@ -69,7 +69,7 @@ tr.orphaned td { background: var(--orphan-bg); }
 </div>
 <div id="content"><div class="empty">Loading…</div></div>
 
-<h3>LLM History</h3>
+<h3>LLM History <label style="font-size:0.8em;font-weight:normal"><input type="checkbox" id="showArchived" onchange="renderTimingLog()"> Show archived</label></h3>
 <div id="timingLog" class="timing-log"><div class="empty">No history for current project.</div></div>
 
 <script>
@@ -119,30 +119,48 @@ function setProcessList(procs) {
     '</table>';
 }
 
+var _timingEntries = [];
+
 function setTimingLog(entries) {
+  _timingEntries = entries || [];
+  renderTimingLog();
+}
+
+function renderTimingLog() {
   var el = document.getElementById('timingLog');
-  if (!entries || entries.length === 0) {
+  var showArchived = document.getElementById('showArchived').checked;
+  var visible = _timingEntries.filter(function(e) {
+    return showArchived || !e.archived;
+  });
+  if (visible.length === 0) {
     el.innerHTML = '<div class="empty">No history for current project.</div>';
     return;
   }
-  var reversed = entries.slice().reverse();
+  var reversed = visible.slice().reverse();
   var rows = reversed.map(function(e) {
     var backend = e.backend ? '<span class="backend-tag">' + escHtml(e.backend) + '</span>' : '—';
     var secs = e.secs > 0 ? e.secs + 's' : '—';
-    return '<tr>' +
+    var archLabel = e.archived ? 'Unarchive' : 'Archive';
+    var rowClass = e.archived ? ' class="archived-row"' : '';
+    return '<tr' + rowClass + '>' +
       '<td>' + escHtml(e.ts) + '</td>' +
       '<td>' + escHtml(e.op) + '</td>' +
       '<td>' + escHtml(e.topic || '—') + '</td>' +
       '<td>' + secs + '</td>' +
       '<td>' + backend + '</td>' +
+      '<td><button onclick="archiveTiming(' + JSON.stringify(e.ts) + ',' + (!e.archived) + ')">' + archLabel + '</button></td>' +
       '</tr>';
   }).join('');
 
   el.innerHTML =
     '<table>' +
-    '<thead><tr><th>Time</th><th>Operation</th><th>Topic</th><th>Duration</th><th>Backend</th></tr></thead>' +
+    '<thead><tr><th>Time</th><th>Operation</th><th>Topic</th><th>Duration</th><th>Backend</th><th></th></tr></thead>' +
     '<tbody>' + rows + '</tbody>' +
     '</table>';
+}
+
+function archiveTiming(ts, archived) {
+  send({action: 'archiveTiming', ts: ts, archived: archived});
 }
 
 function escHtml(s) {

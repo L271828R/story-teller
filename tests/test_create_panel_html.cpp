@@ -1,4 +1,5 @@
 #include "../src/create_panel_html.h"
+#include "../src/character_tab_html.h"
 #include <iostream>
 #include <string>
 
@@ -61,12 +62,15 @@ int test_create_panel_html() {
     check("create-html-generate-action",
           light.find("generate()") != std::string::npos);
 
-    // Character description: setCharLibrary must render a description field,
-    // and setCharDescription JS action must be wired up.
-    check("create-html-char-description",
-          light.find("setCharDescription") != std::string::npos ||
-          light.find("charDescription")    != std::string::npos ||
-          light.find("char-desc")          != std::string::npos);
+    // Character description: moved to the Characters tab (persona-tab architecture).
+    // Verify the character tab HTML has a description textarea.
+    {
+        std::string charTab = BuildCharacterTabHTML(false);
+        check("create-html-char-description",
+              charTab.find("desc-ta")      != std::string::npos ||
+              charTab.find("setDesc")      != std::string::npos ||
+              charTab.find("description")  != std::string::npos);
+    }
 
     return failures;
 }
