@@ -207,6 +207,10 @@ std::string RenderMarkdown(const std::string& md) {
     std::string convTitle;
     std::string convBuf;
 
+    bool inImageSection = false;
+    std::string imageSectionBuf;
+    int imageSectionCounter = 0;
+
     int pendingChId = -1;
 
     bool inUL = false;
@@ -322,6 +326,69 @@ std::string RenderMarkdown(const std::string& md) {
                 convTitle.clear();
             } else {
                 convBuf += raw + "\n";
+            }
+            continue;
+        }
+
+        // :::image ... ::: block — collapsible image gallery section
+        if (!inImageSection && raw == ":::image") {
+            flushParagraph(); closeLists(); closeBlockquote(); closeTable();
+            imageSectionBuf.clear();
+            inImageSection = true;
+            continue;
+        }
+        if (inImageSection) {
+            if (raw == ":::") {
+                // Parse image anchor lines: ![|size|align](src)
+                struct ImgEntry { std::string src, alt; };
+                std::vector<ImgEntry> imgs;
+                {
+                    std::istringstream bss(imageSectionBuf);
+                    std::string bln;
+                    while (std::getline(bss, bln)) {
+                        if (!bln.empty() && bln.back() == '\r') bln.pop_back();
+                        if (bln.size() < 4 || bln[0] != '!' || bln[1] != '[') continue;
+                        size_t aE = bln.find(']', 2);
+                        if (aE == std::string::npos || aE + 1 >= bln.size()
+                            || bln[aE+1] != '(') continue;
+                        size_t uE = bln.find(')', aE + 2);
+                        if (uE == std::string::npos) continue;
+                        imgs.push_back({bln.substr(aE + 2, uE - aE - 2),
+                                        bln.substr(2, aE - 2)});
+                    }
+                }
+
+                std::string body;
+                if (imgs.size() <= 1) {
+                    body = RenderMarkdown(imageSectionBuf);
+                } else {
+                    std::string id = "imgcar-" + std::to_string(imageSectionCounter++);
+                    body = "<div class=\"img-carousel\" id=\"" + id + "\" data-idx=\"0\">\n"
+                           "<div class=\"img-carousel-slides\">\n";
+                    for (size_t k = 0; k < imgs.size(); ++k) {
+                        std::string hidden = (k == 0) ? "" : " style=\"display:none\"";
+                        body += "<img src=\"" + imgs[k].src + "\""
+                                " alt=\"" + EscapeHTML(imgs[k].alt) + "\""
+                                " loading=\"lazy\"" + hidden + ">\n";
+                    }
+                    body += "</div>\n"
+                            "<div class=\"img-carousel-nav\">\n"
+                            "<button class=\"img-carousel-arrow\""
+                            " onclick=\"imgCarMove('" + id + "',-1)\">&#9664;</button>\n"
+                            "<span class=\"img-carousel-counter\" id=\"" + id + "-cnt\">"
+                            "1 / " + std::to_string(imgs.size()) + "</span>\n"
+                            "<button class=\"img-carousel-arrow\""
+                            " onclick=\"imgCarMove('" + id + "',1)\">&#9654;</button>\n"
+                            "</div>\n</div>\n";
+                }
+
+                html += "<details class=\"image-section\">\n"
+                        "<summary>\xf0\x9f\x96\xbc\xef\xb8\x8f Images</summary>\n"
+                        "<div class=\"image-section-body\">" + body + "</div>\n</details>\n";
+                inImageSection = false;
+                imageSectionBuf.clear();
+            } else {
+                imageSectionBuf += raw + "\n";
             }
             continue;
         }
@@ -557,6 +624,11 @@ std::string RenderMarkdown(const std::string& md) {
                            "<summary>" + EscapeHTML(tidbitSpeaker) + "</summary>\n"
                            "<div class=\"tidbit-body\">" + RenderMarkdown(tidbitBuf) + "</div>\n"
                            "</details>\n";
+    if (inImageSection) html += "<details class=\"image-section\">\n"
+                               "<summary>\xf0\x9f\x96\xbc\xef\xb8\x8f Images</summary>\n"
+                               "<div class=\"image-section-body\">"
+                               + RenderMarkdown(imageSectionBuf)
+                               + "</div>\n</details>\n";
 
     return html;
 }

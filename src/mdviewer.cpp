@@ -240,6 +240,14 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_monitorPage = new MonitorPanel(m_notebook, m_darkMode);
     m_notebook->AddPage(m_monitorPage, "Monitor");
 
+    // ── Images page ───────────────────────────────────────────────────────
+    m_imageTab = new ImageTab(m_notebook, m_darkMode);
+    m_notebook->AddPage(m_imageTab, "Images");
+
+    // ── Quiz page ─────────────────────────────────────────────────────────
+    m_quizTab = new QuizTab(m_notebook, m_darkMode);
+    m_notebook->AddPage(m_quizTab, "Quiz");
+
     // ── Edit page ─────────────────────────────────────────────────────────
     m_editPage = new EditPanel(m_notebook,
         [this](const std::string& path) { LoadFile(path); }, m_darkMode);
@@ -258,6 +266,10 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
             m_monitorPage->SetProject(CurrentProjectDir());
         else if (m_characterTab && page == m_characterTab)
             m_characterTab->Activate();
+        else if (m_imageTab && page == m_imageTab)
+            m_imageTab->Reload();
+        else if (m_quizTab && page == m_quizTab)
+            m_quizTab->Reload();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────
@@ -278,7 +290,19 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         CallAfter([this]() { PositionFindBar(); });
     });
 
-    CallAfter([this]() { LoadAndRender(); });
+    CallAfter([this]() {
+        // On startup LoadFile isn't called, so the image and quiz tabs never
+        // get their project set. Populate them here for the last-used file.
+        if (!m_filePath.empty()) {
+            std::string basename = wxFileName(m_filePath).GetFullName().ToStdString();
+            std::string projDir  = CurrentProjectDir();
+            if (m_imageTab) m_imageTab->SetProject(projDir, basename,
+                                                   [this]{ LoadAndRender(); });
+            if (m_quizTab)  m_quizTab->SetProject(projDir, basename,
+                                                  [this]{ LoadAndRender(); });
+        }
+        LoadAndRender();
+    });
 
     Bind(wxEVT_ACTIVATE, &MDViewerFrame::OnActivate, this);
 }
@@ -408,6 +432,16 @@ void MDViewerFrame::LoadFile(const std::string& path) {
     SetTitle("StoryTeller — " + wxFileName(m_filePath).GetFullName() + PidTag());
     if (m_editPage) m_editPage->RefreshChapters();
     if (m_createPage) m_createPage->SyncProject(path);
+    if (m_imageTab) {
+        std::string basename = wxFileName(m_filePath).GetFullName().ToStdString();
+        m_imageTab->SetProject(CurrentProjectDir(), basename,
+                               [this]{ LoadAndRender(); });
+    }
+    if (m_quizTab) {
+        std::string basename = wxFileName(m_filePath).GetFullName().ToStdString();
+        m_quizTab->SetProject(CurrentProjectDir(), basename,
+                              [this]{ LoadAndRender(); });
+    }
     wxConfig("MDViewer").Write("lastFile", m_filePath);
     m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
     LoadAndRender();
@@ -425,6 +459,8 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         if (m_editPage)      m_editPage->SetDarkMode(false);
         if (m_monitorPage)   m_monitorPage->SetDarkMode(false);
         if (m_characterTab)  m_characterTab->SetDarkMode(false);
+        if (m_imageTab)      m_imageTab->SetDarkMode(false);
+        if (m_quizTab)       m_quizTab->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -439,6 +475,8 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         if (m_editPage)      m_editPage->SetDarkMode(true);
         if (m_monitorPage)   m_monitorPage->SetDarkMode(true);
         if (m_characterTab)  m_characterTab->SetDarkMode(true);
+        if (m_imageTab)      m_imageTab->SetDarkMode(true);
+        if (m_quizTab)       m_quizTab->SetDarkMode(true);
         LoadAndRender();
     }
 }
@@ -494,17 +532,11 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
 }
 
 void MDViewerFrame::OnManageImages(wxCommandEvent&) {
-    std::string projDir = CurrentProjectDir();
-    if (projDir.empty() || m_filePath.empty()) {
-        wxMessageBox("Open a project file first.",
-                     "StoryTeller", wxOK | wxICON_INFORMATION, this);
-        return;
+    if (m_imageTab) {
+        int idx = m_notebook->FindPage(m_imageTab);
+        if (idx != wxNOT_FOUND)
+            m_notebook->SetSelection(idx);
     }
-    auto* panel = new ImagePanel(this, m_darkMode,
-                                 projDir,
-                                 m_filePath.ToStdString(),
-                                 [this]{ LoadAndRender(); });
-    panel->Show();
 }
 
 void MDViewerFrame::OnReload(wxCommandEvent&) { LoadAndRender(); }

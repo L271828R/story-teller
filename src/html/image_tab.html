@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f6f8fa;--border:#d0d7de;
+  --text:#1f2328;--muted:#656d76;--accent:#0969da;
+  --btn:#f6f8fa;--btn-border:#d0d7de;--btn-hover:#e9ecef;
+  --danger:#d1242f;--selected-border:#0969da;
+}
+.dark{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --btn:#21262d;--btn-border:#30363d;--btn-hover:#30363d;
+  --danger:#f85149;--selected-border:#58a6ff;
+}
+body{background:var(--bg);color:var(--text);
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     font-size:13px;line-height:1.5;padding:16px}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.sec-title{font-size:11px;font-weight:600;color:var(--muted);
+           text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.layout{display:flex;gap:20px;align-items:flex-start}
+.gallery-pane{flex:1;min-width:0}
+.place-pane{flex:0 0 230px}
+.img-grid{display:flex;flex-wrap:wrap;gap:10px}
+.img-card{
+  width:110px;background:var(--surface);border:2px solid var(--border);
+  border-radius:8px;overflow:hidden;position:relative;cursor:pointer}
+.img-card.selected{border-color:var(--selected-border)}
+.img-card img{width:110px;height:80px;object-fit:cover;display:block}
+.img-card .img-name{
+  font-size:11px;color:var(--text);padding:4px 6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.img-card .img-remove{
+  position:absolute;top:4px;right:4px;
+  background:rgba(0,0,0,.55);color:#fff;border:none;
+  border-radius:4px;font-size:12px;line-height:1;padding:2px 5px;
+  cursor:pointer;opacity:0;transition:opacity .15s}
+.img-card:hover .img-remove{opacity:1}
+.empty-msg{color:var(--muted);font-style:italic;font-size:12px}
+.field{margin-bottom:12px}
+.field-label{font-size:11px;color:var(--muted);margin-bottom:5px}
+.pills{display:flex;gap:4px;flex-wrap:wrap}
+.pill{
+  background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+  border-radius:20px;padding:3px 10px;font-size:12px;cursor:pointer}
+.pill:hover{background:var(--btn-hover)}
+.pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.width-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.width-px{
+  width:72px;background:var(--btn);color:var(--text);
+  border:1px solid var(--btn-border);border-radius:6px;
+  padding:3px 6px;font-size:12px;font-family:inherit;outline:none}
+.width-px:focus{border-color:var(--accent)}
+select{
+  width:100%;background:var(--btn);color:var(--text);
+  border:1px solid var(--btn-border);border-radius:6px;
+  padding:5px 8px;font-size:12px;font-family:inherit;outline:none}
+select:focus{border-color:var(--accent)}
+button.upload-btn{
+  background:var(--btn);color:var(--text);
+  border:1px solid var(--btn-border);border-radius:6px;
+  padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+button.upload-btn:hover{background:var(--btn-hover)}
+button.place-btn{
+  width:100%;background:var(--accent);color:#fff;
+  border:1px solid var(--accent);border-radius:6px;
+  padding:7px 12px;font-size:13px;cursor:pointer;font-family:inherit;
+  margin-top:4px}
+button.place-btn:hover{opacity:.88}
+button.place-btn:disabled{opacity:.4;cursor:default}
+.status{font-size:11px;color:var(--muted);margin-top:8px;min-height:16px}
+.selected-label{font-size:11px;color:var(--accent);margin-bottom:8px;
+                font-style:italic;min-height:16px}
+</style>
+</head>
+<body class="{{BODY_CLASS}}">
+<div class="toolbar">
+  <button class="upload-btn" id="upload-btn">Upload Image</button>
+  <span class="status" id="status-msg"></span>
+</div>
+
+<div class="layout">
+  <div class="gallery-pane">
+    <div class="sec-title">Project Images — click to select</div>
+    <div class="img-grid" id="img-grid"></div>
+  </div>
+
+  <div class="place-pane">
+    <div class="sec-title">Place in Document</div>
+    <div class="selected-label" id="sel-label">No image selected</div>
+
+    <div class="field">
+      <div class="field-label">Document</div>
+      <select id="doc-sel"></select>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Width (px)</div>
+      <div class="width-row">
+        <input class="width-px" id="width-px" type="number"
+               min="50" max="2000" step="10" value="400">
+        <button class="pill" data-w="200">200</button>
+        <button class="pill" data-w="400">400</button>
+        <button class="pill" data-w="600">600</button>
+        <button class="pill" data-w="0">Full</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Align</div>
+      <div class="pills" id="align-pills">
+        <button class="pill" data-val="left">Left</button>
+        <button class="pill active" data-val="center">Center</button>
+        <button class="pill" data-val="right">Right</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">Insert after heading</div>
+      <select id="heading-sel"></select>
+    </div>
+
+    <button class="place-btn" id="place-btn" disabled>Place Inline</button>
+    <button class="place-btn" id="addsection-btn" disabled
+            style="margin-top:6px;background:var(--surface);color:var(--accent);
+                   border-color:var(--accent)">Add to Image Section</button>
+    <button class="place-btn" id="resize-btn" disabled
+            style="margin-top:6px;background:var(--btn);color:var(--text);
+                   border-color:var(--btn-border)">Resize in Doc</button>
+    <button class="place-btn" id="removeanchor-btn" disabled
+            style="margin-top:6px;background:transparent;color:var(--danger);
+                   border-color:var(--danger)">Remove from Doc</button>
+  </div>
+</div>
+
+<script>
+var _images  = {{IMGS_LIST_JS}};
+var _docs    = {{DOCS_JS}};
+var _selDoc  = {{SEL_DOC_JS}};
+var _selName = '';
+
+function post(msg) {
+  if (window.webkit && window.webkit.messageHandlers &&
+      window.webkit.messageHandlers.imagetab)
+    window.webkit.messageHandlers.imagetab.postMessage(JSON.stringify(msg));
+}
+
+function setStatus(msg) {
+  document.getElementById('status-msg').textContent = msg;
+}
+
+// Populate document selector and update headings when it changes
+(function initDocs() {
+  var docSel = document.getElementById('doc-sel');
+  _docs.forEach(function(d) {
+    var o = document.createElement('option');
+    o.value = d.name; o.textContent = d.name;
+    if (d.name === _selDoc) o.selected = true;
+    docSel.appendChild(o);
+  });
+  updateHeadings();
+  docSel.addEventListener('change', updateHeadings);
+})();
+
+function updateHeadings() {
+  var docSel  = document.getElementById('doc-sel');
+  var headSel = document.getElementById('heading-sel');
+  var selName = docSel.value;
+  var doc = _docs.find(function(d) { return d.name === selName; });
+  headSel.innerHTML = '';
+  var opt = document.createElement('option');
+  opt.value = ''; opt.textContent = 'Top of document';
+  headSel.appendChild(opt);
+  if (doc) {
+    doc.headings.forEach(function(h) {
+      var o = document.createElement('option');
+      o.value = h; o.textContent = h;
+      headSel.appendChild(o);
+    });
+  }
+}
+
+function selectImage(name) {
+  _selName = name;
+  document.getElementById('sel-label').textContent =
+    name ? 'Selected: ' + name : 'No image selected';
+  var hasName = !!name;
+  document.getElementById('place-btn').disabled = !hasName;
+  document.getElementById('addsection-btn').disabled = !hasName;
+  document.getElementById('resize-btn').disabled = !hasName;
+  document.getElementById('removeanchor-btn').disabled = !hasName;
+  document.querySelectorAll('.img-card').forEach(function(c) {
+    c.classList.toggle('selected', c.dataset.name === name);
+  });
+}
+
+function renderGrid() {
+  var grid = document.getElementById('img-grid');
+  grid.innerHTML = '';
+  if (_images.length === 0) {
+    grid.innerHTML = '<span class="empty-msg">No images yet — upload one above</span>';
+    return;
+  }
+  _images.forEach(function(img) {
+    var card = document.createElement('div');
+    card.className = 'img-card' + (img.name === _selName ? ' selected' : '');
+    card.dataset.name = img.name;
+    card.addEventListener('click', function() { selectImage(img.name); });
+
+    var el = document.createElement('img');
+    el.src = img.src;
+    var nm = document.createElement('div');
+    nm.className = 'img-name';
+    nm.textContent = img.name;
+    nm.title = img.name;
+
+    var rm = document.createElement('button');
+    rm.className = 'img-remove';
+    rm.textContent = '✕';
+    rm.title = 'Remove from project';
+    rm.addEventListener('click', function(e) {
+      e.stopPropagation();
+      post({action:'remove', filename:img.name});
+    });
+    card.appendChild(el);
+    card.appendChild(nm);
+    card.appendChild(rm);
+    grid.appendChild(card);
+  });
+}
+renderGrid();
+
+// Width presets
+document.querySelectorAll('.width-row .pill').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.getElementById('width-px').value = parseInt(btn.dataset.w, 10);
+  });
+});
+
+// Align pills
+(function() {
+  var pills = document.querySelectorAll('#align-pills .pill');
+  pills.forEach(function(p) {
+    p.addEventListener('click', function() {
+      pills.forEach(function(x) { x.classList.remove('active'); });
+      p.classList.add('active');
+    });
+  });
+})();
+
+function activeAlign() {
+  var a = document.querySelector('#align-pills .pill.active');
+  return a ? a.dataset.val : 'center';
+}
+
+document.getElementById('upload-btn').addEventListener('click', function() {
+  post({action:'upload'});
+});
+
+function placementPayload() {
+  return {
+    filename: _selName,
+    doc:      document.getElementById('doc-sel').value,
+    width:    parseInt(document.getElementById('width-px').value, 10) || 0,
+    align:    activeAlign(),
+    heading:  document.getElementById('heading-sel').value
+  };
+}
+
+document.getElementById('place-btn').addEventListener('click', function() {
+  if (!_selName) return;
+  var p = placementPayload();
+  post({action:'place', filename:p.filename, doc:p.doc,
+        width:p.width, align:p.align, heading:p.heading});
+  setStatus('Placed ' + p.filename + ' in ' + p.doc);
+});
+
+document.getElementById('addsection-btn').addEventListener('click', function() {
+  if (!_selName) return;
+  var p = placementPayload();
+  post({action:'addtosection', filename:p.filename, doc:p.doc,
+        width:p.width, align:p.align, heading:p.heading});
+  setStatus('Added ' + p.filename + ' to image section in ' + p.doc);
+});
+
+document.getElementById('resize-btn').addEventListener('click', function() {
+  if (!_selName) return;
+  var p = placementPayload();
+  post({action:'resize', filename:p.filename, doc:p.doc,
+        width:p.width, align:p.align});
+  setStatus('Resized ' + p.filename + ' in ' + p.doc);
+});
+
+document.getElementById('removeanchor-btn').addEventListener('click', function() {
+  if (!_selName) return;
+  var doc = document.getElementById('doc-sel').value;
+  post({action:'removeanchor', filename:_selName, doc:doc});
+  setStatus('Removed anchor for ' + _selName + ' from ' + doc);
+});
+</script>
+</body></html>

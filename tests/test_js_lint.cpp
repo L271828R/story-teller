@@ -3,6 +3,8 @@
 #include "../src/html_template.h"
 #include "../src/monitor_panel_html.h"
 #include "../src/persona_panel_html.h"
+#include "../src/image_tab_html.h"
+#include "../src/quiz_tab_html.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -58,6 +60,8 @@ int test_js_lint() {
     check("monitor-panel", lint_js("monitor_panel", BuildMonitorPanelHTML(false)));
     check("persona-panel", lint_js("persona_panel", BuildPersonaPanelHTML({}, {}, false)));
     check("main-viewer",   lint_js("main_viewer",   BuildHTML("<p>test</p>", "t", false, 100)));
+    check("image-tab",     lint_js("image_tab",     BuildImageTabHTML({}, {}, "", false)));
+    check("quiz-tab",      lint_js("quiz_tab",      BuildQuizTabHTML({}, "", false)));
 
     return failures;
 }

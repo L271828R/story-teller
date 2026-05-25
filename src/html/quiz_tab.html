@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--surface:#f6f8fa;--border:#d0d7de;
+  --text:#1f2328;--muted:#656d76;--accent:#0969da;
+  --btn:#f6f8fa;--btn-border:#d0d7de;--btn-hover:#e9ecef;
+  --danger:#d1242f;--danger-hover:#a81922;
+}
+.dark{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --btn:#21262d;--btn-border:#30363d;--btn-hover:#30363d;
+  --danger:#f85149;--danger-hover:#da3633;
+}
+body{background:var(--bg);color:var(--text);
+     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+     font-size:13px;line-height:1.5;padding:16px;max-width:760px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.sec-title{font-size:11px;font-weight:600;color:var(--muted);
+           text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;margin-top:18px}
+select,input[type=number],input[type=text]{
+  background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+  border-radius:6px;padding:5px 8px;font-size:12px;font-family:inherit;outline:none}
+select:focus,input:focus{border-color:var(--accent)}
+select{width:100%;max-width:340px}
+textarea{
+  width:100%;background:var(--btn);color:var(--text);
+  border:1px solid var(--btn-border);border-radius:6px;
+  padding:7px 9px;font-size:12px;font-family:inherit;outline:none;
+  resize:vertical;min-height:70px}
+textarea:focus{border-color:var(--accent)}
+button{
+  background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+  border-radius:6px;padding:4px 12px;font-size:12px;font-family:inherit;
+  cursor:pointer;white-space:nowrap}
+button:hover{background:var(--btn-hover)}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.primary:hover{opacity:.88}
+button.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+button.danger:hover{background:var(--danger-hover)}
+button:disabled{opacity:.45;cursor:default}
+.empty-msg{color:var(--muted);font-style:italic;font-size:12px;padding:10px 0}
+.quiz-q-item{
+  border:1px solid var(--border);border-radius:8px;
+  margin-bottom:10px;overflow:hidden}
+.quiz-q-header{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface);padding:8px 12px;border-bottom:1px solid var(--border)}
+.quiz-q-num{
+  font-weight:700;font-size:12px;color:var(--accent);
+  min-width:28px}
+.quiz-q-preview{
+  padding:10px 12px;font-size:12px;white-space:pre-wrap;
+  font-family:inherit;color:var(--text)}
+.quiz-q-editor{padding:10px 12px;border-top:1px solid var(--border)}
+.quiz-q-editor textarea{font-size:12px;min-height:110px}
+.quiz-q-editor .btn-row{display:flex;gap:6px;margin-top:8px}
+.sep{flex:1}
+#status{margin-top:14px;font-size:12px;color:var(--muted);min-height:18px}
+hr{border:none;border-top:1px solid var(--border);margin:18px 0}
+</style>
+</head>
+<body class="{{BODY_CLASS}}">
+
+<div class="row">
+  <span style="font-size:11px;color:var(--muted);white-space:nowrap">Document:</span>
+  <select id="doc-sel" onchange="onDocChange()"></select>
+</div>
+
+<div class="sec-title">Existing Quiz <span id="q-count" style="text-transform:none;letter-spacing:0;font-weight:400"></span></div>
+<div id="no-quiz" class="empty-msg">No quiz in this document. Generate one below.</div>
+<div id="q-list"></div>
+<div id="remove-quiz-row" style="display:none;margin-bottom:10px">
+  <button class="danger" onclick="removeQuiz()">Remove Entire Quiz</button>
+</div>
+
+<hr>
+
+<div class="sec-title" style="margin-top:0">Generate Quiz</div>
+<div class="row">
+  <span style="font-size:12px;color:var(--muted)">Questions:</span>
+  <input id="gen-n" type="number" value="5" min="1" max="20" style="width:64px">
+</div>
+<div style="margin-bottom:8px;font-size:12px;color:var(--muted)">Additional instructions (optional):</div>
+<textarea id="gen-extra" placeholder="e.g. focus on dates, write in Spanish, make it harder…"></textarea>
+<div style="margin-top:10px">
+  <button id="gen-btn" class="primary" onclick="generateQuiz()">Generate Quiz</button>
+</div>
+
+<div id="status"></div>
+
+<script>
+var _docs = {{DOCS_JS}};
+var _selDoc = {{SEL_DOC_JS}};
+
+function send(obj) {
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.quiztab) {
+    window.webkit.messageHandlers.quiztab.postMessage(JSON.stringify(obj));
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function currentDoc() {
+  return document.getElementById('doc-sel').value;
+}
+
+function onDocChange() {
+  _selDoc = currentDoc();
+  renderQuiz();
+}
+
+function renderDocSelector() {
+  var sel = document.getElementById('doc-sel');
+  sel.innerHTML = '';
+  _docs.forEach(function(d) {
+    var opt = document.createElement('option');
+    opt.value = d.name;
+    opt.textContent = d.name;
+    if (d.name === _selDoc) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function getSelectedDoc() {
+  for (var i = 0; i < _docs.length; ++i)
+    if (_docs[i].name === _selDoc) return _docs[i];
+  return _docs.length ? _docs[0] : null;
+}
+
+function renderQuiz() {
+  var doc = getSelectedDoc();
+  var qs = doc ? doc.questions : [];
+  var noMsg = document.getElementById('no-quiz');
+  var qList = document.getElementById('q-list');
+  var removeRow = document.getElementById('remove-quiz-row');
+  var qCount = document.getElementById('q-count');
+
+  qList.innerHTML = '';
+  if (qs.length === 0) {
+    noMsg.style.display = '';
+    removeRow.style.display = 'none';
+    qCount.textContent = '';
+  } else {
+    noMsg.style.display = 'none';
+    removeRow.style.display = '';
+    qCount.textContent = '(' + qs.length + ' question' + (qs.length === 1 ? '' : 's') + ')';
+    qs.forEach(function(q) {
+      var item = document.createElement('div');
+      item.className = 'quiz-q-item';
+      item.id = 'qi-' + q.num;
+      item.innerHTML =
+        '<div class="quiz-q-header">' +
+          '<span class="quiz-q-num">Q' + q.num + '</span>' +
+          '<span class="sep"></span>' +
+          '<button onclick="editQ(' + q.num + ')">Edit</button>' +
+          '<button class="danger" onclick="deleteQ(' + q.num + ')">Delete</button>' +
+        '</div>' +
+        '<div class="quiz-q-preview" id="qprev-' + q.num + '">' + escHtml(q.rawBlock) + '</div>' +
+        '<div class="quiz-q-editor" id="qed-' + q.num + '" style="display:none">' +
+          '<textarea id="qta-' + q.num + '">' + escHtml(q.rawBlock) + '</textarea>' +
+          '<div class="btn-row">' +
+            '<button class="primary" onclick="saveQ(' + q.num + ')">Save</button>' +
+            '<button onclick="cancelQ(' + q.num + ')">Cancel</button>' +
+          '</div>' +
+        '</div>';
+      qList.appendChild(item);
+    });
+  }
+}
+
+function editQ(num) {
+  var editor = document.getElementById('qed-' + num);
+  var preview = document.getElementById('qprev-' + num);
+  if (!editor) return;
+  editor.style.display = '';
+  if (preview) preview.style.display = 'none';
+}
+
+function cancelQ(num) {
+  var editor = document.getElementById('qed-' + num);
+  var preview = document.getElementById('qprev-' + num);
+  if (!editor) return;
+  editor.style.display = 'none';
+  if (preview) preview.style.display = '';
+}
+
+function saveQ(num) {
+  var ta = document.getElementById('qta-' + num);
+  if (!ta) return;
+  var newText = ta.value.trim();
+  if (!newText) return;
+  send({action:'editquestion', doc:currentDoc(), qnum:num, text:newText});
+  setStatus('Saving…');
+}
+
+function deleteQ(num) {
+  send({action:'removequestion', doc:currentDoc(), qnum:num});
+  setStatus('Removing question…');
+}
+
+function removeQuiz() {
+  send({action:'removequiz', doc:currentDoc()});
+  setStatus('Removing quiz…');
+}
+
+function generateQuiz() {
+  var n = parseInt(document.getElementById('gen-n').value, 10) || 5;
+  var extra = document.getElementById('gen-extra').value.trim();
+  send({action:'generate', doc:currentDoc(), n:n, extra:extra});
+  document.getElementById('gen-btn').disabled = true;
+  document.getElementById('gen-btn').textContent = 'Generating…';
+  setStatus('Generating ' + n + '-question quiz…');
+}
+
+function setBusy(on) {
+  var btn = document.getElementById('gen-btn');
+  btn.disabled = on;
+  btn.textContent = on ? 'Generating…' : 'Generate Quiz';
+}
+
+renderDocSelector();
+renderQuiz();
+</script>
+</body></html>

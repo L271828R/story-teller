@@ -81,5 +81,70 @@ int test_markdown() {
         }
     }
 
+    // :::image block renders as a collapsible <details class="image-section">
+    {
+        std::string md =
+            "## Chapter One\n\n"
+            "Some text.\n\n"
+            ":::image\n"
+            "![|400px|center](photo.jpg)\n"
+            ":::\n";
+        std::string html = RenderMarkdown(md);
+        bool hasDetails  = html.find("image-section") != std::string::npos;
+        bool hasSummary  = html.find("<summary>") != std::string::npos;
+        bool hasImg      = html.find("<img ") != std::string::npos;
+        bool hasPhotoRef = html.find("photo.jpg") != std::string::npos;
+        if (!hasDetails || !hasSummary || !hasImg || !hasPhotoRef) {
+            std::cerr << "FAIL [image-section-renders]: hasDetails=" << hasDetails
+                      << " hasSummary=" << hasSummary
+                      << " hasImg=" << hasImg
+                      << " hasPhotoRef=" << hasPhotoRef
+                      << "\n  got: " << html.substr(0, 300) << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [image-section-renders]\n";
+        }
+    }
+
+    // Single image in :::image block — no carousel, just bare img
+    {
+        std::string md = ":::image\n![|400px|center](solo.jpg)\n:::\n";
+        std::string html = RenderMarkdown(md);
+        bool hasImg      = html.find("solo.jpg") != std::string::npos;
+        bool noCarousel  = html.find("img-carousel") == std::string::npos;
+        if (!hasImg || !noCarousel) {
+            std::cerr << "FAIL [image-section-single]: hasImg=" << hasImg
+                      << " noCarousel=" << noCarousel
+                      << "\n  got: " << html.substr(0, 300) << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [image-section-single]\n";
+        }
+    }
+
+    // Two images → carousel with arrows and counter
+    {
+        std::string md =
+            ":::image\n"
+            "![|400px|center](first.jpg)\n"
+            "![|300px|left](second.png)\n"
+            ":::\n";
+        std::string html = RenderMarkdown(md);
+        bool hasCarousel = html.find("img-carousel") != std::string::npos;
+        bool hasFirst    = html.find("first.jpg")    != std::string::npos;
+        bool hasSecond   = html.find("second.png")   != std::string::npos;
+        bool hasArrows   = html.find("imgCarMove")   != std::string::npos;
+        bool hasCounter  = html.find("1 / 2")        != std::string::npos;
+        if (!hasCarousel || !hasFirst || !hasSecond || !hasArrows || !hasCounter) {
+            std::cerr << "FAIL [image-section-carousel]: hasCarousel=" << hasCarousel
+                      << " hasFirst=" << hasFirst << " hasSecond=" << hasSecond
+                      << " hasArrows=" << hasArrows << " hasCounter=" << hasCounter
+                      << "\n  got: " << html.substr(0, 500) << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [image-section-carousel]\n";
+        }
+    }
+
     return failures;
 }

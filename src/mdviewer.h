@@ -12,6 +12,8 @@
 #include "edit_panel.h"
 #include "create_panel.h"
 #include "image_panel.h"
+#include "image_tab.h"
+#include "quiz_tab.h"
 #include "project_panel.h"
 #include "chat_panel.h"
 #include "monitor_panel.h"
@@ -51,6 +53,8 @@ private:
     CreatePanel*   m_createPage     = nullptr;
     MonitorPanel*  m_monitorPage    = nullptr;
     ProjectPanel*  m_projectPage    = nullptr;
+    ImageTab*      m_imageTab       = nullptr;
+    QuizTab*       m_quizTab        = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;

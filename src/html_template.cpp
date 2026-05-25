@@ -217,6 +217,27 @@ details.conversation summary{
 details.conversation summary::-webkit-details-marker{display:none}
 details.conversation[open] summary{border-bottom:1px solid var(--border)}
 .conversation-body{padding:12px 16px}
+details.image-section{
+  border:1px solid var(--border);border-radius:8px;
+  margin:1.2em 0;overflow:hidden}
+details.image-section summary{
+  padding:10px 16px;cursor:pointer;font-weight:600;
+  color:var(--text-muted);user-select:none;list-style:none;
+  background:var(--surface)}
+details.image-section summary::-webkit-details-marker{display:none}
+details.image-section[open] summary{border-bottom:1px solid var(--border)}
+.image-section-body{padding:12px 16px}
+.img-carousel{text-align:center}
+.img-carousel-slides img{max-width:100%;height:auto;display:block;margin:0 auto}
+.img-carousel-nav{
+  display:flex;align-items:center;justify-content:center;
+  gap:14px;margin-top:10px}
+.img-carousel-arrow{
+  background:none;border:1px solid var(--border);border-radius:4px;
+  color:var(--text);cursor:pointer;font-size:1.1em;padding:2px 12px;
+  line-height:1.6;transition:background .12s}
+.img-carousel-arrow:hover{background:var(--surface)}
+.img-carousel-counter{font-size:0.85em;color:var(--text-muted);min-width:3em;text-align:center}
 .qa-turn{margin-bottom:16px}
 .qa-turn:last-child{margin-bottom:0}
 .qa-q{background:var(--surface2);border-radius:6px 6px 6px 2px;
@@ -283,14 +304,24 @@ img{max-width:100%;height:auto;border-radius:4px}
 hr{height:.25em;padding:0;margin:24px 0;background:var(--border);border:0}
 
 /* ── Quiz interactive ───────────────────────────────────────────────────── */
-.quiz-options{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.quiz-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
 .quiz-opt{
+  display:flex;align-items:flex-start;gap:10px;text-align:left;
   background:var(--surface);color:var(--text);
-  border:1px solid var(--border);border-radius:6px;
-  padding:6px 16px;font-size:0.95em;cursor:pointer;font-family:inherit;
-  transition:background .12s,border-color .12s;
+  border:1px solid var(--border);border-radius:8px;
+  padding:10px 14px;font-size:0.95em;cursor:pointer;font-family:inherit;
+  transition:background .12s,border-color .12s,color .12s;
+  width:100%;
 }
+.quiz-opt-badge{
+  flex:0 0 26px;height:26px;line-height:26px;border-radius:50%;
+  background:var(--border);color:var(--muted);
+  font-weight:700;font-size:0.82em;text-align:center;
+  transition:background .12s,color .12s;
+}
+.quiz-opt-text{flex:1;line-height:1.45;padding-top:3px}
 .quiz-opt:hover:not(:disabled){background:var(--link);color:#fff;border-color:var(--link)}
+.quiz-opt:hover:not(:disabled) .quiz-opt-badge{background:rgba(255,255,255,.25);color:#fff}
 .quiz-opt:disabled{cursor:default}
 .quiz-correct{background:#22c55e!important;color:#fff!important;border-color:#22c55e!important}
 .quiz-wrong  {background:#ef4444!important;color:#fff!important;border-color:#ef4444!important}
@@ -924,6 +955,19 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
   });
 })();
 
+// ── Image carousel ───────────────────────────────────────────────────────
+function imgCarMove(id, dir) {
+  var car = document.getElementById(id);
+  var slides = car.querySelectorAll('.img-carousel-slides img');
+  var cnt = slides.length;
+  var cur = parseInt(car.dataset.idx || '0', 10);
+  slides[cur].style.display = 'none';
+  cur = (cur + dir + cnt) % cnt;
+  slides[cur].style.display = 'block';
+  car.dataset.idx = cur;
+  document.getElementById(id + '-cnt').textContent = (cur + 1) + ' / ' + cnt;
+}
+
 // ── Quiz interactive ──────────────────────────────────────────────────────
 (function initQuiz() {
   var ps = Array.from(document.querySelectorAll('p'));
@@ -959,7 +1003,14 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       var btn = document.createElement('button');
       btn.className = 'quiz-opt';
       btn.dataset.letter = letter;
-      btn.textContent = letter + ') ' + text;
+      var badge = document.createElement('span');
+      badge.className = 'quiz-opt-badge';
+      badge.textContent = letter;
+      var label = document.createElement('span');
+      label.className = 'quiz-opt-text';
+      label.textContent = text;
+      btn.appendChild(badge);
+      btn.appendChild(label);
       btn.addEventListener('click', function() {
         if (container.dataset.answered) return;
         container.dataset.answered = '1';

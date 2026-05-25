@@ -95,6 +95,8 @@ foreach(_PANEL IN ITEMS
     "edit_panel||edit_panel_html_data"
     "persona_panel||persona_panel_html_data"
     "image_panel||image_panel_html_data"
+    "image_tab||image_tab_html_data"
+    "quiz_tab||quiz_tab_html_data"
 )
     string(REPLACE "||" ";" _P "${_PANEL}")
     list(GET _P 0 _STEM)
@@ -154,6 +156,10 @@ set(SOURCES
     src/images.cpp
     src/image_panel_html.cpp
     src/image_panel.cpp
+    src/image_tab_html.cpp
+    src/image_tab.cpp
+    src/quiz_tab_html.cpp
+    src/quiz_tab.cpp
     src/character_tab.cpp
     src/character_tab_html.cpp
     src/thumbnail.cpp
@@ -196,6 +202,10 @@ add_executable(test_story-teller
     tests/test_quiz.cpp
     tests/test_js_lint.cpp
     tests/test_edit_panel_html.cpp
+    tests/test_image_tab_html.cpp
+    src/image_tab_html.cpp
+    tests/test_quiz_tab_html.cpp
+    src/quiz_tab_html.cpp
     src/persona.cpp
     src/persona_panel_html.cpp
     src/character_tab_html.cpp

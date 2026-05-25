@@ -264,5 +264,33 @@ int test_html_template() {
         }
     }
 
+    // Quiz: options use 2-column grid so A/B and C/D are always row-aligned
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasGrid  = html.find("grid-template-columns") != std::string::npos;
+        bool hasBadge = html.find("quiz-opt-badge") != std::string::npos;
+        if (!hasGrid || !hasBadge) {
+            std::cerr << "FAIL [quiz-grid-layout]: hasGrid=" << hasGrid
+                      << " hasBadge=" << hasBadge << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [quiz-grid-layout]\n";
+        }
+    }
+
+    // Image section carousel: CSS class and JS function present in template
+    {
+        std::string html = BuildHTML("<p>x</p>", "t", false, 100);
+        bool hasCss = html.find("img-carousel") != std::string::npos;
+        bool hasJs  = html.find("imgCarMove")   != std::string::npos;
+        if (!hasCss || !hasJs) {
+            std::cerr << "FAIL [img-carousel-template]: hasCss=" << hasCss
+                      << " hasJs=" << hasJs << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [img-carousel-template]\n";
+        }
+    }
+
     return failures;
 }
