@@ -403,7 +403,8 @@ std::string RenderMarkdown(const std::string& md) {
             flushParagraph();
             continue;
         }
-        if (raw.rfind("<!-- tb:", 0) == 0 || raw.rfind("<!-- qa:", 0) == 0) {
+        if (raw.rfind("<!-- tb:", 0) == 0 || raw.rfind("<!-- qa:", 0) == 0 ||
+            raw.rfind("<!-- language:", 0) == 0) {
             flushParagraph();
             continue;
         }

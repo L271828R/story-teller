@@ -146,5 +146,22 @@ int test_markdown() {
         }
     }
 
+    // language comment is stripped — never visible as text
+    {
+        std::string md =
+            "<!-- language: (not specified) -->\n\n"
+            "# Hello\n";
+        std::string html = RenderMarkdown(md);
+        bool noComment = html.find("language:") == std::string::npos &&
+                         html.find("not specified") == std::string::npos;
+        if (!noComment) {
+            std::cerr << "FAIL [language-comment-hidden]: comment leaked into output\n"
+                      << "  got: " << html << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [language-comment-hidden]\n";
+        }
+    }
+
     return failures;
 }
