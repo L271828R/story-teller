@@ -57,7 +57,8 @@ std::string BuildHTML(const std::string& body,
                       const std::string& title,
                       bool darkMode,
                       int fontSizePercent,
-                      const std::map<std::string, std::string>& personaImages) {
+                      const std::map<std::string, std::string>& personaImages,
+                      bool showChatBubbles) {
     const std::string htmlClass    = darkMode ? " class=\"dark\"" : "";
     const std::string mermaidTheme = darkMode ? "dark" : "default";
     char fsBuf[32];
@@ -273,6 +274,22 @@ h2:hover .chat-btn{opacity:1}
   color:var(--text);line-height:1.5;pointer-events:none;
   white-space:pre-wrap;
 }
+.note-popover{
+  position:fixed;z-index:5000;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;max-width:320px;min-width:180px;
+  box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:0.85em;
+  color:var(--text);line-height:1.5;
+  white-space:pre-wrap;
+}
+.note-popover-text{margin-bottom:8px;word-break:break-word}
+.note-popover-btns{display:flex;gap:6px;justify-content:flex-end}
+.note-popover-btns button{
+  padding:3px 10px;border-radius:5px;border:none;cursor:pointer;
+  font-size:0.9em;font-family:inherit;
+}
+.note-pop-edit{background:var(--accent);color:#fff}
+.note-pop-del{background:var(--danger,#cc2200);color:#fff}
 /* Selection toolbar */
 #note-toolbar{
   position:fixed;z-index:4999;display:none;
@@ -389,7 +406,8 @@ tr:nth-child(even) td{background:var(--surface)}
   color:rgba(255,255,255,.7);font-size:12px;background:rgba(0,0,0,.4);
   padding:3px 10px;border-radius:20px;pointer-events:none;
 }
-</style>
+</style>)HTML" + (showChatBubbles ? "" : R"HTML(
+<style>.chat-btn,#doc-chat-btn{display:none}</style>)HTML") + R"HTML(
 </head>
 <body>
 )HTML" + body + R"HTML(
@@ -624,7 +642,7 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
       toolbar.style.display = 'none';
   });
 
-  // Hover tooltip
+  // Hover tooltip (read-only, no pointer events).
   var tooltip = document.createElement('div');
   tooltip.className = 'note-tooltip';
   tooltip.style.display = 'none';
@@ -641,23 +659,59 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     tooltip.style.left = Math.min(rect.left, window.innerWidth - 320) + 'px';
     tooltip.style.top  = (rect.bottom + 6) + 'px';
   });
-
   document.addEventListener('mouseout', function(e) {
-    var marker = e.target.closest('.note-marker');
-    if (!marker) return;
+    if (!e.target.closest('.note-marker')) return;
     tooltipTimer = setTimeout(function() { tooltip.style.display = 'none'; }, 100);
   });
 
-  // Click on annotated text → edit the note directly (no popover needed).
+  // Click-triggered popover with Edit and Delete buttons.
+  var popover = document.createElement('div');
+  popover.className = 'note-popover';
+  popover.style.display = 'none';
+  document.body.appendChild(popover);
+  var _popNoteId = null;
+
+  function sendNote(obj) {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
+      window.webkit.messageHandlers.note.postMessage(JSON.stringify(obj));
+  }
+
+  function showNotePopover(marker, e) {
+    tooltip.style.display = 'none';
+    _popNoteId = parseInt(marker.getAttribute('data-note-id'));
+    var text = marker.getAttribute('data-note-text') || '';
+    popover.innerHTML =
+      (text ? '<div class="note-popover-text">' + text.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</div>' : '') +
+      '<div class="note-popover-btns">' +
+        '<button class="note-pop-edit">Edit</button>' +
+        '<button class="note-pop-del">Delete</button>' +
+      '</div>';
+    popover.querySelector('.note-pop-edit').addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      popover.style.display = 'none';
+      sendNote({action:'edit', id:_popNoteId});
+    });
+    popover.querySelector('.note-pop-del').addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      popover.style.display = 'none';
+      sendNote({action:'delete', id:_popNoteId});
+    });
+    popover.style.display = 'block';
+    var rect = marker.getBoundingClientRect();
+    var left = Math.min(rect.left, window.innerWidth - 340);
+    popover.style.left = Math.max(8, left) + 'px';
+    popover.style.top  = (rect.bottom + 6) + 'px';
+  }
+
   document.addEventListener('click', function(e) {
     var marker = e.target.closest('.note-marker');
-    if (!marker) return;
-    e.stopPropagation();
-    tooltip.style.display = 'none';
-    var noteId = marker.getAttribute('data-note-id');
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.note)
-      window.webkit.messageHandlers.note.postMessage(
-        JSON.stringify({action:'edit', id: parseInt(noteId)}));
+    if (marker) {
+      e.stopPropagation();
+      showNotePopover(marker, e);
+      return;
+    }
+    if (e.target.closest('.note-popover')) return;
+    popover.style.display = 'none';
   });
   // Close side chat when the user clicks anywhere in the main content.
   document.addEventListener('click', function(e) {

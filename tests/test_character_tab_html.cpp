@@ -45,11 +45,11 @@ int test_character_tab_html() {
     check("char-tab-filter-pills",
           light.find("setFilter") != std::string::npos);
 
-    // Description textarea must save on input (not only onblur) so notes are
-    // persisted even if the app closes while the field has focus.
+    // Description textarea saves on input (debounced) and immediately on blur
+    // so notes persist whether the user pauses typing or clicks away.
     check("char-tab-desc-saves-on-input",
           light.find("oninput") != std::string::npos &&
-          light.find("onblur")  == std::string::npos);
+          light.find("onblur")  != std::string::npos);
 
     return failures;
 }

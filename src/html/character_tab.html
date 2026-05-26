@@ -283,7 +283,8 @@ function renderGrid() {
       '<div class="pname">' + esc(name) + '</div>' +
       catLabel +
       '<textarea class="desc-ta" rows="2" placeholder="Notes…" data-name="' + eattr(name) + '"' +
-        ' oninput="scheduleDesc(\'' + ej(name) + '\',this.value)">' + desc + '</textarea>' +
+        ' oninput="scheduleDesc(\'' + ej(name) + '\',this.value)"' +
+        ' onblur="saveDesc(\'' + ej(name) + '\',this.value)">' + desc + '</textarea>' +
       '</div>';
   }).join('');
 

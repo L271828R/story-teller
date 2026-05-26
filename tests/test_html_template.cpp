@@ -210,6 +210,37 @@ int test_html_template() {
         }
     }
 
+    // Note popover must expose a delete action so the user can remove notes
+    // from the view without opening the edit dialog.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasDeleteAction = html.find("action:'delete'") != std::string::npos ||
+                               html.find("action:\"delete\"") != std::string::npos;
+        if (!hasDeleteAction) {
+            std::cerr << "FAIL [note-delete-action]: no delete action found in note JS\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [note-delete-action]\n";
+        }
+    }
+
+    // Hovering a note marker must show a tooltip with the note text.
+    // Check for the tooltip CSS class and that getAttribute('data-note-text')
+    // is used inside a mouseover handler (not just present on elements).
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasTooltipClass   = html.find("note-tooltip") != std::string::npos;
+        bool hasGetNoteText    = html.find("getAttribute('data-note-text')") != std::string::npos ||
+                                 html.find("getAttribute(\"data-note-text\")") != std::string::npos;
+        if (!hasTooltipClass || !hasGetNoteText) {
+            std::cerr << "FAIL [note-hover-tooltip]: hasTooltipClass=" << hasTooltipClass
+                      << " hasGetNoteText=" << hasGetNoteText << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [note-hover-tooltip]\n";
+        }
+    }
+
     // Tidbit carousel must have both a prev (‹) and a next (›) arrow so the
     // user can navigate in both directions.
     {
@@ -289,6 +320,21 @@ int test_html_template() {
             ++failures;
         } else {
             std::cout << "PASS [img-carousel-template]\n";
+        }
+    }
+
+    // When showChatBubbles=false, a CSS rule hides all chat buttons
+    {
+        std::string withBubbles    = BuildHTML("<p>x</p>", "t", false, 100, {}, true);
+        std::string withoutBubbles = BuildHTML("<p>x</p>", "t", false, 100, {}, false);
+        bool bubblesCssPresent = withBubbles.find(".chat-btn") != std::string::npos;
+        bool bubblesHidden     = withoutBubbles.find("#doc-chat-btn{display:none}") != std::string::npos;
+        if (!bubblesCssPresent || !bubblesHidden) {
+            std::cerr << "FAIL [hide-chat-bubbles]: bubblesCssPresent=" << bubblesCssPresent
+                      << " bubblesHidden=" << bubblesHidden << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [hide-chat-bubbles]\n";
         }
     }
 

@@ -1,4 +1,5 @@
 #include "markdown.h"
+#include "tab_util.h"
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -179,6 +180,86 @@ int test_mdviewer() {
             ++failures;
         } else {
             std::cout << "PASS [activate-no-error-loop]\n";
+        }
+    }
+
+    // TabInsertPosition: restoring a hidden tab inserts at the right notebook index.
+    {
+        bool ok = true;
+        // All visible, restoring tab 2: 2 before → insert at 2
+        ok &= (TabInsertPosition({true,true,false,true}, 2) == 2);
+        // Two hidden before it: restoring tab 1 → insert at 1
+        ok &= (TabInsertPosition({true,false,false,true}, 1) == 1);
+        // Restoring first tab: always insert at 0
+        ok &= (TabInsertPosition({false,false,false,true}, 0) == 0);
+        // Restoring last tab: all others visible → insert at 3
+        ok &= (TabInsertPosition({true,true,true,false}, 3) == 3);
+        // [F,T,F,T] restoring tab 2: 1 visible before → insert at 1
+        ok &= (TabInsertPosition({false,true,false,true}, 2) == 1);
+        if (!ok) {
+            std::cerr << "FAIL [tab-insert-position]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [tab-insert-position]\n";
+        }
+    }
+
+    // ApplyDemoMode hides all tabs except View via RemovePage,
+    // and restores them via InsertPage when turned off.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        const std::string sig = "void MDViewerFrame::ApplyDemoMode(";
+        auto pos = code.find(sig);
+        bool hasImpl = pos != std::string::npos;
+        bool hasRemove = false, hasInsert = false, skipsView = false;
+        if (hasImpl) {
+            auto end = code.find("\n}\n", pos);
+            if (end != std::string::npos) {
+                std::string body = code.substr(pos, end - pos);
+                hasRemove  = body.find("RemovePage") != std::string::npos;
+                hasInsert  = body.find("InsertPage") != std::string::npos;
+                // Must not remove the View tab (label "View" must be excluded).
+                skipsView  = body.find("\"View\"") != std::string::npos ||
+                             body.find(".label == \"View\"") != std::string::npos ||
+                             body.find("label==\"View\"") != std::string::npos;
+            }
+        }
+        if (!hasImpl || !hasRemove || !hasInsert || !skipsView) {
+            std::cerr << "FAIL [demo-mode-apply]: ApplyDemoMode must implement "
+                         "RemovePage (hide) and InsertPage (restore), "
+                         "keeping the View tab visible\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [demo-mode-apply]\n";
+        }
+    }
+
+    // OnDemoMode toggles m_demoMode and saves to config.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        const std::string sig = "void MDViewerFrame::OnDemoMode(";
+        auto pos = code.find(sig);
+        bool hasImpl = pos != std::string::npos;
+        bool callsApply = false, savesConfig = false;
+        if (hasImpl) {
+            auto end = code.find("\n}\n", pos);
+            if (end != std::string::npos) {
+                std::string body = code.substr(pos, end - pos);
+                callsApply  = body.find("ApplyDemoMode") != std::string::npos;
+                savesConfig = body.find("demoMode") != std::string::npos &&
+                              body.find("Write") != std::string::npos;
+            }
+        }
+        if (!hasImpl || !callsApply || !savesConfig) {
+            std::cerr << "FAIL [demo-mode-toggle]: OnDemoMode must call ApplyDemoMode "
+                         "and write demoMode to config\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [demo-mode-toggle]\n";
         }
     }
 

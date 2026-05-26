@@ -11,7 +11,8 @@ std::string BuildHTML(const std::string& body,
                       const std::string& title,
                       bool darkMode,
                       int fontSizePercent = 100,
-                      const std::map<std::string, std::string>& personaImages = {});
+                      const std::map<std::string, std::string>& personaImages = {},
+                      bool showChatBubbles = true);
 
 // Renders the application log file as a themed HTML page.
 // Pure function — no wxWidgets dependency, directly unit-testable.

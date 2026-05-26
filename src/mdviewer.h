@@ -1,4 +1,5 @@
 #pragma once
+#include <vector>
 #include <wx/wx.h>
 #include <wx/notebook.h>
 #include <wx/webview.h>
@@ -39,6 +40,8 @@ enum {
     ID_FOCUS_MODE,
     ID_MANAGE_PERSONAS,
     ID_MANAGE_IMAGES,
+    ID_HIDE_CHAT_BUBBLES,
+    ID_DEMO_MODE,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -47,6 +50,13 @@ public:
     void LoadFile(const std::string& path);
 
 private:
+    struct TabEntry {
+        int       menuId;
+        wxString  label;
+        wxWindow* page    = nullptr;
+        bool      visible = true;
+    };
+
     wxNotebook*    m_notebook       = nullptr;
     wxPanel*       m_viewPage       = nullptr;
     EditPanel*     m_editPage       = nullptr;
@@ -60,6 +70,8 @@ private:
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;
+    bool          m_showChatBubbles = true;
+    bool          m_demoMode        = false;
     int           m_fontSizePercent;
     wxPanel*      m_findPanel   = nullptr;
     wxTextCtrl*   m_findCtrl    = nullptr;
@@ -71,8 +83,11 @@ private:
     wxPanel*          m_webViewPanel  = nullptr;
     ChatPanel*        m_chatPanel     = nullptr;
     wxDateTime        m_fileMtime;
+    std::vector<TabEntry> m_tabs;
 
     void LoadAndRender();
+    void SaveTabVisibility() const;
+    void LoadTabVisibility();
     std::string ReadFile(const std::string& path);
     void ShowFindBar(bool show);
     void PositionFindBar();
@@ -88,6 +103,9 @@ private:
     void OnFocusMode(wxCommandEvent& evt);
     void OnManagePersonas(wxCommandEvent& evt);
     void OnManageImages(wxCommandEvent& evt);
+    void OnHideChatBubbles(wxCommandEvent& evt);
+    void OnDemoMode(wxCommandEvent& evt);
+    void ApplyDemoMode(bool demo);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);
     void OnThemeDark(wxCommandEvent& evt);

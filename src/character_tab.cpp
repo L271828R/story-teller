@@ -174,12 +174,11 @@ void CharacterTab::SaveState() const {
     }
     cfg.Write("checked", cs);
 
-    wxConfig dcfg("StoryTeller");
-    dcfg.DeleteGroup("/charlib_descriptions");
-    dcfg.SetPath("/charlib_descriptions");
+    cfg.DeleteGroup("/charlib_descriptions");
+    cfg.SetPath("/charlib_descriptions");
     for (auto& [name, desc] : m_charDescriptions) {
         if (!desc.empty())
-            dcfg.Write(wxString::FromUTF8(name), wxString::FromUTF8(desc));
+            cfg.Write(wxString::FromUTF8(name), wxString::FromUTF8(desc));
     }
 }
 

@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Event table
@@ -56,10 +57,14 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_FOCUS_MODE,           MDViewerFrame::OnFocusMode)
     EVT_MENU(ID_MANAGE_PERSONAS,      MDViewerFrame::OnManagePersonas)
     EVT_MENU(ID_MANAGE_IMAGES,        MDViewerFrame::OnManageImages)
+    EVT_MENU(ID_HIDE_CHAT_BUBBLES,   MDViewerFrame::OnHideChatBubbles)
+    EVT_MENU(ID_DEMO_MODE,           MDViewerFrame::OnDemoMode)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
 wxEND_EVENT_TABLE()
+
+#include "tab_util.h"
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -86,6 +91,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     wxConfig cfg("MDViewer");
     m_darkMode        = cfg.ReadBool("darkMode", false);
     m_fontSizePercent = (int)cfg.ReadLong("fontSizePercent", 100);
+    m_showChatBubbles = cfg.ReadBool("showChatBubbles", true);
+    m_demoMode        = cfg.ReadBool("demoMode", false);
 
     // ── File menu ────────────────────────────────────────────────────────
     wxMenuBar* bar  = new wxMenuBar();
@@ -128,6 +135,9 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     view->Append(ID_FONT_RESET,    "Reset Font Size\tCtrl+0");
     view->AppendSeparator();
     view->Append(ID_FOCUS_MODE,    "Focus Mode\tCtrl+Shift+H");
+    view->AppendCheckItem(ID_HIDE_CHAT_BUBBLES, "Hide Chat &Bubbles");
+    view->Check(ID_HIDE_CHAT_BUBBLES, !m_showChatBubbles);
+    view->AppendCheckItem(ID_DEMO_MODE, "&Demo Mode");
     bar->Append(view, "&View");
 
     SetMenuBar(bar);
@@ -278,6 +288,24 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── View page (last) ──────────────────────────────────────────────────
     m_notebook->AddPage(m_viewPage, "View");
+
+    // ── Canonical tab list (order matches AddPage calls above) ────────────
+    m_tabs = {
+        {0, "Projects", m_projectPage},
+        {0, "Personas", m_characterTab},
+        {0, "Create",   m_createPage},
+        {0, "Monitor",  m_monitorPage},
+        {0, "Images",   m_imageTab},
+        {0, "Prompts",  m_promptsTab},
+        {0, "Quiz",     m_quizTab},
+        {0, "Edit",     m_editPage},
+        {0, "View",     m_viewPage},
+    };
+    if (m_demoMode) {
+        ApplyDemoMode(true);
+        GetMenuBar()->Check(ID_DEMO_MODE, true);
+    }
+
     m_notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& evt) {
         evt.Skip();
         wxWindow* page = m_notebook->GetPage(evt.GetSelection());
@@ -356,7 +384,7 @@ void MDViewerFrame::LoadAndRender() {
         std::string body = RenderMarkdown(
             "# StoryTeller\n\n"
             "Open a file with **File → Open** (Ctrl+O) or paste markdown with **Ctrl+V**.\n");
-        std::string html = BuildHTML(body, "StoryTeller", m_darkMode, m_fontSizePercent);
+        std::string html = BuildHTML(body, "StoryTeller", m_darkMode, m_fontSizePercent, {}, m_showChatBubbles);
         m_webView->SetPage(wxString::FromUTF8(html), "");
         SetStatusText("Ready");
         return;
@@ -423,7 +451,7 @@ void MDViewerFrame::LoadAndRender() {
 
     std::string title = wxFileName(m_filePath).GetFullName().ToStdString();
     std::string html  = BuildHTML(body, title, m_darkMode, m_fontSizePercent,
-                                  ToDataURLs(ScanPersonaImages()));
+                                  ToDataURLs(ScanPersonaImages()), m_showChatBubbles);
 
     wxString baseURL = "file://" + wxFileName(m_filePath).GetPath(wxPATH_GET_SEPARATOR);
     m_webView->SetPage(wxString::FromUTF8(html), baseURL);
@@ -556,6 +584,51 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
         if (idx != wxNOT_FOUND)
             m_notebook->SetSelection(idx);
     }
+}
+
+void MDViewerFrame::ApplyDemoMode(bool demo) {
+    if (demo) {
+        // Hide everything except the View tab.
+        for (int i = (int)m_tabs.size() - 1; i >= 0; --i) {
+            if (m_tabs[i].label == "View") continue;
+            if (!m_tabs[i].visible) continue;
+            int idx = m_notebook->FindPage(m_tabs[i].page);
+            if (idx != wxNOT_FOUND) {
+                // If this is the current page, switch to View first.
+                if (m_notebook->GetSelection() == idx) {
+                    int viewIdx = m_notebook->FindPage(m_viewPage);
+                    if (viewIdx != wxNOT_FOUND) m_notebook->SetSelection(viewIdx);
+                }
+                m_notebook->RemovePage(idx);
+            }
+            m_tabs[i].visible = false;
+        }
+    } else {
+        // Restore all hidden tabs in canonical order.
+        for (int i = 0; i < (int)m_tabs.size(); ++i) {
+            if (m_tabs[i].visible) continue;
+            std::vector<bool> vis;
+            for (auto& t : m_tabs) vis.push_back(t.visible);
+            vis[i] = true;
+            int insertAt = TabInsertPosition(vis, i);
+            m_notebook->InsertPage(insertAt, m_tabs[i].page, m_tabs[i].label, false);
+            m_tabs[i].visible = true;
+        }
+    }
+}
+
+void MDViewerFrame::OnDemoMode(wxCommandEvent& evt) {
+    m_demoMode = evt.IsChecked();
+    ApplyDemoMode(m_demoMode);
+    wxConfig cfg("MDViewer");
+    cfg.Write("demoMode", m_demoMode);
+}
+
+void MDViewerFrame::OnHideChatBubbles(wxCommandEvent& evt) {
+    m_showChatBubbles = !evt.IsChecked();
+    wxConfig cfg("MDViewer");
+    cfg.Write("showChatBubbles", m_showChatBubbles);
+    LoadAndRender();
 }
 
 void MDViewerFrame::OnManageImages(wxCommandEvent&) {
