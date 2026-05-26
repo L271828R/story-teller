@@ -301,11 +301,6 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         {0, "Edit",     m_editPage},
         {0, "View",     m_viewPage},
     };
-    if (m_demoMode) {
-        ApplyDemoMode(true);
-        GetMenuBar()->Check(ID_DEMO_MODE, true);
-    }
-
     m_notebook->Bind(wxEVT_NOTEBOOK_PAGE_CHANGED, [this](wxBookCtrlEvent& evt) {
         evt.Skip();
         wxWindow* page = m_notebook->GetPage(evt.GetSelection());
@@ -329,6 +324,11 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(m_notebook, 1, wxEXPAND);
     SetSizer(sizer);
+
+    if (m_demoMode) {
+        ApplyDemoMode(true);
+        GetMenuBar()->Check(ID_DEMO_MODE, true);
+    }
 
     // Size to fit the display, with a comfortable margin so the title bar
     // is never pushed off the top of the screen.
@@ -470,7 +470,8 @@ void MDViewerFrame::OnViewLogs(wxCommandEvent&) {
     std::string html = BuildLogsHTML(ReadFile(logPath), logPath, m_darkMode);
     m_webView->SetPage(wxString::FromUTF8(html), "");
     // Switch to the View tab so the rendered HTML is actually visible.
-    m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
+    if (m_notebook->GetPageCount() > 0)
+        m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
     SetStatusText("Viewing logs — use View > View Document to return");
 }
 
@@ -496,7 +497,8 @@ void MDViewerFrame::LoadFile(const std::string& path) {
                               [this]{ LoadAndRender(); });
     }
     wxConfig("MDViewer").Write("lastFile", m_filePath);
-    m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
+    if (m_notebook->GetPageCount() > 0)
+        m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
     LoadAndRender();
 }
 
@@ -588,23 +590,30 @@ void MDViewerFrame::OnManagePersonas(wxCommandEvent&) {
 
 void MDViewerFrame::ApplyDemoMode(bool demo) {
     if (demo) {
-        // Hide everything except the View tab.
+        // Remove implementation tabs from notebook (reverse to keep indices stable).
         for (int i = (int)m_tabs.size() - 1; i >= 0; --i) {
             if (m_tabs[i].label == "View") continue;
             if (!m_tabs[i].visible) continue;
             int idx = m_notebook->FindPage(m_tabs[i].page);
-            if (idx != wxNOT_FOUND) {
-                // If this is the current page, switch to View first.
-                if (m_notebook->GetSelection() == idx) {
-                    int viewIdx = m_notebook->FindPage(m_viewPage);
-                    if (viewIdx != wxNOT_FOUND) m_notebook->SetSelection(viewIdx);
-                }
-                m_notebook->RemovePage(idx);
-            }
+            if (idx != wxNOT_FOUND) m_notebook->RemovePage(idx);
             m_tabs[i].visible = false;
         }
+        // Pull View out of the notebook and promote it directly into the frame
+        // sizer — the tab bar disappears entirely.
+        int viewIdx = m_notebook->FindPage(m_viewPage);
+        if (viewIdx != wxNOT_FOUND) m_notebook->RemovePage(viewIdx);
+        m_viewPage->Reparent(this);
+        GetSizer()->Replace(m_notebook, m_viewPage);
+        m_notebook->Hide();
+        m_viewPage->Show();
+        Layout();
     } else {
-        // Restore all hidden tabs in canonical order.
+        // Return View to the notebook and show the notebook again.
+        GetSizer()->Replace(m_viewPage, m_notebook);
+        m_viewPage->Reparent(m_notebook);
+        m_notebook->AddPage(m_viewPage, "View");
+        m_notebook->Show();
+        // Restore hidden implementation tabs in canonical order.
         for (int i = 0; i < (int)m_tabs.size(); ++i) {
             if (m_tabs[i].visible) continue;
             std::vector<bool> vis;
@@ -614,6 +623,7 @@ void MDViewerFrame::ApplyDemoMode(bool demo) {
             m_notebook->InsertPage(insertAt, m_tabs[i].page, m_tabs[i].label, false);
             m_tabs[i].visible = true;
         }
+        Layout();
     }
 }
 

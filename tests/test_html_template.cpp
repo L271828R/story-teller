@@ -179,6 +179,53 @@ int test_html_template() {
         }
     }
 
+    // Focus mode wrapAll must process atoms at the block level, not per-text-node.
+    // If it walks individual text nodes, a note-marker span splits the paragraph
+    // into micro-chunks of 1 word each. The fix: iterate direct children of block
+    // elements (p, h2, li, …) so that text nodes and inline spans in the same
+    // paragraph share one 10-word budget.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        // The old per-text-node approach used:
+        //   createTreeWalker(document.body, NodeFilter.SHOW_TEXT, ...)
+        //   nodes.forEach(function(textNode) { ... makeChunks(textNode.textContent ...) ... })
+        // The block-level approach instead iterates block element children.
+        // We check that wrapAll does NOT do per-text-node makeChunks:
+        // it must NOT call makeChunks(textNode.textContent inside a forEach over text nodes.
+        // Instead it should collect atoms from block direct children.
+        bool usesBlockAtoms = html.find("firstChild") != std::string::npos &&
+                              html.find("nextSibling") != std::string::npos;
+        // Must not process each text node's textContent individually
+        // (old code had: makeChunks(textNode.textContent, CHUNK_SIZE))
+        bool noPerTextNodeChunk =
+            html.find("makeChunks(textNode.textContent") == std::string::npos;
+        // Must use a CJK-aware token counter (not /\S+/g) for inline atoms
+        // so Chinese text (no spaces) is counted character-by-character.
+        bool usesCjkCounter = html.find("TOKRE") != std::string::npos &&
+                              html.find("tokenCount") != std::string::npos;
+        // Must detach original block children before appending chunk spans —
+        // otherwise the original text nodes remain in the DOM alongside the new
+        // chunk spans and every word appears twice, breaking focus navigation.
+        bool detachesFirst =
+            html.find("while (block.firstChild)") != std::string::npos &&
+            html.find("temp.appendChild(block.firstChild)") != std::string::npos;
+        // Inline atoms (note-markers) must be appended to cur FIRST, then the
+        // chunk is committed if full — not pre-committed before appending.
+        // Pre-commit isolates the marker in its own 2-3 word chunk.
+        bool postCommitInline =
+            html.find("cur.appendChild(atom); // post-commit") != std::string::npos;
+        if (!usesBlockAtoms || !noPerTextNodeChunk || !usesCjkCounter ||
+            !detachesFirst || !postCommitInline) {
+            std::cerr << "FAIL [focus-mode-block-atoms]: wrapAll must iterate block "
+                         "element children (firstChild/nextSibling), use CJK-aware "
+                         "tokenCount (TOKRE), detach children via temp fragment, and "
+                         "post-commit inline atoms (not pre-commit)\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [focus-mode-block-atoms]\n";
+        }
+    }
+
     // Focus mode: CSS class and JS toggle function must be present.
     {
         std::string html = BuildHTML("", "test", false, 100);

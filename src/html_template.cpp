@@ -910,40 +910,78 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     return out;
   }
 
-  // Walk all content text nodes, split into chunk spans, return span array.
+  // Collect leaf block elements (p, h1-h6, li, td, th) from root, depth-first.
+  // Stops recursing into a subtree once a block is found (avoids nested blocks).
+  function collectBlocks(root) {
+    var BLOCKS = {P:1,H1:1,H2:1,H3:1,H4:1,H5:1,H6:1,LI:1,TD:1,TH:1,DT:1,DD:1};
+    var SKIP   = {SCRIPT:1,STYLE:1,BUTTON:1,SUMMARY:1};
+    var blocks = [];
+    (function walk(el) {
+      var tag = (el.tagName || '').toUpperCase();
+      if (SKIP[tag]) return;
+      if (el.id === 'zm-overlay' || el.id === 'note-toolbar') return;
+      if (el.dataset && el.dataset.focusChunk) return;
+      if (BLOCKS[tag]) { blocks.push(el); return; }
+      for (var c = el.firstChild; c; c = c.nextSibling)
+        if (c.nodeType === 1) walk(c);
+    })(root);
+    return blocks;
+  }
+
+  // CJK-aware token counter (mirrors the regex in makeChunks).
+  var TOKRE = /[一-鿿぀-ヿ가-힯]|[^\s一-鿿぀-ヿ가-힯]+/g;
+  function tokenCount(s) { var m = s.match(TOKRE); return m ? m.length : 0; }
+
+  // Walk all content blocks, split their direct children into chunk spans.
+  // Text nodes are split via makeChunks (handles CJK, enforces CHUNK_SIZE).
+  // Inline elements (e.g. note-marker spans) are kept atomic so their event
+  // handlers stay intact; they are folded into the surrounding text budget.
   function wrapAll() {
     var spans = [];
-    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT,
-      function(node) {
-        if (!node.textContent.trim()) return NodeFilter.FILTER_SKIP;
-        var p = node.parentNode;
-        while (p && p !== document.body) {
-          var tag = (p.tagName || '').toUpperCase();
-          if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'BUTTON' || tag === 'SUMMARY')
-            return NodeFilter.FILTER_SKIP;
-          if (p.id === 'zm-overlay' || p.id === 'note-toolbar')
-            return NodeFilter.FILTER_SKIP;
-          if (p.dataset && p.dataset.focusChunk) return NodeFilter.FILTER_SKIP;
-          p = p.parentNode;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    );
-    var nodes = [], n;
-    while ((n = walker.nextNode())) nodes.push(n);
+    collectBlocks(document.body).forEach(function(block) {
+      if (!block.textContent.trim()) return;
 
-    nodes.forEach(function(textNode) {
-      var chunks = makeChunks(textNode.textContent, CHUNK_SIZE);
-      if (!chunks.length) return;
+      // Detach all block children into a temp fragment so the block is empty
+      // before we append chunk spans — without this, original text nodes stay
+      // in the DOM alongside the new spans and every word appears twice.
+      var temp = document.createDocumentFragment();
+      while (block.firstChild) temp.appendChild(block.firstChild);
+
+      var atoms = [];
+      for (var ch = temp.firstChild; ch; ch = ch.nextSibling) atoms.push(ch);
+
       var frag = document.createDocumentFragment();
-      chunks.forEach(function(chunk) {
-        var sp = document.createElement('span');
-        sp.dataset.focusChunk = '1';
-        sp.textContent = chunk;
-        frag.appendChild(sp);
-        spans.push(sp);
+      var cur = document.createElement('span');
+      cur.dataset.focusChunk = '1';
+      var count = 0;
+
+      function commit() {
+        if (cur.childNodes.length) { frag.appendChild(cur); spans.push(cur); }
+        cur = document.createElement('span');
+        cur.dataset.focusChunk = '1';
+        count = 0;
+      }
+
+      atoms.forEach(function(atom) {
+        if (atom.nodeType === 3) {
+          // Plain text: makeChunks splits at CHUNK_SIZE (CJK-aware).
+          makeChunks(atom.textContent, CHUNK_SIZE).forEach(function(chunk) {
+            var tc = tokenCount(chunk);
+            if (count > 0 && count + tc > CHUNK_SIZE) commit();
+            cur.appendChild(document.createTextNode(chunk));
+            count += tc;
+          });
+        } else {
+          // Inline element (e.g. note-marker): attach to the current chunk
+          // first (post-commit), so the marker lands at the end of a full chunk
+          // rather than becoming the sole occupant of a new 2-3 word chunk.
+          cur.appendChild(atom); // post-commit: append first, then split if full
+          count += tokenCount(atom.textContent || '');
+          if (count >= CHUNK_SIZE) commit();
+        }
       });
-      textNode.parentNode.replaceChild(frag, textNode);
+      commit();
+      block.appendChild(frag);
     });
     return spans;
   }

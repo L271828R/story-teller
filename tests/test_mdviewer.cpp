@@ -263,5 +263,34 @@ int test_mdviewer() {
         }
     }
 
+    // Demo mode must hide the notebook entirely (tab bar disappears) by
+    // calling m_notebook->Hide() and showing the view page directly in the
+    // frame sizer — not just leaving View as the sole tab.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        const std::string sig = "void MDViewerFrame::ApplyDemoMode(";
+        auto pos = code.find(sig);
+        bool hasHide = false, hasShow = false, hasReparent = false;
+        if (pos != std::string::npos) {
+            auto end = code.find("\n}\n", pos);
+            if (end != std::string::npos) {
+                std::string body = code.substr(pos, end - pos);
+                hasHide     = body.find("m_notebook->Hide()") != std::string::npos;
+                hasShow     = body.find("m_notebook->Show()") != std::string::npos;
+                hasReparent = body.find("Reparent") != std::string::npos;
+            }
+        }
+        if (!hasHide || !hasShow || !hasReparent) {
+            std::cerr << "FAIL [demo-mode-no-tab-bar]: ApplyDemoMode must hide "
+                         "m_notebook and reparent m_viewPage into the frame sizer "
+                         "so the tab bar is invisible in demo mode\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [demo-mode-no-tab-bar]\n";
+        }
+    }
+
     return failures;
 }
