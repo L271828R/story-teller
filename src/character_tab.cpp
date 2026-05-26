@@ -241,6 +241,7 @@ void CharacterTab::HandleMessage(const std::string& json) {
     else if (action == "addCharacter")   DoAddCharacter(CtField(json,"category"), CtField(json,"name"));
     else if (action == "deleteCharacter")DoDeleteCharacter(CtField(json,"category"), CtField(json,"name"));
     else if (action == "uploadImage")    DoUploadImage(CtField(json,"name"));
+    else if (action == "renameCharacter")DoRenameCharacter(CtField(json,"oldName"), CtField(json,"newName"));
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -298,6 +299,34 @@ void CharacterTab::DoDeleteCharacter(const std::string& cat, const std::string& 
     m_charDescriptions.erase(name);
     SaveState();
     PushState();
+}
+
+void CharacterTab::DoRenameCharacter(const std::string& oldName, const std::string& newName) {
+    if (oldName.empty() || newName.empty() || oldName == newName) return;
+
+    // Update category map
+    for (auto& kv : m_charsByCategory) {
+        auto& vec = kv.second;
+        auto it = std::find(vec.begin(), vec.end(), oldName);
+        if (it != vec.end()) {
+            *it = newName;
+            break;
+        }
+    }
+    // Update checked and description maps
+    if (m_checkedChars.erase(oldName))
+        m_checkedChars.insert(newName);
+    auto dit = m_charDescriptions.find(oldName);
+    if (dit != m_charDescriptions.end()) {
+        m_charDescriptions[newName] = std::move(dit->second);
+        m_charDescriptions.erase(dit);
+    }
+
+    RenamePersonaImage(oldName, newName);
+    SaveState();
+    PushState();
+
+    if (m_onRename) m_onRename(oldName, newName);
 }
 
 void CharacterTab::DoUploadImage(const std::string& name) {

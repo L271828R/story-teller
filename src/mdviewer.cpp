@@ -1,6 +1,7 @@
 #include "mdviewer.h"
 #include "create_panel.h"
 #include "edit_panel.h"
+#include "editor.h"
 #include "project_panel.h"
 #include "markdown.h"
 #include "html_template.h"
@@ -226,6 +227,23 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── Characters/Personas page ──────────────────────────────────────────
     m_characterTab = new CharacterTab(m_notebook, m_darkMode);
+    m_characterTab->SetOnRenameCharacter([this](const std::string& oldName,
+                                                const std::string& newName) {
+        if (m_filePath.empty()) return;
+        std::string path = m_filePath.ToStdString();
+        std::ifstream in(path);
+        if (!in) return;
+        std::string content((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+        in.close();
+        std::string updated = RenameCharacterInDoc(content, oldName, newName);
+        if (updated == content) return;
+        std::ofstream out(path, std::ios::trunc);
+        if (!out) return;
+        out << updated;
+        out.close();
+        LoadAndRender();
+    });
     m_notebook->AddPage(m_characterTab, "Personas");
 
     // ── Create page ───────────────────────────────────────────────────────

@@ -251,3 +251,24 @@ bool SaveFileOrder(const std::string& projectDir,
     for (const auto& name : files) f << name << "\n";
     return f.good();
 }
+
+std::string RenameCharacterInDoc(const std::string& md,
+                                  const std::string& oldName,
+                                  const std::string& newName) {
+    const std::string needle      = ":::tidbit[" + oldName + "]";
+    const std::string replacement = ":::tidbit[" + newName + "]";
+    std::string result;
+    result.reserve(md.size());
+    size_t pos = 0;
+    while (pos < md.size()) {
+        size_t found = md.find(needle, pos);
+        if (found == std::string::npos) {
+            result += md.substr(pos);
+            break;
+        }
+        result += md.substr(pos, found - pos);
+        result += replacement;
+        pos = found + needle.size();
+    }
+    return result;
+}

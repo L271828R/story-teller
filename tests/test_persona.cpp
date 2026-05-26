@@ -199,5 +199,41 @@ int test_persona() {
         }
     }
 
+    // RenamePersonaImage: renames the image file on disk
+    {
+        // Create a temp personas dir and a fake image file
+        std::string tmpDir = "/tmp/st_persona_rename_test";
+        mkdir(tmpDir.c_str(), 0755);
+        std::string oldFile = tmpDir + "/alice.png";
+        std::string newFile = tmpDir + "/alicia.png";
+        { std::ofstream f(oldFile); f << "fake"; }
+
+        bool ok = RenamePersonaImage("alice", "Alicia", tmpDir);
+        struct stat st;
+        bool newExists = (::stat(newFile.c_str(), &st) == 0);
+        bool oldGone   = (::stat(oldFile.c_str(), &st) != 0);
+
+        if (!ok || !newExists || !oldGone) {
+            std::cerr << "FAIL [rename-persona-image]: ok=" << ok
+                      << " newExists=" << newExists << " oldGone=" << oldGone << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rename-persona-image]\n";
+            ::unlink(newFile.c_str());
+        }
+        ::rmdir(tmpDir.c_str());
+    }
+
+    // RenamePersonaImage returns false when source doesn't exist
+    {
+        bool ok = RenamePersonaImage("nobody", "someone", "/tmp/no_such_dir_st");
+        if (ok) {
+            std::cerr << "FAIL [rename-persona-image-missing]: expected false\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rename-persona-image-missing]\n";
+        }
+    }
+
     return failures;
 }

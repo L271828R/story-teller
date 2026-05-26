@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -8,20 +9,25 @@
 
 class CharacterTab : public wxPanel {
 public:
+    using RenameCallback = std::function<void(const std::string& oldName,
+                                              const std::string& newName)>;
+
     explicit CharacterTab(wxWindow* parent, bool darkMode = false);
 
     void SetDarkMode(bool dark);
     void Activate();   // call when tab is first shown / switched to
+    void SetOnRenameCharacter(RenameCallback cb) { m_onRename = std::move(cb); }
 
     // Called by CreatePanel at generation time.
     std::set<std::string>              GetCheckedChars()     const { return m_checkedChars; }
     std::map<std::string, std::string> GetCharDescriptions() const { return m_charDescriptions; }
 
 private:
-    wxWebView* m_webView         = nullptr;
-    bool       m_darkMode        = false;
-    bool       m_ready           = false;
-    bool       m_pendingActivate = false;
+    wxWebView*     m_webView         = nullptr;
+    bool           m_darkMode        = false;
+    bool           m_ready           = false;
+    bool           m_pendingActivate = false;
+    RenameCallback m_onRename;
 
     std::map<std::string, std::vector<std::string>> m_charsByCategory;
     std::set<std::string>                            m_checkedChars;
@@ -40,4 +46,5 @@ private:
     void DoAddCharacter(const std::string& cat, const std::string& name);
     void DoDeleteCharacter(const std::string& cat, const std::string& name);
     void DoUploadImage(const std::string& name);
+    void DoRenameCharacter(const std::string& oldName, const std::string& newName);
 };

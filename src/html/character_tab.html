@@ -88,6 +88,19 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
   opacity: .35;
 }
 .card-del:hover { color: var(--danger); opacity: 1; }
+.card-ren {
+  position: absolute; top: 6px; left: 26px;
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 13px; line-height: 1; padding: 0;
+  opacity: .35;
+}
+.card-ren:hover { color: var(--accent); opacity: 1; }
+.rename-active { border-color: var(--accent); }
+.rename-inp {
+  width: 100%; border: 1px solid var(--accent); border-radius: 5px;
+  background: var(--surface); color: var(--text); font-size: 12px;
+  padding: 4px 6px; outline: none; font-family: inherit;
+}
 
 .avatar {
   width: 72px; height: 72px; border-radius: 50%;
@@ -154,10 +167,11 @@ var _cats    = {};
 var _imgs    = {};
 var _checked = {};
 var _descs   = {};
-var _cur     = '__all__';
-var _search  = '';
-var _addCat  = false;
-var _addChar = false;
+var _cur      = '__all__';
+var _search   = '';
+var _addCat   = false;
+var _addChar  = false;
+var _renaming = null;
 
 function send(obj) {
   window.webkit.messageHandlers.characters.postMessage(JSON.stringify(obj));
@@ -249,8 +263,19 @@ function renderGrid() {
       : '<span style="background:' + nameColor(name) + '">' +
         esc(name.trim().charAt(0).toUpperCase()) + '</span>';
     var desc = esc(_descs[name] || '');
+    if (_renaming === name) {
+      return '<div class="card rename-active">' +
+        '<div class="pname" style="margin-top:8px">' + esc(name) + '</div>' +
+        '<input class="rename-inp" id="renameInp" value="' + eattr(name) + '" placeholder="New name…"' +
+          ' onkeydown="renameKey(event,\'' + ej(name) + '\')">' +
+        '<div class="add-form-btns">' +
+          '<button class="btn-xs btn-ok" onclick="confirmRename(\'' + ej(name) + '\')">Rename</button>' +
+          '<button class="btn-xs btn-no" onclick="cancelRename()">Cancel</button>' +
+        '</div></div>';
+    }
     return '<div class="card' + (chk ? ' checked' : '') + '">' +
       '<button class="card-del" onclick="delChar(\'' + ej(name) + '\')" title="Remove">✕</button>' +
+      '<button class="card-ren" onclick="startRename(\'' + ej(name) + '\')" title="Rename">✎</button>' +
       '<input type="checkbox" class="card-check"' + (chk ? ' checked' : '') +
         ' onchange="toggleChar(\'' + ej(name) + '\',this.checked)">' +
       '<div class="avatar" onclick="uploadImg(\'' + ej(name) + '\')" title="Upload image">' +
@@ -338,6 +363,27 @@ function saveDesc(name, desc) {
 }
 function uploadImg(name) {
   send({action:'uploadImage', name:name});
+}
+
+function startRename(name) {
+  _renaming = name;
+  renderGrid();
+  setTimeout(function() {
+    var el = document.getElementById('renameInp');
+    if (el) { el.focus(); el.select(); }
+  }, 0);
+}
+function cancelRename() { _renaming = null; renderGrid(); }
+function confirmRename(oldName) {
+  var el = document.getElementById('renameInp');
+  var newName = el ? el.value.trim() : '';
+  if (!newName || newName === oldName) { cancelRename(); return; }
+  _renaming = null;
+  send({action:'renameCharacter', oldName:oldName, newName:newName});
+}
+function renameKey(e, oldName) {
+  if (e.key === 'Enter') confirmRename(oldName);
+  else if (e.key === 'Escape') cancelRename();
 }
 
 function setCharacters(data) {

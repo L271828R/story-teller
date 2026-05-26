@@ -47,3 +47,9 @@ int RefreshedFileSelectionIndex(const std::vector<std::string>& files,
 std::vector<std::string> LoadFileOrder(const std::string& projectDir);
 bool SaveFileOrder(const std::string& projectDir,
                    const std::vector<std::string>& files);
+
+// Returns a copy of md with every :::tidbit[oldName] replaced by :::tidbit[newName].
+// All other content is preserved unchanged.
+std::string RenameCharacterInDoc(const std::string& md,
+                                  const std::string& oldName,
+                                  const std::string& newName);

@@ -226,3 +226,24 @@ std::string AddPersonaImage(const std::string& personaName,
     dst << src.rdbuf();
     return destPath;
 }
+
+bool RenamePersonaImage(const std::string& oldName,
+                        const std::string& newName,
+                        const std::string& personasDir) {
+    std::string dir = personasDir.empty() ? GetPersonasDir() : personasDir;
+    if (dir.empty()) return false;
+
+    std::string oldNorm = NormalizePersonaName(oldName);
+    std::string newNorm = NormalizePersonaName(newName);
+    if (oldNorm.empty() || newNorm.empty()) return false;
+
+    static const char* exts[] = {"jpg", "jpeg", "png", "gif", "webp", nullptr};
+    for (int i = 0; exts[i]; ++i) {
+        std::string src = dir + "/" + oldNorm + "." + exts[i];
+        struct stat st;
+        if (::stat(src.c_str(), &st) != 0) continue;
+        std::string dst = dir + "/" + newNorm + "." + exts[i];
+        return ::rename(src.c_str(), dst.c_str()) == 0;
+    }
+    return false;
+}

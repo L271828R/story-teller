@@ -313,5 +313,48 @@ int test_editor() {
         }
     }
 
+    // RenameCharacterInDoc replaces :::tidbit[OldName] with :::tidbit[NewName]
+    {
+        std::string md =
+            "# Chapter 1\n\n"
+            ":::tidbit[Alice]\n"
+            "She said hello.\n"
+            ":::\n\n"
+            ":::tidbit[Bob]\n"
+            "He replied.\n"
+            ":::\n\n"
+            ":::tidbit[Alice]\n"
+            "She waved goodbye.\n"
+            ":::\n";
+        std::string renamed = RenameCharacterInDoc(md, "Alice", "Alicia");
+        bool aliceGone  = renamed.find(":::tidbit[Alice]")  == std::string::npos;
+        bool aliciaHere = renamed.find(":::tidbit[Alicia]") != std::string::npos;
+        bool bobUntouched = renamed.find(":::tidbit[Bob]")  != std::string::npos;
+        // Should appear twice (both Alice blocks renamed)
+        size_t count = 0;
+        size_t pos = 0;
+        while ((pos = renamed.find(":::tidbit[Alicia]", pos)) != std::string::npos) { ++count; pos += 1; }
+        if (!aliceGone || !aliciaHere || !bobUntouched || count != 2) {
+            std::cerr << "FAIL [rename-character-in-doc]: aliceGone=" << aliceGone
+                      << " aliciaHere=" << aliciaHere << " bobUntouched=" << bobUntouched
+                      << " count=" << count << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rename-character-in-doc]\n";
+        }
+    }
+
+    // RenameCharacterInDoc with no occurrences returns doc unchanged
+    {
+        std::string md = "# Chapter\n\n:::tidbit[Bob]\nHello.\n:::\n";
+        std::string result = RenameCharacterInDoc(md, "Alice", "Alicia");
+        if (result != md) {
+            std::cerr << "FAIL [rename-character-no-match]: doc was mutated\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rename-character-no-match]\n";
+        }
+    }
+
     return failures;
 }

@@ -34,3 +34,10 @@ std::string AddPersonaImage(const std::string& personaName,
 // each file in memory. Entries that can't be read are omitted.
 std::map<std::string, std::string> ToDataURLs(
     const std::map<std::string, std::string>& fileUrls);
+
+// Rename a persona's image file from NormalizePersonaName(oldName).* to
+// NormalizePersonaName(newName).* inside personasDir (defaults to GetPersonasDir()).
+// Returns true if a file was found and renamed, false otherwise.
+bool RenamePersonaImage(const std::string& oldName,
+                        const std::string& newName,
+                        const std::string& personasDir = "");
