@@ -59,6 +59,7 @@ wxBEGIN_EVENT_TABLE(MDViewerFrame, wxFrame)
     EVT_MENU(ID_MANAGE_IMAGES,        MDViewerFrame::OnManageImages)
     EVT_MENU(ID_HIDE_CHAT_BUBBLES,   MDViewerFrame::OnHideChatBubbles)
     EVT_MENU(ID_DEMO_MODE,           MDViewerFrame::OnDemoMode)
+    EVT_MENU(ID_SOCIAL_TAB,          MDViewerFrame::OnToggleSocialTab)
     EVT_MENU(wxID_CLOSE,     MDViewerFrame::OnExit)
     EVT_MENU(wxID_EXIT,      MDViewerFrame::OnExit)
     EVT_CLOSE(               MDViewerFrame::OnClose)
@@ -138,6 +139,9 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     view->AppendCheckItem(ID_HIDE_CHAT_BUBBLES, "Hide Chat &Bubbles");
     view->Check(ID_HIDE_CHAT_BUBBLES, !m_showChatBubbles);
     view->AppendCheckItem(ID_DEMO_MODE, "&Demo Mode");
+    view->AppendSeparator();
+    view->AppendCheckItem(ID_SOCIAL_TAB, "&Social Tab");
+    view->Check(ID_SOCIAL_TAB, true);  // LoadTabVisibility() corrects this below
     bar->Append(view, "&View");
 
     SetMenuBar(bar);
@@ -281,6 +285,10 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     m_quizTab = new QuizTab(m_notebook, m_darkMode);
     m_notebook->AddPage(m_quizTab, "Quiz");
 
+    // ── Social/Packaging page ─────────────────────────────────────────────
+    m_socialTab = new SocialTab(m_notebook, m_darkMode);
+    m_notebook->AddPage(m_socialTab, "Social");
+
     // ── Edit page ─────────────────────────────────────────────────────────
     m_editPage = new EditPanel(m_notebook,
         [this](const std::string& path) { LoadFile(path); }, m_darkMode);
@@ -298,6 +306,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         {0, "Images",   m_imageTab},
         {0, "Prompts",  m_promptsTab},
         {0, "Quiz",     m_quizTab},
+        {ID_SOCIAL_TAB, "Social",   m_socialTab},
         {0, "Edit",     m_editPage},
         {0, "View",     m_viewPage},
     };
@@ -318,6 +327,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
             m_quizTab->Reload();
         else if (m_promptsTab && page == m_promptsTab)
             m_promptsTab->Reload();
+        else if (m_socialTab && page == m_socialTab)
+            m_socialTab->Reload();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────
@@ -328,6 +339,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
     if (m_demoMode) {
         ApplyDemoMode(true);
         GetMenuBar()->Check(ID_DEMO_MODE, true);
+    } else {
+        LoadTabVisibility();
     }
 
     // Size to fit the display, with a comfortable margin so the title bar
@@ -349,10 +362,12 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
         if (!m_filePath.empty()) {
             std::string basename = wxFileName(m_filePath).GetFullName().ToStdString();
             std::string projDir  = CurrentProjectDir();
-            if (m_imageTab) m_imageTab->SetProject(projDir, basename,
+            if (m_imageTab)  m_imageTab->SetProject(projDir, basename,
+                                                    [this]{ LoadAndRender(); });
+            if (m_quizTab)   m_quizTab->SetProject(projDir, basename,
                                                    [this]{ LoadAndRender(); });
-            if (m_quizTab)  m_quizTab->SetProject(projDir, basename,
-                                                  [this]{ LoadAndRender(); });
+            if (m_socialTab) m_socialTab->SetProject(projDir, basename,
+                                                     [this]{ LoadAndRender(); });
         }
         LoadAndRender();
     });
@@ -496,6 +511,11 @@ void MDViewerFrame::LoadFile(const std::string& path) {
         m_quizTab->SetProject(CurrentProjectDir(), basename,
                               [this]{ LoadAndRender(); });
     }
+    if (m_socialTab) {
+        std::string basename = wxFileName(m_filePath).GetFullName().ToStdString();
+        m_socialTab->SetProject(CurrentProjectDir(), basename,
+                                [this]{ LoadAndRender(); });
+    }
     wxConfig("MDViewer").Write("lastFile", m_filePath);
     if (m_notebook->GetPageCount() > 0)
         m_notebook->SetSelection(m_notebook->GetPageCount() - 1);  // View is always last
@@ -517,6 +537,7 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         if (m_imageTab)      m_imageTab->SetDarkMode(false);
         if (m_quizTab)       m_quizTab->SetDarkMode(false);
         if (m_promptsTab)    m_promptsTab->SetDarkMode(false);
+        if (m_socialTab)     m_socialTab->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -534,6 +555,7 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         if (m_imageTab)      m_imageTab->SetDarkMode(true);
         if (m_quizTab)       m_quizTab->SetDarkMode(true);
         if (m_promptsTab)    m_promptsTab->SetDarkMode(true);
+        if (m_socialTab)     m_socialTab->SetDarkMode(true);
         LoadAndRender();
     }
 }
@@ -623,6 +645,7 @@ void MDViewerFrame::ApplyDemoMode(bool demo) {
             m_notebook->InsertPage(insertAt, m_tabs[i].page, m_tabs[i].label, false);
             m_tabs[i].visible = true;
         }
+        LoadTabVisibility();  // re-apply per-tab user preferences
         Layout();
     }
 }
@@ -632,6 +655,48 @@ void MDViewerFrame::OnDemoMode(wxCommandEvent& evt) {
     ApplyDemoMode(m_demoMode);
     wxConfig cfg("MDViewer");
     cfg.Write("demoMode", m_demoMode);
+}
+
+void MDViewerFrame::SaveTabVisibility() const {
+    if (m_demoMode) return;
+    wxConfig cfg("MDViewer");
+    for (const auto& t : m_tabs)
+        cfg.Write("tabVisible_" + t.label, t.visible);
+}
+
+void MDViewerFrame::LoadTabVisibility() {
+    wxConfig cfg("MDViewer");
+    for (int i = 0; i < (int)m_tabs.size(); ++i) {
+        bool want = cfg.ReadBool("tabVisible_" + m_tabs[i].label, true);
+        if (!want && m_tabs[i].visible) {
+            int idx = m_notebook->FindPage(m_tabs[i].page);
+            if (idx != wxNOT_FOUND) m_notebook->RemovePage(idx);
+            m_tabs[i].visible = false;
+        }
+        if (m_tabs[i].menuId)
+            GetMenuBar()->Check(m_tabs[i].menuId, m_tabs[i].visible);
+    }
+}
+
+void MDViewerFrame::OnToggleSocialTab(wxCommandEvent& evt) {
+    bool show = evt.IsChecked();
+    for (int i = 0; i < (int)m_tabs.size(); ++i) {
+        if (m_tabs[i].label != "Social") continue;
+        if (show && !m_tabs[i].visible) {
+            std::vector<bool> vis;
+            for (const auto& t : m_tabs) vis.push_back(t.visible);
+            vis[i] = true;
+            m_notebook->InsertPage(TabInsertPosition(vis, i),
+                                   m_tabs[i].page, m_tabs[i].label, false);
+            m_tabs[i].visible = true;
+        } else if (!show && m_tabs[i].visible) {
+            int idx = m_notebook->FindPage(m_tabs[i].page);
+            if (idx != wxNOT_FOUND) m_notebook->RemovePage(idx);
+            m_tabs[i].visible = false;
+        }
+        break;
+    }
+    SaveTabVisibility();
 }
 
 void MDViewerFrame::OnHideChatBubbles(wxCommandEvent& evt) {

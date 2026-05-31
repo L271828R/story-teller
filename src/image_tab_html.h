@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <map>
 
 struct ImageTabDoc {
     std::string              name;     // filename, e.g. "chapter1.md"
@@ -11,8 +12,10 @@ struct ImageTabDoc {
 // images:      list of (filename, base64-data-url) pairs already in the project.
 // docs:        all .md files in the project with their headings.
 // selectedDoc: filename of the doc pre-selected in the dropdown.
+// captions:    map of filename → caption text (may be empty).
 std::string BuildImageTabHTML(
     const std::vector<std::pair<std::string,std::string>>& images,
     const std::vector<ImageTabDoc>& docs,
     const std::string& selectedDoc,
-    bool darkMode);
+    bool darkMode,
+    const std::map<std::string,std::string>& captions = {});

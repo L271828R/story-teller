@@ -16,6 +16,7 @@
 #include "image_tab.h"
 #include "quiz_tab.h"
 #include "prompts_tab.h"
+#include "social_tab.h"
 #include "project_panel.h"
 #include "chat_panel.h"
 #include "monitor_panel.h"
@@ -42,6 +43,7 @@ enum {
     ID_MANAGE_IMAGES,
     ID_HIDE_CHAT_BUBBLES,
     ID_DEMO_MODE,
+    ID_SOCIAL_TAB,
 };
 
 class MDViewerFrame : public wxFrame {
@@ -67,6 +69,7 @@ private:
     ImageTab*      m_imageTab       = nullptr;
     QuizTab*       m_quizTab        = nullptr;
     PromptsTab*    m_promptsTab     = nullptr;
+    SocialTab*     m_socialTab      = nullptr;
     wxWebView*    m_webView;
     wxString      m_filePath;
     bool          m_darkMode;
@@ -105,6 +108,7 @@ private:
     void OnManageImages(wxCommandEvent& evt);
     void OnHideChatBubbles(wxCommandEvent& evt);
     void OnDemoMode(wxCommandEvent& evt);
+    void OnToggleSocialTab(wxCommandEvent& evt);
     void ApplyDemoMode(bool demo);
     void OnReload(wxCommandEvent& evt);
     void OnThemeLight(wxCommandEvent& evt);

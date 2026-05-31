@@ -98,6 +98,7 @@ foreach(_PANEL IN ITEMS
     "image_tab||image_tab_html_data"
     "quiz_tab||quiz_tab_html_data"
     "prompts_tab||prompts_tab_html_data"
+    "social_tab||social_tab_html_data"
 )
     string(REPLACE "||" ";" _P "${_PANEL}")
     list(GET _P 0 _STEM)
@@ -164,6 +165,11 @@ set(SOURCES
     src/prompts_tab_html.cpp
     src/prompts_tab.cpp
     src/prompt_store.cpp
+    src/social_tab_html.cpp
+    src/social_tab.cpp
+    src/social.cpp
+    src/social_results.cpp
+    src/image_captions.cpp
     src/character_tab.cpp
     src/character_tab_html.cpp
     src/thumbnail.cpp
@@ -214,6 +220,14 @@ add_executable(test_story-teller
     tests/test_prompts_tab_html.cpp
     src/prompts_tab_html.cpp
     src/prompt_store.cpp
+    tests/test_social.cpp
+    tests/test_social_tab_html.cpp
+    src/social_tab_html.cpp
+    src/social.cpp
+    tests/test_image_captions.cpp
+    src/image_captions.cpp
+    tests/test_social_results.cpp
+    src/social_results.cpp
     src/persona.cpp
     src/persona_panel_html.cpp
     src/character_tab_html.cpp

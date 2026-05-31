@@ -1,6 +1,7 @@
 #include "image_tab.h"
 #include "image_tab_html.h"
 #include "images.h"
+#include "image_captions.h"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -153,7 +154,8 @@ void ImageTab::Reload() {
                       return a.name < b.name; });
     }
 
-    std::string html = BuildImageTabHTML(imgPairs, docs, m_selectedDoc, m_darkMode);
+    auto caps = LoadImageCaptions(m_projectDir);
+    std::string html = BuildImageTabHTML(imgPairs, docs, m_selectedDoc, m_darkMode, caps);
     m_webView->SetPage(wxString::FromUTF8(html), "");
 }
 
@@ -263,6 +265,12 @@ void ImageTab::OnScriptMessage(wxWebViewEvent& evt) {
         md = RemoveImageAnchor(md, filename);
         writeFile(docPath, md);
         if (m_onChanged) m_onChanged();
+
+    } else if (action == "setcaption") {
+        std::string filename = jfField(payload, "filename");
+        std::string caption  = jfField(payload, "caption");
+        if (filename.empty() || m_projectDir.empty()) return;
+        SaveImageCaption(m_projectDir, filename, caption);
 
     } else if (action == "remove") {
         // Remove the image file from disk and remove its anchor from all docs

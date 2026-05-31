@@ -1,5 +1,6 @@
 #include "../src/image_tab_html.h"
 #include <iostream>
+#include <map>
 #include <string>
 
 int test_image_tab_html() {
@@ -83,6 +84,22 @@ int test_image_tab_html() {
     // Remove-anchor action: remove anchor from doc but keep file in project
     check("image-tab-remove-anchor-action",
           light.find("removeanchor") != std::string::npos);
+
+    // Caption field: LLM context field present
+    check("image-tab-caption-field",
+          light.find("caption") != std::string::npos);
+
+    // Captions are injected into JS data
+    {
+        std::map<std::string,std::string> caps = {{"photo.jpg","Darwin portrait"}};
+        std::string h = BuildImageTabHTML(imgs, docs, "chapter1.md", false, caps);
+        check("image-tab-captions-injected",
+              h.find("Darwin portrait") != std::string::npos);
+    }
+
+    // setcaption action present
+    check("image-tab-setcaption-action",
+          light.find("setcaption") != std::string::npos);
 
     return failures;
 }

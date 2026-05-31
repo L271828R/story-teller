@@ -92,6 +92,21 @@ button.place-btn:disabled{opacity:.4;cursor:default}
     <div class="selected-label" id="sel-label">No image selected</div>
 
     <div class="field">
+      <div class="field-label">Caption for AI (LLM context only)</div>
+      <textarea id="caption-field" rows="3"
+        style="width:100%;background:var(--btn);color:var(--text);
+               border:1px solid var(--btn-border);border-radius:6px;
+               padding:5px 7px;font-size:12px;font-family:inherit;
+               resize:vertical;outline:none"
+        placeholder="Describe what the image shows…" disabled></textarea>
+      <button id="caption-save-btn" disabled
+              style="margin-top:5px;width:100%;background:var(--btn);color:var(--text);
+                     border:1px solid var(--btn-border);border-radius:6px;
+                     padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"
+              onclick="saveCaption()">Save Caption</button>
+    </div>
+
+    <div class="field">
       <div class="field-label">Document</div>
       <select id="doc-sel"></select>
     </div>
@@ -136,10 +151,11 @@ button.place-btn:disabled{opacity:.4;cursor:default}
 </div>
 
 <script>
-var _images  = {{IMGS_LIST_JS}};
-var _docs    = {{DOCS_JS}};
-var _selDoc  = {{SEL_DOC_JS}};
-var _selName = '';
+var _images   = {{IMGS_LIST_JS}};
+var _docs     = {{DOCS_JS}};
+var _selDoc   = {{SEL_DOC_JS}};
+var _captions = {{CAPTIONS_JS}};
+var _selName  = '';
 
 function post(msg) {
   if (window.webkit && window.webkit.messageHandlers &&
@@ -191,9 +207,22 @@ function selectImage(name) {
   document.getElementById('addsection-btn').disabled = !hasName;
   document.getElementById('resize-btn').disabled = !hasName;
   document.getElementById('removeanchor-btn').disabled = !hasName;
+  var captField = document.getElementById('caption-field');
+  var captBtn   = document.getElementById('caption-save-btn');
+  captField.disabled = !hasName;
+  captBtn.disabled   = !hasName;
+  captField.value    = hasName ? (_captions[name] || '') : '';
   document.querySelectorAll('.img-card').forEach(function(c) {
     c.classList.toggle('selected', c.dataset.name === name);
   });
+}
+
+function saveCaption() {
+  if (!_selName) return;
+  var caption = document.getElementById('caption-field').value.trim();
+  _captions[_selName] = caption;
+  post({action:'setcaption', filename:_selName, caption:caption});
+  setStatus('Caption saved for ' + _selName);
 }
 
 function renderGrid() {

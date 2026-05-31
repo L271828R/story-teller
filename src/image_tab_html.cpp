@@ -2,6 +2,7 @@
 #include "html_subst.h"
 #include "image_tab_html_data.h"
 #include <cstdio>
+#include <map>
 #include <string>
 
 static std::string itq(const std::string& s) {
@@ -21,7 +22,8 @@ std::string BuildImageTabHTML(
     const std::vector<std::pair<std::string,std::string>>& images,
     const std::vector<ImageTabDoc>& docs,
     const std::string& selectedDoc,
-    bool darkMode)
+    bool darkMode,
+    const std::map<std::string,std::string>& captions)
 {
     std::string imgsJS = "[";
     for (size_t i = 0; i < images.size(); ++i) {
@@ -45,9 +47,19 @@ std::string BuildImageTabHTML(
 
     std::string html(reinterpret_cast<const char*>(image_tab_html_data),
                      image_tab_html_data_len);
+    std::string capsJS = "{";
+    bool firstCap = true;
+    for (const auto& kv : captions) {
+        if (!firstCap) capsJS += ",";
+        firstCap = false;
+        capsJS += itq(kv.first) + ":" + itq(kv.second);
+    }
+    capsJS += "}";
+
     htmlSubst(html, "{{BODY_CLASS}}",    darkMode ? "dark" : "");
     htmlSubst(html, "{{IMGS_LIST_JS}}", imgsJS);
     htmlSubst(html, "{{DOCS_JS}}",      docsJS);
     htmlSubst(html, "{{SEL_DOC_JS}}",   itq(selectedDoc));
+    htmlSubst(html, "{{CAPTIONS_JS}}",  capsJS);
     return html;
 }

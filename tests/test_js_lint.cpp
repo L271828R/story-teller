@@ -6,6 +6,7 @@
 #include "../src/image_tab_html.h"
 #include "../src/quiz_tab_html.h"
 #include "../src/prompts_tab_html.h"
+#include "../src/social_tab_html.h"
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -64,6 +65,7 @@ int test_js_lint() {
     check("image-tab",     lint_js("image_tab",     BuildImageTabHTML({}, {}, "", false)));
     check("quiz-tab",      lint_js("quiz_tab",      BuildQuizTabHTML({}, "", false)));
     check("prompts-tab",   lint_js("prompts_tab",   BuildPromptsTabHTML({}, false)));
+    check("social-tab",    lint_js("social_tab",    BuildSocialTabHTML({}, "", false)));
 
     return failures;
 }
