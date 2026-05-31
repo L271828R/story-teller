@@ -1,6 +1,8 @@
 #pragma once
 #include <map>
 #include <string>
+#include <vector>
+#include "conversation.h"
 
 // Wraps a rendered body in a full HTML page with CSS, Mermaid.js,
 // highlight.js, and runtime font-size / dark-mode controls.
@@ -19,3 +21,11 @@ std::string BuildHTML(const std::string& body,
 std::string BuildLogsHTML(const std::string& rawLog,
                            const std::string& logPath,
                            bool darkMode);
+
+// Renders the chat panel HTML page for the given turns / state.
+// pendingQ is non-empty while the LLM is in flight (shows a spinner).
+// Pure function — no wxWidgets dependency, directly unit-testable.
+std::string BuildChatHTML(const std::string& chTitle,
+                          const std::vector<ConversationTurn>& turns,
+                          const std::string& pendingQ,
+                          bool darkMode);

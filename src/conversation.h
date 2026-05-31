@@ -35,9 +35,3 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::vector<ConversationTurn>& history,
                           const std::string& question);
 
-// Render the chat panel HTML page for the given turns / state.
-// pendingQ is non-empty while the LLM is in flight (shows a spinner).
-std::string BuildChatHTML(const std::string& chTitle,
-                          const std::vector<ConversationTurn>& turns,
-                          const std::string& pendingQ,
-                          bool darkMode);

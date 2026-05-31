@@ -1,4 +1,5 @@
 #include "conversation.h"
+#include "html_template.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -264,6 +265,87 @@ int test_conversation() {
         } else {
             std::cout << "PASS [chat-answer-list]\n";
         }
+    }
+
+    // AppendTurn: chId=-1 (document chat) persists even without a <!-- ch:-1 --> marker
+    {
+        auto tmp = fs::temp_directory_path() / "test_conv_doc_chat.md";
+        std::ofstream f(tmp);
+        f << "<!-- ch:0 -->\n## Chapter 1\n\nContent.\n";
+        f.close();
+
+        ConversationTurn t{"What is this about?", "It is about testing."};
+        bool ok = AppendTurn(tmp.string(), -1, "Document", t);
+        if (!ok) {
+            std::cerr << "FAIL [append-turn-doc-chat]: AppendTurn returned false for chId=-1\n";
+            ++failures;
+        } else {
+            auto loaded = LoadConversation(tmp.string(), -1);
+            if (loaded.size() != 1
+                || loaded[0].question != t.question
+                || loaded[0].answer   != t.answer) {
+                std::cerr << "FAIL [append-turn-doc-chat]: loaded " << loaded.size() << " turns\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [append-turn-doc-chat]\n";
+            }
+        }
+        fs::remove(tmp);
+    }
+
+    // AppendTurn: chId=-1 second turn appends to existing block
+    {
+        auto tmp = fs::temp_directory_path() / "test_conv_doc_chat2.md";
+        std::ofstream f(tmp);
+        f << "<!-- ch:0 -->\n## Chapter 1\n\nContent.\n";
+        f.close();
+
+        ConversationTurn t1{"First question?", "First answer."};
+        ConversationTurn t2{"Second question?", "Second answer."};
+        AppendTurn(tmp.string(), -1, "Document", t1);
+        bool ok = AppendTurn(tmp.string(), -1, "Document", t2);
+        if (!ok) {
+            std::cerr << "FAIL [append-turn-doc-chat-second]: AppendTurn returned false\n";
+            ++failures;
+        } else {
+            auto loaded = LoadConversation(tmp.string(), -1);
+            if (loaded.size() != 2
+                || loaded[0].question != t1.question
+                || loaded[1].question != t2.question) {
+                std::cerr << "FAIL [append-turn-doc-chat-second]: loaded " << loaded.size() << " turns\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [append-turn-doc-chat-second]\n";
+            }
+        }
+        fs::remove(tmp);
+    }
+
+    // DeleteTurn: chId=-1 delete works after persistence
+    {
+        auto tmp = fs::temp_directory_path() / "test_conv_doc_chat_del.md";
+        std::ofstream f(tmp);
+        f << "<!-- ch:0 -->\n## Chapter 1\n\nContent.\n";
+        f.close();
+
+        ConversationTurn t1{"First?", "First answer."};
+        ConversationTurn t2{"Second?", "Second answer."};
+        AppendTurn(tmp.string(), -1, "Document", t1);
+        AppendTurn(tmp.string(), -1, "Document", t2);
+        bool ok = DeleteTurn(tmp.string(), -1, 0);
+        if (!ok) {
+            std::cerr << "FAIL [delete-turn-doc-chat]: DeleteTurn returned false\n";
+            ++failures;
+        } else {
+            auto loaded = LoadConversation(tmp.string(), -1);
+            if (loaded.size() != 1 || loaded[0].question != "Second?") {
+                std::cerr << "FAIL [delete-turn-doc-chat]: loaded " << loaded.size() << " turns\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [delete-turn-doc-chat]\n";
+            }
+        }
+        fs::remove(tmp);
     }
 
     return failures;

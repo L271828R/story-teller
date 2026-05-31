@@ -140,7 +140,6 @@ set(SOURCES
     src/project_search.cpp
     src/creator.cpp
     src/conversation.cpp
-    src/chat_frame.cpp
     src/chat_panel.cpp
     src/editor.cpp
     src/notes.cpp

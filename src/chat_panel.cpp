@@ -1,5 +1,6 @@
 #include "chat_panel.h"
 #include "conversation.h"
+#include "html_template.h"
 #include "llm.h"
 #include "config.h"
 #include "meta.h"
