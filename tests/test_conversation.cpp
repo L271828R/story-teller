@@ -1,5 +1,6 @@
 #include "conversation.h"
 #include "html_template.h"
+#include "markdown.h"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -203,6 +204,37 @@ int test_conversation() {
         }
     }
 
+    // BuildChatHTML: chatSend JS must JSON.stringify the text so that newlines
+    // survive the WKWebView postMessage bridge (plain postMessage strips \n).
+    {
+        std::vector<ConversationTurn> turns;
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasJsonStringify = html.find("JSON.stringify") != std::string::npos;
+        if (!hasJsonStringify) {
+            std::cerr << "FAIL [chat-html-json-send]: chatSend JS does not use JSON.stringify\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-html-json-send]\n";
+        }
+    }
+
+    // BuildChatHTML: <pre> blocks must have a background and hljs must run.
+    {
+        std::vector<ConversationTurn> turns;
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        bool hasPreCSS  = html.find("pre{") != std::string::npos ||
+                          html.find("pre {") != std::string::npos;
+        bool hasHljs    = html.find("hljs") != std::string::npos;
+        if (!hasPreCSS || !hasHljs) {
+            std::cerr << "FAIL [chat-html-pre-hljs]:"
+                      << " hasPreCSS=" << hasPreCSS
+                      << " hasHljs=" << hasHljs << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-html-pre-hljs]\n";
+        }
+    }
+
     // BuildChatHTML: textarea and button must be disabled when pendingQ is set (LLM in flight).
     {
         std::vector<ConversationTurn> turns = {{"Hi", "Hello!"}};
@@ -346,6 +378,73 @@ int test_conversation() {
             }
         }
         fs::remove(tmp);
+    }
+
+    // RenderMarkdown: python fence with no blank line before it must still produce <pre><code>.
+    {
+        std::string q = "can you map this:\n```python\nprint(\"hello world\")\nval = 5 * 2\n```";
+        std::string html = RenderMarkdown(q);
+        bool hasPre     = html.find("<pre>") != std::string::npos;
+        bool hasCode    = html.find("<code") != std::string::npos;
+        bool noRawFence = html.find("```") == std::string::npos;
+        if (!hasPre || !hasCode || !noRawFence) {
+            std::cerr << "FAIL [chat-python-fence]:"
+                      << " hasPre=" << hasPre
+                      << " hasCode=" << hasCode
+                      << " noRawFence=" << noRawFence
+                      << "\n  html: " << html.substr(0, 300) << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-python-fence]\n";
+        }
+    }
+
+    // BuildChatHTML: question bubble must render markdown, not raw text.
+    // A code fence in the question must produce <pre><code>, not literal backticks.
+    // Check only the <body> section — hljs JS/CSS in <head> legitimately contains backticks.
+    {
+        std::vector<ConversationTurn> turns = {{
+            "can you map this:\n\n```text\n 19 x 3,\nstep 1: 3*9=27\n```",
+            "ok"
+        }};
+        std::string html = BuildChatHTML("Ch1", turns, "", false);
+        size_t bodyPos  = html.find("<body>");
+        std::string body = bodyPos != std::string::npos ? html.substr(bodyPos) : html;
+        bool hasPre     = body.find("<pre>") != std::string::npos;
+        bool hasCode    = body.find("<code") != std::string::npos;
+        bool hasContent = body.find("19 x 3") != std::string::npos;
+        bool noRawFence = body.find("```") == std::string::npos;
+        if (!hasPre || !hasCode || !hasContent || !noRawFence) {
+            std::cerr << "FAIL [chat-question-markdown]:"
+                      << " hasPre=" << hasPre
+                      << " hasCode=" << hasCode
+                      << " hasContent=" << hasContent
+                      << " noRawFence=" << noRawFence << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-question-markdown]\n";
+        }
+    }
+
+    // BuildChatHTML: pending question bubble must also render markdown.
+    {
+        std::vector<ConversationTurn> turns;
+        std::string pendingQ = "map this:\n\n```text\n 19 x 3\n```";
+        std::string html = BuildChatHTML("Ch1", turns, pendingQ, false);
+        size_t bodyPos  = html.find("<body>");
+        std::string body = bodyPos != std::string::npos ? html.substr(bodyPos) : html;
+        bool hasPre     = body.find("<pre>") != std::string::npos;
+        bool hasCode    = body.find("<code") != std::string::npos;
+        bool noRawFence = body.find("```") == std::string::npos;
+        if (!hasPre || !hasCode || !noRawFence) {
+            std::cerr << "FAIL [chat-pending-question-markdown]:"
+                      << " hasPre=" << hasPre
+                      << " hasCode=" << hasCode
+                      << " noRawFence=" << noRawFence << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-pending-question-markdown]\n";
+        }
     }
 
     return failures;

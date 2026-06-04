@@ -1,0 +1,10 @@
+can you take this manual exercise and map it to the code you suggested: 
+
+```text
+
+ 19 x 3, 
+step 1: 3 * 9 = 27 [ 2 = carry, 7 remainder ], 
+step 2: 10 * 3 = 30 + carry (2 * 10) = 50, 
+step 3: 50 + 7 = 57 // [5,7] 
+
+```

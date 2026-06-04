@@ -1210,13 +1210,13 @@ std::string BuildChatHTML(const std::string& chTitle,
         body += "<div class='turn'>"
                 "<button class='del-btn' onclick='delTurn(" + i + ")' "
                 "title='Delete this exchange'>\xc3\x97</button>"
-                "<div class='q'>" + EscapeHTML(t.question) + "</div>"
+                "<div class='q'>" + RenderMarkdown(t.question) + "</div>"
                 "<div class='a'>" + RenderMarkdown(t.answer) + "</div>"
                 "</div>\n";
     }
     if (!pendingQ.empty()) {
         body += "<div class='turn'>"
-                "<div class='q'>" + EscapeHTML(pendingQ) + "</div>"
+                "<div class='q'>" + RenderMarkdown(pendingQ) + "</div>"
                 "<div class='a thinking'>&#x22EF;</div>"
                 "</div>\n";
     }
@@ -1253,7 +1253,13 @@ std::string BuildChatHTML(const std::string& chTitle,
            ".a li { margin-bottom: .2em; }"
            ".thinking { color: " + mutedC + "; font-style: italic; }"
            ".empty { color: " + mutedC + "; font-style: italic; padding: 8px 0; }"
-           "code { background: rgba(128,128,128,.15); padding: .15em .35em; border-radius: 3px; }"
+           "code { font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;"
+           "  font-size:85%; background: rgba(128,128,128,.15); padding: .15em .35em; border-radius: 3px; }"
+           "pre { background: " + (darkMode ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.06)") + ";"
+           "  border-radius: 6px; padding: 12px; overflow-x: auto; margin: 8px 0;"
+           "  font-weight: normal; }"
+           "pre code { background: none; padding: 0; font-size: 87.5%; border: none; }"
+           ".hljs { background: transparent; }"
            "#chat-input { position:fixed; bottom:0; left:0; right:0;"
            "  background:" + bg + "; border-top:1px solid " + borderC + ";"
            "  padding:6px 8px; z-index:50; display:flex; gap:6px; align-items:flex-end; }"
@@ -1269,6 +1275,8 @@ std::string BuildChatHTML(const std::string& chTitle,
            "#chat-send:disabled { opacity:.38; cursor:default;"
            "  background:" + inputBg + "; color:" + mutedC + "; border-color:" + borderC + "; }"
            "</style>"
+           "<style>" + (darkMode ? GetHighlightCSSDark() : GetHighlightCSSLight()) + "</style>"
+           "<script>" + GetHighlightJS() + "</script>"
            "<script>"
            "function delTurn(i){"
            "if(window.webkit&&window.webkit.messageHandlers&&"
@@ -1280,7 +1288,7 @@ std::string BuildChatHTML(const std::string& chTitle,
            "if(!txt)return;"
            "if(window.webkit&&window.webkit.messageHandlers&&"
            "window.webkit.messageHandlers.chatSend)"
-           "window.webkit.messageHandlers.chatSend.postMessage(txt);"
+           "window.webkit.messageHandlers.chatSend.postMessage(JSON.stringify(txt));"
            "if(t)t.value='';}"
            "</script>"
            "</head><body>" + body +
@@ -1292,6 +1300,7 @@ std::string BuildChatHTML(const std::string& chTitle,
            "});"
            "if(!a.disabled){a.focus();}"
            "window.scrollTo(0,document.body.scrollHeight);"
+           "if(typeof hljs!=='undefined')hljs.highlightAll();"
            "})();</script>"
            "</body></html>";
 }

@@ -171,12 +171,16 @@ std::string RenderMarkdown(const std::string& md) {
 
     auto getFenceInfo = [](const std::string& line) -> std::pair<bool, std::string> {
         if (line.size() < 3) return {false, ""};
-        char fc = line[0];
+        // Allow up to 3 leading spaces (CommonMark §4.5)
+        size_t start = 0;
+        while (start < 3 && start < line.size() && line[start] == ' ') ++start;
+        if (start >= line.size()) return {false, ""};
+        char fc = line[start];
         if (fc != '`' && fc != '~') return {false, ""};
         size_t cnt = 0;
-        while (cnt < line.size() && line[cnt] == fc) cnt++;
+        while (start + cnt < line.size() && line[start + cnt] == fc) cnt++;
         if (cnt < 3) return {false, ""};
-        std::string lang = line.substr(cnt);
+        std::string lang = line.substr(start + cnt);
         while (!lang.empty() && (lang.front() == ' ' || lang.front() == '\t')) lang.erase(lang.begin());
         while (!lang.empty() && (lang.back() == ' ' || lang.back() == '\r')) lang.pop_back();
         return {true, lang};

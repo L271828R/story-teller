@@ -4,6 +4,7 @@
 #include "llm.h"
 #include "config.h"
 #include "meta.h"
+#include "logger.h"
 #include <chrono>
 #include <filesystem>
 #include <thread>
@@ -93,11 +94,40 @@ void ChatPanel::Render(const std::string& pendingQ) {
     m_webView->SetPage(wxString::FromUTF8(html), wxEmptyString);
 }
 
+// Decode a JSON-stringified plain string: strip surrounding quotes, unescape \n \t etc.
+static std::string DecodeJsonString(const std::string& s) {
+    if (s.size() < 2 || s.front() != '"' || s.back() != '"') return s;
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 1; i + 1 < s.size(); ++i) {
+        if (s[i] == '\\' && i + 2 < s.size()) {
+            char e = s[i + 1];
+            switch (e) {
+                case '"':  out += '"';  ++i; break;
+                case '\\': out += '\\'; ++i; break;
+                case 'n':  out += '\n'; ++i; break;
+                case 'r':  out += '\r'; ++i; break;
+                case 't':  out += '\t'; ++i; break;
+                default:   out += e;   ++i; break;
+            }
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 void ChatPanel::OnScriptMessage(wxWebViewEvent& evt) {
     const wxString handler = evt.GetMessageHandler();
     if (handler == "chatSend") {
-        std::string question = evt.GetString().Trim().ToStdString();
+        std::string question = DecodeJsonString(evt.GetString().ToStdString());
+        // Trim leading/trailing whitespace
+        while (!question.empty() && (question.front() == ' ' || question.front() == '\t'))
+            question.erase(question.begin());
+        while (!question.empty() && (question.back() == ' '  || question.back() == '\t'
+                                  || question.back() == '\r' || question.back() == '\n'))
+            question.pop_back();
         if (!question.empty()) DoSend(question);
         return;
     }
@@ -114,6 +144,9 @@ void ChatPanel::OnScriptMessage(wxWebViewEvent& evt) {
 // ---------------------------------------------------------------------------
 void ChatPanel::DoSend(const std::string& question) {
     if (m_busy || !m_isOpen) return;
+
+    Logger::get().log("ChatPanel::DoSend  q_len=" + std::to_string(question.size())
+                    + "  has_nl=" + std::to_string(question.find('\n') != std::string::npos));
 
     m_busy = true;
     Render(question);

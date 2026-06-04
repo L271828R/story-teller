@@ -187,7 +187,7 @@ function ej(s) {
   return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,'');
 }
 function norm(s) {
-  return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'');
+  return s.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_-￿]/g,'').replace(/_+/g,'_').replace(/^_|_$/g,'');
 }
 function nameColor(name) {
   var h = 0;
