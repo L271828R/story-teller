@@ -1,4 +1,5 @@
 #include "persona.h"
+#include "conversation.h"
 #include "thumbnail.h"
 #include <algorithm>
 #include <cctype>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <set>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 std::string GetPersonasDir() {
@@ -225,6 +227,63 @@ std::string AddPersonaImage(const std::string& personaName,
     if (!src || !dst) return "";
     dst << src.rdbuf();
     return destPath;
+}
+
+// ── Persona chat persistence ──────────────────────────────────────────────────
+
+std::string GetPersonaChatsDir() {
+    const char* home = std::getenv("HOME");
+    return home ? std::string(home) + "/story-teller/persona_chats" : "";
+}
+
+static std::string chatFilePath(const std::string& personaName,
+                                const std::string& chatsDir) {
+    std::string dir = chatsDir.empty() ? GetPersonaChatsDir() : chatsDir;
+    if (dir.empty()) return "";
+    return dir + "/" + NormalizePersonaName(personaName) + ".md";
+}
+
+std::vector<ConversationTurn> LoadPersonaConversation(
+    const std::string& personaName, const std::string& chatsDir)
+{
+    std::string path = chatFilePath(personaName, chatsDir);
+    if (path.empty()) return {};
+    std::ifstream f(path);
+    if (!f) return {};
+    std::string body((std::istreambuf_iterator<char>(f)), {});
+    return ParseConversation(body);
+}
+
+void SavePersonaConversation(
+    const std::string& personaName,
+    const std::vector<ConversationTurn>& turns,
+    const std::string& chatsDir)
+{
+    std::string dir  = chatsDir.empty() ? GetPersonaChatsDir() : chatsDir;
+    std::string path = chatFilePath(personaName, chatsDir);
+    if (path.empty()) return;
+
+    if (turns.empty()) {
+        ::unlink(path.c_str());
+        return;
+    }
+
+    mkdir(dir.c_str(), 0755);
+    std::ofstream f(path, std::ios::trunc);
+    if (f) f << SerializeConversationBody(turns);
+}
+
+void RenamePersonaChat(
+    const std::string& oldName,
+    const std::string& newName,
+    const std::string& chatsDir)
+{
+    std::string oldPath = chatFilePath(oldName, chatsDir);
+    std::string newPath = chatFilePath(newName, chatsDir);
+    if (oldPath.empty() || newPath.empty() || oldPath == newPath) return;
+    struct stat st;
+    if (::stat(oldPath.c_str(), &st) == 0)
+        ::rename(oldPath.c_str(), newPath.c_str());
 }
 
 bool RenamePersonaImage(const std::string& oldName,

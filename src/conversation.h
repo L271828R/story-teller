@@ -8,6 +8,13 @@ struct ConversationTurn {
     std::string answer;   // empty while LLM has not yet responded
 };
 
+// A single exchange in a multi-persona chat: one user message and one response
+// per active persona (in the order they were added to the conversation).
+struct MultiChatTurn {
+    std::string userMessage;
+    std::vector<std::pair<std::string, std::string>> responses; // {personaName, answer}
+};
+
 // Parse Q:/A: pairs from the body of a :::conversation block.
 std::vector<ConversationTurn> ParseConversation(const std::string& body);
 
@@ -34,4 +41,34 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::string& chTitle,
                           const std::vector<ConversationTurn>& history,
                           const std::string& question);
+
+// Build the LLM prompt for a single-persona conversation.
+std::string BuildPersonaPrompt(const std::string& personaName,
+                               const std::string& personaDesc,
+                               const std::string& docMarkdown,
+                               const std::vector<ConversationTurn>& history,
+                               const std::string& message,
+                               bool useArticleContext);
+
+// Build the LLM prompt for one persona's turn in a multi-persona conversation.
+// history contains the full exchange so far (all participants labeled).
+// The responding persona sees the other participants' names and their prior responses.
+std::string BuildPersonaPromptMulti(const std::string& personaName,
+                                    const std::string& personaDesc,
+                                    const std::string& docMarkdown,
+                                    const std::vector<MultiChatTurn>& history,
+                                    const std::string& message,
+                                    bool useArticleContext);
+
+// Convert a single-persona history (ConversationTurn) to MultiChatTurn format
+// so a solo chat can be promoted to a group chat.
+std::vector<MultiChatTurn> ToMultiChatHistory(
+    const std::string& personaName,
+    const std::vector<ConversationTurn>& turns);
+
+// Convert a multi-persona history back to single-persona format (only the
+// responses by personaName are kept). Used when saving a solo chat.
+std::vector<ConversationTurn> FromMultiChatHistory(
+    const std::string& personaName,
+    const std::vector<MultiChatTurn>& history);
 

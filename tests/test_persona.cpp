@@ -1,5 +1,6 @@
 #include "persona.h"
 #include "persona_panel_html.h"
+#include "conversation.h"
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -232,6 +233,103 @@ int test_persona() {
             ++failures;
         } else {
             std::cout << "PASS [rename-persona-image-missing]\n";
+        }
+    }
+
+    // GetPersonaChatsDir: returns a non-empty path
+    {
+        std::string d = GetPersonaChatsDir();
+        if (d.empty()) {
+            std::cerr << "FAIL [persona-chats-dir]\n"; ++failures;
+        } else {
+            std::cout << "PASS [persona-chats-dir]  (" << d << ")\n";
+        }
+    }
+
+    // LoadPersonaConversation: non-existent returns empty
+    {
+        auto turns = LoadPersonaConversation("no_such_persona_xyz", "/tmp/no_such_dir_pchat");
+        if (!turns.empty()) {
+            std::cerr << "FAIL [persona-chat-load-empty]: expected 0 turns\n"; ++failures;
+        } else {
+            std::cout << "PASS [persona-chat-load-empty]\n";
+        }
+    }
+
+    // SavePersonaConversation + LoadPersonaConversation: roundtrip
+    {
+        std::string tmpDir = "/tmp/st_pchat_" + std::to_string(getpid());
+        mkdir(tmpDir.c_str(), 0755);
+
+        std::vector<ConversationTurn> turns = {
+            {"What is E=mc²?",  "Mass-energy equivalence."},
+            {"Who discovered it?", "I did, in 1905."},
+        };
+        SavePersonaConversation("Albert Einstein", turns, tmpDir);
+
+        auto loaded = LoadPersonaConversation("Albert Einstein", tmpDir);
+
+        // cleanup
+        std::string f = tmpDir + "/albert_einstein.md";
+        ::unlink(f.c_str());
+        ::rmdir(tmpDir.c_str());
+
+        bool ok = loaded.size() == 2 &&
+                  loaded[0].question == turns[0].question &&
+                  loaded[0].answer   == turns[0].answer   &&
+                  loaded[1].question == turns[1].question  &&
+                  loaded[1].answer   == turns[1].answer;
+        if (!ok) {
+            std::cerr << "FAIL [persona-chat-roundtrip]: got " << loaded.size() << " turns\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-chat-roundtrip]\n";
+        }
+    }
+
+    // SavePersonaConversation empty vector: removes the file
+    {
+        std::string tmpDir = "/tmp/st_pchat2_" + std::to_string(getpid());
+        mkdir(tmpDir.c_str(), 0755);
+
+        std::vector<ConversationTurn> turns = {{"Q", "A"}};
+        SavePersonaConversation("Marie Curie", turns, tmpDir);
+        SavePersonaConversation("Marie Curie", {}, tmpDir);
+
+        auto loaded = LoadPersonaConversation("Marie Curie", tmpDir);
+        ::rmdir(tmpDir.c_str());   // file gone so rmdir should succeed
+
+        if (!loaded.empty()) {
+            std::cerr << "FAIL [persona-chat-clear]: expected 0 turns, got " << loaded.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-chat-clear]\n";
+        }
+    }
+
+    // RenamePersonaChat: moves the chat file
+    {
+        std::string tmpDir = "/tmp/st_pchat3_" + std::to_string(getpid());
+        mkdir(tmpDir.c_str(), 0755);
+
+        std::vector<ConversationTurn> turns = {{"Hello?", "Greetings."}};
+        SavePersonaConversation("Old Name", turns, tmpDir);
+        RenamePersonaChat("Old Name", "New Name", tmpDir);
+
+        auto loaded = LoadPersonaConversation("New Name", tmpDir);
+
+        std::string oldFile = tmpDir + "/old_name.md";
+        std::string newFile = tmpDir + "/new_name.md";
+        ::unlink(oldFile.c_str());
+        ::unlink(newFile.c_str());
+        ::rmdir(tmpDir.c_str());
+
+        bool ok = loaded.size() == 1 && loaded[0].question == "Hello?";
+        if (!ok) {
+            std::cerr << "FAIL [persona-chat-rename]: got " << loaded.size() << " turns\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-chat-rename]\n";
         }
     }
 

@@ -181,6 +181,115 @@ bool DeleteTurn(const std::string& filePath, int chId, int index) {
 }
 
 // ---------------------------------------------------------------------------
+std::string BuildPersonaPrompt(const std::string& personaName,
+                               const std::string& personaDesc,
+                               const std::string& docMarkdown,
+                               const std::vector<ConversationTurn>& history,
+                               const std::string& message,
+                               bool useArticleContext) {
+    std::ostringstream out;
+    out << "You are " << personaName << ".";
+    if (!personaDesc.empty()) out << " " << personaDesc;
+    out << "\n\n";
+
+    if (useArticleContext && !docMarkdown.empty()) {
+        out << "The user wants to discuss the following article with you:\n\n"
+            << "```\n" << docMarkdown << "\n```\n\n";
+    }
+
+    out << "Respond as " << personaName << " would — in-character, drawing on your "
+        << "personality, knowledge, and perspective. Keep responses conversational "
+        << "and engaging, typically a few sentences to a short paragraph.\n\n";
+
+    if (!history.empty()) {
+        out << "## Conversation so far\n\n";
+        for (const auto& t : history)
+            out << "User: " << t.question << "\n" << personaName << ": " << t.answer << "\n\n";
+    }
+
+    out << "User: " << message << "\n" << personaName << ":";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildPersonaPromptMulti(const std::string& personaName,
+                                    const std::string& personaDesc,
+                                    const std::string& docMarkdown,
+                                    const std::vector<MultiChatTurn>& history,
+                                    const std::string& message,
+                                    bool useArticleContext) {
+    std::ostringstream out;
+    out << "You are " << personaName << ".";
+    if (!personaDesc.empty()) out << " " << personaDesc;
+    out << "\n\n";
+
+    if (useArticleContext && !docMarkdown.empty()) {
+        out << "The group is discussing the following article:\n\n"
+            << "```\n" << docMarkdown << "\n```\n\n";
+    }
+
+    // List other participants so the persona is aware of the group.
+    std::vector<std::string> others;
+    if (!history.empty()) {
+        for (const auto& r : history[0].responses)
+            if (r.first != personaName) others.push_back(r.first);
+    }
+    if (!others.empty()) {
+        out << "Other participants in this conversation: ";
+        for (size_t i = 0; i < others.size(); ++i) {
+            if (i) out << ", ";
+            out << others[i];
+        }
+        out << ".\n\n";
+    }
+
+    out << "Respond as " << personaName << " would — in-character, drawing on your "
+        << "personality, knowledge, and perspective. Keep responses conversational "
+        << "and engaging, typically a few sentences.\n\n";
+
+    if (!history.empty()) {
+        out << "## Conversation so far\n\n";
+        for (const auto& t : history) {
+            out << "User: " << t.userMessage << "\n";
+            for (const auto& r : t.responses)
+                out << r.first << ": " << r.second << "\n";
+            out << "\n";
+        }
+    }
+
+    out << "User: " << message << "\n" << personaName << ":";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::vector<MultiChatTurn> ToMultiChatHistory(
+    const std::string& personaName,
+    const std::vector<ConversationTurn>& turns)
+{
+    std::vector<MultiChatTurn> out;
+    out.reserve(turns.size());
+    for (const auto& t : turns)
+        out.push_back({t.question, {{personaName, t.answer}}});
+    return out;
+}
+
+std::vector<ConversationTurn> FromMultiChatHistory(
+    const std::string& personaName,
+    const std::vector<MultiChatTurn>& history)
+{
+    std::vector<ConversationTurn> out;
+    for (const auto& t : history) {
+        for (const auto& r : t.responses) {
+            if (r.first == personaName) {
+                out.push_back({t.userMessage, r.second});
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::string& chTitle,
                           const std::vector<ConversationTurn>& history,

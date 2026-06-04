@@ -2,9 +2,32 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "conversation.h"
 
 // Global persona image store: ~/story-teller/personas/
 std::string GetPersonasDir();
+
+// Persistent per-persona conversation store: ~/story-teller/persona_chats/
+// Each persona gets its own <normalized_name>.md file.
+std::string GetPersonaChatsDir();
+
+// Load saved conversation turns for a persona from chatsDir (defaults to
+// GetPersonaChatsDir()). Returns empty if no file exists yet.
+std::vector<ConversationTurn> LoadPersonaConversation(
+    const std::string& personaName,
+    const std::string& chatsDir = "");
+
+// Save turns for a persona. An empty turns vector deletes the file.
+void SavePersonaConversation(
+    const std::string& personaName,
+    const std::vector<ConversationTurn>& turns,
+    const std::string& chatsDir = "");
+
+// Rename a persona's chat file (no-op if no file exists).
+void RenamePersonaChat(
+    const std::string& oldName,
+    const std::string& newName,
+    const std::string& chatsDir = "");
 
 // Lowercase, spaces→underscores, strip non-alphanumeric.
 // Must match the JS normalization in html_template.cpp.

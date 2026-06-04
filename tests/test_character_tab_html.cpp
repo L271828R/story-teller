@@ -51,5 +51,61 @@ int test_character_tab_html() {
           light.find("oninput") != std::string::npos &&
           light.find("onblur")  != std::string::npos);
 
+    check("char-tab-invite-search-input",
+          light.find("invite-search") != std::string::npos);
+
+    check("char-tab-invite-fuzzy-filter",
+          light.find("renderInviteList") != std::string::npos);
+
+    check("char-tab-invite-keyboard",
+          light.find("inviteSearchKey") != std::string::npos);
+
+    check("char-tab-invite-btn",
+          light.find("invite") != std::string::npos ||
+          light.find("Invite") != std::string::npos);
+
+    check("char-tab-invite-action",
+          light.find("invitePersona") != std::string::npos);
+
+    check("char-tab-resizer",
+          light.find("id=\"resizer\"") != std::string::npos);
+
+    check("char-tab-resizer-drag",
+          light.find("mousedown") != std::string::npos &&
+          light.find("mousemove") != std::string::npos);
+
+    check("char-tab-chat-panel",
+          light.find("id=\"right\"") != std::string::npos ||
+          light.find("chat-panel") != std::string::npos);
+
+    check("char-tab-article-toggle",
+          light.find("article-toggle") != std::string::npos ||
+          light.find("Use article") != std::string::npos);
+
+    check("char-tab-start-chat-fn",
+          light.find("startChat") != std::string::npos);
+
+    check("char-tab-update-chat-history-fn",
+          light.find("updateChatHistory") != std::string::npos);
+
+    check("char-tab-open-chat-action",
+          light.find("openChat") != std::string::npos);
+
+    check("char-tab-send-message-action",
+          light.find("sendMessage") != std::string::npos);
+
+    // @ mention autocomplete in multi-persona chat
+    check("char-tab-at-mention-popup",
+          light.find("mention-pop") != std::string::npos);
+
+    check("char-tab-at-mention-select",
+          light.find("selectMention") != std::string::npos);
+
+    check("char-tab-at-mention-input",
+          light.find("chatInput") != std::string::npos);
+
+    check("char-tab-at-mention-direct",
+          light.find("directTo") != std::string::npos);
+
     return failures;
 }

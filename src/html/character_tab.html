@@ -10,6 +10,8 @@
   --card-bg:#fff; --card-hover:#f0f4ff;
   --card-checked:#e8f0fe; --card-checked-border:#0066cc;
   --danger:#cc0000; --btn-bg:#fff;
+  --chat-user-bg:#e8f0fe; --chat-user-border:#0066cc;
+  --chat-persona-bg:#fff; --chat-persona-border:#ddd;
 }
 .dark {
   --bg:#1e1e1e; --surface:#2a2a2a; --border:#444;
@@ -18,13 +20,21 @@
   --card-bg:#2a2a2a; --card-hover:#2a2a3a;
   --card-checked:#1a2a3a; --card-checked-border:#4d9fff;
   --danger:#ff5555; --btn-bg:#2a2a2a;
+  --chat-user-bg:#1a2a3a; --chat-user-border:#4d9fff;
+  --chat-persona-bg:#2a2a2a; --chat-persona-border:#444;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px; background: var(--bg); color: var(--text);
-  padding: 16px;
 }
+
+/* ── Shell: two-column flex ─────────────────────────── */
+#shell { display: flex; height: 100%; overflow: hidden; }
+
+/* ── Left: persona grid ─────────────────────────────── */
+#left { flex: 1; overflow-y: auto; padding: 16px; min-width: 0; }
 h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 
 .top-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
@@ -126,6 +136,15 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 }
 .desc-ta:focus { border-color: var(--accent); }
 
+.btn-chat {
+  width: 100%; padding: 4px 0; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--accent); cursor: pointer; font-size: 11px;
+  transition: background .15s, border-color .15s;
+}
+.btn-chat:hover { background: var(--card-hover); border-color: var(--accent); }
+.btn-chat.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 .add-card {
   width: 148px; border: 2px dashed var(--border); border-radius: 10px;
   padding: 12px 10px; display: flex; flex-direction: column;
@@ -152,15 +171,189 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 .add-form-btns .btn-xs { flex: 1; padding: 4px 0; font-size: 11px; }
 
 .empty { color: var(--muted); padding: 32px; text-align: center; width: 100%; }
+
+/* ── Resizer handle ─────────────────────────────────── */
+#resizer {
+  width: 5px; flex-shrink: 0; cursor: col-resize;
+  background: var(--border);
+  display: none; align-items: stretch;
+  transition: background .15s;
+}
+#resizer.visible { display: flex; }
+#resizer:hover, #resizer.dragging { background: var(--accent); }
+
+/* ── Right: chat panel ──────────────────────────────── */
+#right {
+  width: 340px; min-width: 220px;
+  border-left: none;
+  display: none; flex-direction: column; background: var(--surface);
+}
+#right.open { display: flex; }
+
+#chat-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; position: relative;
+}
+#chat-avatar-sm {
+  width: 36px; height: 36px; border-radius: 50%;
+  overflow: hidden; border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+#chat-avatar-sm img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#chat-name-label {
+  flex: 1; font-weight: 600; font-size: 13px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chat-hbtn {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 12px; padding: 2px 6px; border-radius: 4px;
+}
+.chat-hbtn:hover { background: var(--card-hover); color: var(--text); }
+
+#article-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--muted); flex-shrink: 0;
+  background: var(--bg);
+}
+#article-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+#article-toggle { accent-color: var(--accent); cursor: pointer; }
+
+#chat-history {
+  flex: 1; overflow-y: auto; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.chat-turn { display: flex; flex-direction: column; gap: 6px; }
+.chat-q {
+  align-self: flex-end; max-width: 85%;
+  background: var(--chat-user-bg); border: 1px solid var(--chat-user-border);
+  border-radius: 12px 12px 2px 12px;
+  padding: 7px 10px; font-size: 12px; line-height: 1.5;
+}
+.chat-a {
+  align-self: flex-start; max-width: 90%;
+  background: var(--chat-persona-bg); border: 1px solid var(--chat-persona-border);
+  border-radius: 12px 12px 12px 2px;
+  padding: 7px 10px; font-size: 12px; line-height: 1.5;
+}
+.chat-q p, .chat-a p { margin: 0 0 4px; }
+.chat-q p:last-child, .chat-a p:last-child { margin-bottom: 0; }
+.chat-q ul, .chat-a ul, .chat-q ol, .chat-a ol { margin: 4px 0 4px 16px; }
+.chat-waiting { color: var(--muted); font-style: italic; }
+.chat-speaker {
+  display: block; font-size: 10px; font-weight: 600;
+  color: var(--accent); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* ── Invite picker ──────────────────────────────────── */
+#invite-picker {
+  position: absolute; top: 100%; right: 0; z-index: 10;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  min-width: 180px; overflow: hidden;
+  display: none; flex-direction: column;
+}
+#invite-picker.open { display: flex; }
+.invite-search-inp {
+  display: block; width: 100%; padding: 7px 12px;
+  border: none; border-bottom: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+  font-size: 12px; font-family: inherit; outline: none;
+  border-radius: 8px 8px 0 0;
+}
+.invite-search-inp:focus { border-bottom-color: var(--accent); }
+#invite-list { max-height: 200px; overflow-y: auto; }
+.invite-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; cursor: pointer; font-size: 12px;
+}
+.invite-item:hover { background: var(--card-hover); }
+.invite-item.active-persona { color: var(--muted); cursor: default; }
+.invite-item .inv-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+}
+
+/* ── @ mention popup ────────────────────────────────── */
+#mention-pop {
+  position: absolute; bottom: 100%; left: 0; right: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px 8px 0 0; box-shadow: 0 -4px 12px rgba(0,0,0,.15);
+  max-height: 160px; overflow-y: auto;
+  display: none;
+}
+#mention-pop.open { display: block; }
+.mention-item {
+  padding: 7px 12px; cursor: pointer; font-size: 12px;
+}
+.mention-item:hover, .mention-item.focused { background: var(--card-hover); }
+
+#chat-input-area {
+  display: flex; gap: 6px; padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  align-items: flex-end;
+}
+#chat-ta {
+  flex: 1; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 12px; font-family: inherit;
+  resize: none; outline: none; line-height: 1.4; max-height: 100px;
+}
+#chat-ta:focus { border-color: var(--accent); }
+#send-btn {
+  padding: 7px 14px; border-radius: 8px; border: none;
+  background: var(--accent); color: #fff; cursor: pointer;
+  font-size: 12px; font-weight: 600; white-space: nowrap; align-self: flex-end;
+}
+#send-btn:hover { filter: brightness(1.1); }
+#send-btn:disabled, #chat-ta:disabled { opacity: .5; cursor: not-allowed; }
 </style>
 </head>
 <body class="{{BODY_CLASS}}">
+<div id="shell">
+
+<!-- ── Left column: persona grid ─────────────────────── -->
+<div id="left">
 <h2>Characters &amp; Personas</h2>
 <div class="top-bar">
   <input class="search" id="search" type="text" placeholder="Search…" oninput="setSearch(this.value)">
 </div>
 <div class="filter-bar" id="filters"></div>
 <div class="grid" id="grid"></div>
+</div>
+
+<div id="resizer"></div>
+
+<!-- ── Right column: chat panel ──────────────────────── -->
+<div id="right">
+  <div id="chat-header">
+    <div id="chat-avatar-sm"></div>
+    <div id="chat-name-label"></div>
+    <button class="chat-hbtn" id="invite-btn" onclick="toggleInvitePicker(event)" title="Invite a persona">+ Invite</button>
+    <button class="chat-hbtn" onclick="clearChat()" title="Clear conversation">Clear</button>
+    <button class="chat-hbtn" onclick="closeChat()" title="Close chat">&times;</button>
+    <div id="invite-picker"></div>
+  </div>
+  <div id="article-row">
+    <label>
+      <input type="checkbox" id="article-toggle">
+      Use article as context
+    </label>
+  </div>
+  <div id="chat-history"></div>
+  <div style="position:relative; flex-shrink:0;">
+    <div id="mention-pop"></div>
+    <div id="chat-input-area">
+      <textarea id="chat-ta" rows="2" placeholder="Message… (Cmd+Enter to send)"
+                onkeydown="chatKey(event)" oninput="chatInput(this)"></textarea>
+      <button id="send-btn" onclick="doSend()">Send</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- #shell -->
 
 <script>
 var _cats    = {};
@@ -172,6 +365,8 @@ var _search   = '';
 var _addCat   = false;
 var _addChar  = false;
 var _renaming = null;
+var _chatPersona   = null;
+var _activePersonas = [];
 
 function send(obj) {
   window.webkit.messageHandlers.characters.postMessage(JSON.stringify(obj));
@@ -256,6 +451,7 @@ function renderGrid() {
     var key = norm(name);
     var url = _imgs[key];
     var chk = !!_checked[name];
+    var isChatting = _chatPersona === name;
     var catLabel = (_cur === '__all__' && !_search)
       ? '<div class="cat-badge">' + esc(getCat(name)) + '</div>' : '';
     var avatar = url
@@ -285,6 +481,10 @@ function renderGrid() {
       '<textarea class="desc-ta" rows="2" placeholder="Notes…" data-name="' + eattr(name) + '"' +
         ' oninput="scheduleDesc(\'' + ej(name) + '\',this.value)"' +
         ' onblur="saveDesc(\'' + ej(name) + '\',this.value)">' + desc + '</textarea>' +
+      '<button class="btn-chat' + (isChatting ? ' active' : '') + '"' +
+        ' onclick="openPersonaChat(\'' + ej(name) + '\')" title="Chat with this persona">' +
+        (isChatting ? '&#x1f4ac; Chatting' : '&#x1f4ac; Chat') +
+        '</button>' +
       '</div>';
   }).join('');
 
@@ -405,6 +605,249 @@ window.updatePersonaImage = function(key, url) {
   _imgs[key] = url;
   renderGrid();
 };
+
+// ── Invite picker ────────────────────────────────────────────────────────────
+
+var _inviteSearch = '';
+
+function renderInvitePicker() {
+  var picker = document.getElementById('invite-picker');
+  _inviteSearch = '';
+  picker.innerHTML =
+    '<input id="invite-search" class="invite-search-inp" placeholder="Search…"' +
+    ' oninput="renderInviteList(this.value)"' +
+    ' onkeydown="inviteSearchKey(event)">' +
+    '<div id="invite-list"></div>';
+  renderInviteList('');
+}
+
+function renderInviteList(q) {
+  _inviteSearch = (q || '').toLowerCase();
+  var names = allNames().filter(function(n) { return fuzzy(n, _inviteSearch); });
+  var h = names.map(function(name) {
+    var isActive = _activePersonas.indexOf(name) !== -1;
+    return '<div class="invite-item' + (isActive ? ' active-persona' : '') + '"' +
+      (isActive ? '' : ' onclick="invitePersona(\'' + ej(name) + '\')"') + '>' +
+      (isActive ? '<span class="inv-dot"></span>' : '') +
+      esc(name) + '</div>';
+  }).join('');
+  var list = document.getElementById('invite-list');
+  if (list) list.innerHTML = h || '<div class="invite-item" style="color:var(--muted)">No personas</div>';
+}
+
+function inviteSearchKey(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('invite-picker').classList.remove('open');
+    _inviteSearch = '';
+  }
+}
+
+function toggleInvitePicker(e) {
+  e.stopPropagation();
+  var picker = document.getElementById('invite-picker');
+  if (picker.classList.contains('open')) {
+    picker.classList.remove('open');
+  } else {
+    renderInvitePicker();
+    picker.classList.add('open');
+    setTimeout(function() {
+      var inp = document.getElementById('invite-search');
+      if (inp) inp.focus();
+    }, 0);
+  }
+}
+
+function invitePersona(name) {
+  document.getElementById('invite-picker').classList.remove('open');
+  send({action:'invitePersona', name:name});
+}
+
+document.addEventListener('click', function(e) {
+  var p = document.getElementById('invite-picker');
+  if (p && !p.contains(e.target)) p.classList.remove('open');
+});
+
+// Called from C++ to update the active-persona chip list in the header.
+function setActivePersonas(names) {
+  _activePersonas = names;
+  _chatPersona    = names.length > 0 ? names[0] : null;
+  var label = document.getElementById('chat-name-label');
+  if (label) label.textContent = names.join(' + ');
+}
+
+// ── @ mention autocomplete ───────────────────────────────────────────────────
+
+var _mentionQ   = null;
+var _mentionIdx = -1;
+
+function chatInput(ta) {
+  if (_activePersonas.length < 2) { hideMentionPop(); return; }
+  var pos    = ta.selectionStart;
+  var before = ta.value.substring(0, pos);
+  var m      = before.match(/@(\w*)$/);
+  if (m) {
+    _mentionQ   = m[1].toLowerCase();
+    _mentionIdx = -1;
+    renderMentionPop();
+  } else {
+    hideMentionPop();
+  }
+}
+
+function renderMentionPop() {
+  var pop      = document.getElementById('mention-pop');
+  var personas = _activePersonas.filter(function(n) { return fuzzy(n, _mentionQ); });
+  if (!personas.length) { hideMentionPop(); return; }
+  pop.innerHTML = personas.map(function(name, i) {
+    return '<div class="mention-item' + (i === _mentionIdx ? ' focused' : '') + '"' +
+      ' onclick="selectMention(\'' + ej(name) + '\')">' + esc(name) + '</div>';
+  }).join('');
+  pop.classList.add('open');
+}
+
+function hideMentionPop() {
+  var pop = document.getElementById('mention-pop');
+  if (pop) pop.classList.remove('open');
+  _mentionQ   = null;
+  _mentionIdx = -1;
+}
+
+function selectMention(name) {
+  var ta     = document.getElementById('chat-ta');
+  var pos    = ta.selectionStart;
+  var before = ta.value.substring(0, pos);
+  var after  = ta.value.substring(pos);
+  var newBefore = before.replace(/@\w*$/, '@' + name + ' ');
+  ta.value = newBefore + after;
+  ta.selectionStart = ta.selectionEnd = newBefore.length;
+  hideMentionPop();
+  ta.focus();
+}
+
+// ── Persona chat ─────────────────────────────────────────────────────────────
+
+function openPersonaChat(name) {
+  send({action:'openChat', name:name});
+}
+
+// Called from C++ when a chat session opens or switches persona.
+function startChat(name) {
+  _chatPersona    = name;
+  _activePersonas = [name];
+  var right = document.getElementById('right');
+  right.classList.add('open');
+  document.getElementById('resizer').classList.add('visible');
+
+  document.getElementById('chat-name-label').textContent = name;
+
+  var av = document.getElementById('chat-avatar-sm');
+  var url = _imgs[norm(name)];
+  if (url) {
+    av.innerHTML = '<img src="' + esc(url) + '" alt="">';
+    av.style.background = '';
+  } else {
+    av.innerHTML = esc(name.trim().charAt(0).toUpperCase());
+    av.style.background = nameColor(name);
+  }
+
+  renderGrid(); // re-render grid to highlight active card
+  var ta = document.getElementById('chat-ta');
+  if (ta) { ta.disabled = false; ta.focus(); }
+}
+
+// Called from C++ to refresh the chat history and busy state.
+function updateChatHistory(html, busy) {
+  var hist = document.getElementById('chat-history');
+  hist.innerHTML = html;
+  hist.scrollTop = hist.scrollHeight;
+  var ta  = document.getElementById('chat-ta');
+  var btn = document.getElementById('send-btn');
+  if (ta)  ta.disabled  = busy;
+  if (btn) btn.disabled = busy;
+  if (!busy && ta) ta.focus();
+}
+
+// Called from C++ when the chat is closed (from C++ side).
+function closeChat() {
+  _chatPersona    = null;
+  _activePersonas = [];
+  document.getElementById('right').classList.remove('open');
+  document.getElementById('resizer').classList.remove('visible');
+  document.getElementById('chat-history').innerHTML = '';
+  document.getElementById('invite-picker').classList.remove('open');
+  hideMentionPop();
+  renderGrid();
+  send({action:'closeChat'});
+}
+
+function clearChat() {
+  send({action:'clearChat'});
+}
+
+function doSend() {
+  var ta = document.getElementById('chat-ta');
+  var text = ta ? ta.value.trim() : '';
+  if (!text || !_chatPersona) return;
+  hideMentionPop();
+  var useArticle = document.getElementById('article-toggle').checked;
+  var directTo   = null;
+  var dm = text.match(/^@(\S+)\s/);
+  if (dm && _activePersonas.indexOf(dm[1]) !== -1) directTo = dm[1];
+  send({action:'sendMessage', text:text, useArticle:useArticle, directTo:directTo});
+  ta.value = '';
+}
+
+function chatKey(e) {
+  var pop = document.getElementById('mention-pop');
+  if (pop && pop.classList.contains('open')) {
+    var items = pop.querySelectorAll('.mention-item');
+    if (e.key === 'Escape') { hideMentionPop(); e.preventDefault(); return; }
+    if (e.key === 'ArrowDown') {
+      _mentionIdx = Math.min(_mentionIdx + 1, items.length - 1);
+      renderMentionPop(); e.preventDefault(); return;
+    }
+    if (e.key === 'ArrowUp') {
+      _mentionIdx = Math.max(_mentionIdx - 1, 0);
+      renderMentionPop(); e.preventDefault(); return;
+    }
+    if (e.key === 'Enter' && _mentionIdx >= 0 && items[_mentionIdx]) {
+      items[_mentionIdx].click(); e.preventDefault(); return;
+    }
+  }
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    doSend();
+  }
+}
+
+// ── Resizable chat panel ─────────────────────────────────────────────────────
+(function() {
+  var resizer = document.getElementById('resizer');
+  var right   = document.getElementById('right');
+  var startX, startW;
+
+  resizer.addEventListener('mousedown', function(e) {
+    startX = e.clientX;
+    startW = right.offsetWidth;
+    resizer.classList.add('dragging');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    // Moving left (negative delta) widens the right panel.
+    var delta = startX - e.clientX;
+    var newW  = Math.max(220, Math.min(window.innerWidth - 200, startW + delta));
+    right.style.width = newW + 'px';
+  }
+
+  function onUp() {
+    resizer.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  }
+})();
 
 document.addEventListener('DOMContentLoaded', function() {
   send({action:'ready'});

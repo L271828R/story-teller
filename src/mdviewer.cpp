@@ -421,6 +421,10 @@ void MDViewerFrame::LoadAndRender() {
 
     std::string raw = ReadFile(m_filePath.ToStdString());
 
+    // Keep the Personas tab aware of the current document so conversations
+    // can include it as context when the user enables the article toggle.
+    if (m_characterTab) m_characterTab->SetCurrentDocument(raw);
+
     // Auto-stamp chapter markers so the chat buttons work on legacy documents.
     // Only runs once: if headings exist but no <!-- ch: --> markers are present.
     if (raw.find("<!-- ch:") == std::string::npos &&

@@ -1,3 +1,4 @@
+#include "../src/character_tab_html.h"
 #include "../src/create_panel_html.h"
 #include "../src/edit_panel_html.h"
 #include "../src/html_template.h"
@@ -57,6 +58,7 @@ int test_js_lint() {
         else      std::cout << "PASS [js-lint-" << name << "]\n";
     };
 
+    check("character-tab", lint_js("character_tab", BuildCharacterTabHTML(false)));
     check("create-panel",  lint_js("create_panel",  BuildCreatePanelHTML(false)));
     check("edit-panel",    lint_js("edit_panel",    BuildEditPanelHTML(false)));
     check("monitor-panel", lint_js("monitor_panel", BuildMonitorPanelHTML(false)));

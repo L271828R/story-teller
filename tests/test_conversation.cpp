@@ -447,5 +447,112 @@ int test_conversation() {
         }
     }
 
+    // BuildPersonaPromptMulti: persona name and question appear
+    {
+        MultiChatTurn prev;
+        prev.userMessage = "Hello everyone.";
+        prev.responses   = {{"Einstein", "Guten Tag!"}, {"Curie", "Bonjour!"}};
+
+        std::string prompt = BuildPersonaPromptMulti(
+            "Einstein", "Brilliant physicist.",
+            "", {prev}, "What is mass?", false);
+
+        bool hasName    = prompt.find("Einstein")      != std::string::npos;
+        bool hasHistory = prompt.find("Hello everyone.") != std::string::npos;
+        bool hasCurie   = prompt.find("Curie")          != std::string::npos;
+        bool hasNewQ    = prompt.find("What is mass?")  != std::string::npos;
+        if (!hasName || !hasHistory || !hasCurie || !hasNewQ) {
+            std::cerr << "FAIL [build-persona-prompt-multi]\n"; ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-multi]\n";
+        }
+    }
+
+    // BuildPersonaPromptMulti: article included only when useArticle=true
+    {
+        std::string prompt = BuildPersonaPromptMulti(
+            "Curie", "", "## Radioactivity", {}, "Explain.", true);
+        bool hasArticle = prompt.find("## Radioactivity") != std::string::npos;
+        if (!hasArticle) {
+            std::cerr << "FAIL [build-persona-prompt-multi-article]\n"; ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-multi-article]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: persona name and question appear in prompt
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Albert Einstein", "Brilliant physicist.",
+                                               "", history, "Hello?", false);
+        bool hasName     = prompt.find("Albert Einstein") != std::string::npos;
+        bool hasQuestion = prompt.find("Hello?") != std::string::npos;
+        if (!hasName || !hasQuestion) {
+            std::cerr << "FAIL [build-persona-prompt-basic]:"
+                      << " hasName=" << hasName << " hasQuestion=" << hasQuestion << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-basic]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: article included when useArticle=true
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Marie Curie", "",
+                                               "## Radioactivity research", history, "Explain", true);
+        bool hasArticle = prompt.find("## Radioactivity research") != std::string::npos;
+        if (!hasArticle) {
+            std::cerr << "FAIL [build-persona-prompt-article]: article text not found in prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-article]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: article excluded when useArticle=false
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Marie Curie", "",
+                                               "## Radioactivity research", history, "Explain", false);
+        bool noArticle = prompt.find("## Radioactivity research") == std::string::npos;
+        if (!noArticle) {
+            std::cerr << "FAIL [build-persona-prompt-no-article]: article text leaked into prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-no-article]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: description included when non-empty
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Sherlock Holmes", "Famous detective from Baker St.",
+                                               "", history, "What do you observe?", false);
+        bool hasDesc = prompt.find("Famous detective from Baker St.") != std::string::npos;
+        if (!hasDesc) {
+            std::cerr << "FAIL [build-persona-prompt-desc]: description not in prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-desc]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: conversation history appears in prompt
+    {
+        std::vector<ConversationTurn> history = {{"What is light?", "Electromagnetic waves."}};
+        std::string prompt = BuildPersonaPrompt("Einstein", "",
+                                               "", history, "What is mass?", false);
+        bool hasHistQ = prompt.find("What is light?")      != std::string::npos;
+        bool hasHistA = prompt.find("Electromagnetic waves.") != std::string::npos;
+        bool hasNewQ  = prompt.find("What is mass?")       != std::string::npos;
+        if (!hasHistQ || !hasHistA || !hasNewQ) {
+            std::cerr << "FAIL [build-persona-prompt-history]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-history]\n";
+        }
+    }
+
     return failures;
 }
