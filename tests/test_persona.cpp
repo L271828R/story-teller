@@ -333,6 +333,35 @@ int test_persona() {
         }
     }
 
+    // Project-scoped isolation: chat saved in project dir is invisible from global dir
+    {
+        std::string globalDir = "/tmp/st_proj_global_" + std::to_string(getpid());
+        std::string projDir   = "/tmp/st_proj_darwin_" + std::to_string(getpid());
+        mkdir(globalDir.c_str(), 0755);
+        mkdir(projDir.c_str(),   0755);
+
+        std::vector<ConversationTurn> turns = {{"Darwin?", "Evolution!"}};
+        SavePersonaConversation("Colombian fiero", turns, projDir);
+
+        auto fromGlobal = LoadPersonaConversation("Colombian fiero", globalDir);
+        auto fromProj   = LoadPersonaConversation("Colombian fiero", projDir);
+
+        std::string file = projDir + "/colombian_fiero.md";
+        ::unlink(file.c_str());
+        ::rmdir(projDir.c_str());
+        ::rmdir(globalDir.c_str());
+
+        bool ok = fromGlobal.empty() && fromProj.size() == 1 &&
+                  fromProj[0].question == "Darwin?";
+        if (!ok) {
+            std::cerr << "FAIL [persona-chat-project-isolation]: "
+                      << "global=" << fromGlobal.size() << " proj=" << fromProj.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-chat-project-isolation]\n";
+        }
+    }
+
     // GroupChatKey: sorts and normalizes participant names
     {
         std::string key = GroupChatKey({"Caveman", "Cavewoman"});

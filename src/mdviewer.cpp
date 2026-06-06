@@ -423,7 +423,11 @@ void MDViewerFrame::LoadAndRender() {
 
     // Keep the Personas tab aware of the current document so conversations
     // can include it as context when the user enables the article toggle.
-    if (m_characterTab) m_characterTab->SetCurrentDocument(raw);
+    // Also update the project context so persona chats are scoped per-project.
+    if (m_characterTab) {
+        m_characterTab->SetCurrentDocument(raw);
+        m_characterTab->SetChatContext(wxFileName(m_filePath).GetPath().ToStdString());
+    }
 
     // Auto-stamp chapter markers so the chat buttons work on legacy documents.
     // Only runs once: if headings exist but no <!-- ch: --> markers are present.

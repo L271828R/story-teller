@@ -240,7 +240,7 @@ void CharacterTab::PushState() {
 
 void CharacterTab::PushGroups() {
     if (!m_ready) return;
-    auto groups = ListGroupChats();
+    auto groups = ListGroupChats(m_chatContextDir);
     std::ostringstream gj;
     gj << "[";
     bool fg = true;
@@ -361,7 +361,7 @@ void CharacterTab::DoRenameCharacter(const std::string& oldName, const std::stri
     }
 
     RenamePersonaImage(oldName, newName);
-    RenamePersonaChat(oldName, newName);
+    RenamePersonaChat(oldName, newName, m_chatContextDir);
     // Update any active references to the renamed persona.
     for (auto& p : m_activePersonas)
         if (p == oldName) { p = newName; break; }
@@ -405,6 +405,16 @@ void CharacterTab::SetCurrentDocument(std::string markdown) {
     m_currentDocMarkdown = std::move(markdown);
 }
 
+void CharacterTab::SetChatContext(const std::string& projectPath) {
+    if (projectPath.empty()) { m_chatContextDir = ""; return; }
+    // Use the last path component (project folder name) as the subdirectory.
+    std::string dirName = projectPath;
+    auto slash = dirName.rfind('/');
+    if (slash != std::string::npos) dirName = dirName.substr(slash + 1);
+    if (dirName.empty()) { m_chatContextDir = ""; return; }
+    m_chatContextDir = GetPersonaChatsDir() + "/" + NormalizePersonaName(dirName);
+}
+
 static std::string StripLeadingLabel(const std::string& name, std::string answer) {
     if (answer.rfind(name + ":", 0) == 0)
         answer = answer.substr(name.size() + 1);
@@ -443,9 +453,9 @@ void CharacterTab::PersistChat() {
     if (m_activePersonas.size() == 1) {
         const std::string& name = m_activePersonas[0];
         auto single = FromMultiChatHistory(name, m_chatHistory);
-        SavePersonaConversation(name, single);
+        SavePersonaConversation(name, single, m_chatContextDir);
     } else if (m_activePersonas.size() > 1) {
-        SaveGroupConversation(m_activePersonas, m_chatHistory);
+        SaveGroupConversation(m_activePersonas, m_chatHistory, m_chatContextDir);
         PushGroups(); // refresh Groups section so new group appears immediately
     }
 }
@@ -462,7 +472,7 @@ void CharacterTab::DoOpenChat(const std::string& name) {
 
     m_activePersonas = {name};
     // Load persisted single-persona history and convert to MultiChatTurn format.
-    auto saved = LoadPersonaConversation(name);
+    auto saved = LoadPersonaConversation(name, m_chatContextDir);
     m_chatHistory = ToMultiChatHistory(name, saved);
 
     Run("startChat(" + Jq(name) + ")");
@@ -544,7 +554,7 @@ void CharacterTab::DoOpenGroupChat(const std::string& key) {
     if (!found || found->participants.empty()) return;
 
     m_activePersonas = found->participants;
-    m_chatHistory    = LoadGroupConversation(m_activePersonas);
+    m_chatHistory    = LoadGroupConversation(m_activePersonas, m_chatContextDir);
 
     Run("startChat(" + Jq(m_activePersonas[0]) + ")");
     std::ostringstream activeJs;
@@ -574,7 +584,7 @@ void CharacterTab::DoInvitePersona(const std::string& name) {
 
     if (wasSolo) {
         // Load existing group history (or start fresh for this group).
-        auto existing = LoadGroupConversation(m_activePersonas);
+        auto existing = LoadGroupConversation(m_activePersonas, m_chatContextDir);
         if (!existing.empty())
             m_chatHistory = std::move(existing);
         else

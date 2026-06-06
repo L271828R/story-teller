@@ -141,6 +141,27 @@ int test_character_tab_html() {
     check("char-tab-gavatar-css",
           light.find("gavatar") != std::string::npos);
 
+    // Font-size floater: hover-to-reveal controls in the chat panel
+    check("char-tab-font-floater",
+          light.find("chat-font-floater") != std::string::npos);
+
+    check("char-tab-font-floater-css",
+          light.find("chat-font-floater") != std::string::npos &&
+          light.find("opacity") != std::string::npos);
+
+    check("char-tab-font-size-js",
+          light.find("setChatFontSize") != std::string::npos);
+
+    check("char-tab-font-size-persist",
+          light.find("localStorage") != std::string::npos);
+
+    // Chinese font size: larger font when CJK content detected in chat
+    check("char-tab-cjk-font-css",
+          light.find("lang-cjk") != std::string::npos);
+
+    check("char-tab-cjk-detection",
+          light.find("4e00") != std::string::npos); // CJK unicode range in JS detection
+
     // Right-click on mermaid diagram → fix menu
     check("char-tab-mermaid-ctx-menu",
           light.find("repairMermaid") != std::string::npos);

@@ -20,6 +20,9 @@ public:
     void SetOnRenameCharacter(RenameCallback cb) { m_onRename = std::move(cb); }
 
     void SetCurrentDocument(std::string markdown);
+    // Scope persona and group chat history to a project directory.
+    // projectPath is the parent folder of the open document.
+    void SetChatContext(const std::string& projectPath);
 
     std::set<std::string>              GetCheckedChars()     const { return m_checkedChars; }
     std::map<std::string, std::string> GetCharDescriptions() const { return m_charDescriptions; }
@@ -37,6 +40,7 @@ private:
 
     // Persona conversation state
     std::string m_currentDocMarkdown;
+    std::string m_chatContextDir;   // project-scoped chats dir; empty = global
     std::vector<std::string> m_activePersonas;   // [0] = host, rest = invited
     std::vector<MultiChatTurn> m_chatHistory;
     bool m_chatBusy = false;

@@ -15,6 +15,7 @@
   --danger:#cc0000; --btn-bg:#fff;
   --chat-user-bg:#e8f0fe; --chat-user-border:#0066cc;
   --chat-persona-bg:#fff; --chat-persona-border:#ddd;
+  --chat-msg-size: 12px;
 }
 .dark {
   --bg:#1e1e1e; --surface:#2a2a2a; --border:#444;
@@ -227,10 +228,31 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 /* ── Right: chat panel ──────────────────────────────── */
 #right {
   width: 340px; min-width: 220px;
-  border-left: none;
+  border-left: none; position: relative;
   display: none; flex-direction: column; background: var(--surface);
 }
 #right.open { display: flex; }
+
+/* ── Font size floater ──────────────────────────────── */
+.chat-font-floater {
+  position: absolute; bottom: 70px; right: 10px; z-index: 5;
+  display: flex; align-items: center; gap: 3px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 8px;
+  opacity: 0; transition: opacity .2s;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+#right:hover .chat-font-floater { opacity: 1; pointer-events: auto; }
+.chat-font-floater button {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 14px; padding: 0 3px; line-height: 1;
+  border-radius: 3px;
+}
+.chat-font-floater button:hover { color: var(--accent); background: var(--card-hover); }
+.chat-font-floater .font-label {
+  font-size: 10px; color: var(--muted); min-width: 26px; text-align: center;
+}
 
 #chat-header {
   display: flex; align-items: center; gap: 8px;
@@ -272,13 +294,13 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
   align-self: flex-end; max-width: 85%;
   background: var(--chat-user-bg); border: 1px solid var(--chat-user-border);
   border-radius: 12px 12px 2px 12px;
-  padding: 7px 10px; font-size: 12px; line-height: 1.5;
+  padding: 7px 10px; font-size: var(--chat-msg-size); line-height: 1.5;
 }
 .chat-a {
   align-self: flex-start; max-width: 90%;
   background: var(--chat-persona-bg); border: 1px solid var(--chat-persona-border);
   border-radius: 12px 12px 12px 2px;
-  padding: 7px 10px; font-size: 12px; line-height: 1.5;
+  padding: 7px 10px; font-size: var(--chat-msg-size); line-height: 1.5;
 }
 .chat-q p, .chat-a p { margin: 0 0 4px; }
 .chat-q p:last-child, .chat-a p:last-child { margin-bottom: 0; }
@@ -291,6 +313,10 @@ pre code.hljs { border-radius: 6px; font-size: 11px; }
   display: block; font-size: 10px; font-weight: 600;
   color: var(--accent); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .04em;
 }
+
+/* ── CJK font size boost ────────────────────────────── */
+#chat-history.lang-cjk .chat-q,
+#chat-history.lang-cjk .chat-a { font-size: 15px; line-height: 1.7; }
 
 /* ── Invite picker ──────────────────────────────────── */
 #invite-picker {
@@ -389,6 +415,11 @@ pre code.hljs { border-radius: 6px; font-size: 11px; }
     </label>
   </div>
   <div id="chat-history"></div>
+  <div class="chat-font-floater" id="chat-font-floater">
+    <button onclick="setChatFontSize(_chatFontSize - 1)" title="Smaller">A−</button>
+    <span class="font-label" id="font-size-label">12px</span>
+    <button onclick="setChatFontSize(_chatFontSize + 1)" title="Larger">A+</button>
+  </div>
   <div style="position:relative; flex-shrink:0;">
     <div id="mention-pop"></div>
     <div id="chat-input-area">
@@ -869,6 +900,8 @@ function updateChatHistory(html, busy) {
     var mermaidNodes = Array.from(hist.querySelectorAll('.mermaid'));
     if (mermaidNodes.length > 0) mermaid.run({nodes: mermaidNodes});
   }
+  // Detect CJK content and boost font size for readability.
+  hist.classList.toggle('lang-cjk', /[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f]/.test(hist.textContent));
   hist.scrollTop = hist.scrollHeight;
   var ta  = document.getElementById('chat-ta');
   var btn = document.getElementById('send-btn');
@@ -928,6 +961,18 @@ function chatKey(e) {
     e.preventDefault();
     doSend();
   }
+}
+
+// ── Font size floater ────────────────────────────────────────────────────────
+
+var _chatFontSize = 12;
+
+function setChatFontSize(n) {
+  _chatFontSize = Math.max(8, Math.min(24, n));
+  document.documentElement.style.setProperty('--chat-msg-size', _chatFontSize + 'px');
+  var lbl = document.getElementById('font-size-label');
+  if (lbl) lbl.textContent = _chatFontSize + 'px';
+  try { localStorage.setItem('chatFontSize', _chatFontSize); } catch(e) {}
 }
 
 // ── Resizable chat panel ─────────────────────────────────────────────────────
@@ -1000,6 +1045,10 @@ document.addEventListener('click', function(e) {
 });
 
 document.addEventListener('DOMContentLoaded', function() {
+  try {
+    var saved = localStorage.getItem('chatFontSize');
+    if (saved) setChatFontSize(parseInt(saved, 10));
+  } catch(e) {}
   send({action:'ready'});
   document.getElementById('search').focus();
 });
