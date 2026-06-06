@@ -1,4 +1,5 @@
 #include "conversation.h"
+#include "quiz.h"
 #include <fstream>
 #include <sstream>
 
@@ -181,6 +182,14 @@ bool DeleteTurn(const std::string& filePath, int chId, int index) {
 }
 
 // ---------------------------------------------------------------------------
+std::string BuildMermaidRepairPrompt(const std::string& source) {
+    return
+        "The following Mermaid diagram has a syntax error and cannot be rendered.\n"
+        "Return ONLY the corrected Mermaid diagram syntax — no code fences, no explanation.\n\n"
+        + source;
+}
+
+// ---------------------------------------------------------------------------
 std::string BuildPersonaPrompt(const std::string& personaName,
                                const std::string& personaDesc,
                                const std::string& docMarkdown,
@@ -194,12 +203,14 @@ std::string BuildPersonaPrompt(const std::string& personaName,
 
     if (useArticleContext && !docMarkdown.empty()) {
         out << "The user wants to discuss the following article with you:\n\n"
-            << "```\n" << docMarkdown << "\n```\n\n";
+            << "```\n" << StripTidbits(docMarkdown) << "\n```\n\n";
     }
 
     out << "Respond as " << personaName << " would — in-character, drawing on your "
-        << "personality, knowledge, and perspective. Keep responses conversational "
-        << "and engaging, typically a few sentences to a short paragraph.\n\n";
+        << "personality, knowledge, and perspective. Share your genuine opinion and "
+        << "insights. If the user revisits the same question or asks repeated questions, "
+        << "engage with enthusiasm — they want to hear your perspective, not a deflection. "
+        << "Keep responses conversational and engaging, typically a few sentences to a short paragraph.\n\n";
 
     if (!history.empty()) {
         out << "## Conversation so far\n\n";
@@ -225,7 +236,7 @@ std::string BuildPersonaPromptMulti(const std::string& personaName,
 
     if (useArticleContext && !docMarkdown.empty()) {
         out << "The group is discussing the following article:\n\n"
-            << "```\n" << docMarkdown << "\n```\n\n";
+            << "```\n" << StripTidbits(docMarkdown) << "\n```\n\n";
     }
 
     // List other participants so the persona is aware of the group.
@@ -244,8 +255,10 @@ std::string BuildPersonaPromptMulti(const std::string& personaName,
     }
 
     out << "Respond as " << personaName << " would — in-character, drawing on your "
-        << "personality, knowledge, and perspective. Keep responses conversational "
-        << "and engaging, typically a few sentences.\n\n";
+        << "personality, knowledge, and perspective. Share your genuine opinion and "
+        << "insights. If the user revisits the same question or asks repeated questions, "
+        << "engage with enthusiasm — they want to hear your perspective, not a deflection. "
+        << "Keep responses conversational and engaging, typically a few sentences.\n\n";
 
     if (!history.empty()) {
         out << "## Conversation so far\n\n";

@@ -416,7 +416,8 @@ std::string RenderMarkdown(const std::string& md) {
         if (inCode || inMermaid) {
             if (isClosingFence(raw, fenceChar)) {
                 if (inMermaid) {
-                    html += "<div class=\"mermaid-wrapper\">"
+                    html += "<div class=\"mermaid-wrapper\" data-src=\""
+                            + EscapeHTML(mermaidBuf) + "\">"
                             "<div class=\"mermaid\">\n" + mermaidBuf + "</div></div>\n";
                     mermaidBuf.clear();
                     inMermaid = false;
@@ -623,7 +624,8 @@ std::string RenderMarkdown(const std::string& md) {
     closeBlockquote();
     closeTable();
     if (inCode)    html += "</code></pre>\n";
-    if (inMermaid) html += "<div class=\"mermaid-wrapper\"><div class=\"mermaid\">\n"
+    if (inMermaid) html += "<div class=\"mermaid-wrapper\" data-src=\""
+                           + EscapeHTML(mermaidBuf) + "\"><div class=\"mermaid\">\n"
                            + mermaidBuf + "</div></div>\n";
     if (inTidbit)  html += "<details class=\"tidbit\">\n"
                            "<summary>" + EscapeHTML(tidbitSpeaker) + "</summary>\n"

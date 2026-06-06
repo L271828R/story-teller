@@ -42,6 +42,10 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::vector<ConversationTurn>& history,
                           const std::string& question);
 
+// Build a prompt asking the LLM to fix a broken Mermaid diagram.
+// Returns a prompt expecting only the corrected raw diagram syntax in response.
+std::string BuildMermaidRepairPrompt(const std::string& source);
+
 // Build the LLM prompt for a single-persona conversation.
 std::string BuildPersonaPrompt(const std::string& personaName,
                                const std::string& personaDesc,

@@ -40,12 +40,14 @@ private:
     std::vector<std::string> m_activePersonas;   // [0] = host, rest = invited
     std::vector<MultiChatTurn> m_chatHistory;
     bool m_chatBusy = false;
+    std::map<std::string, int> m_mermaidRepairs; // source → attempt count
 
     void Run(const std::string& js);
     void HandleMessage(const std::string& json);
     void LoadState();
     void SaveState() const;
     void PushState();
+    void PushGroups();
     void RenderPersonaChat(const std::string& pendingQ = "");
     void PersistChat();
 
@@ -58,6 +60,8 @@ private:
     void DoUploadImage(const std::string& name);
     void DoRenameCharacter(const std::string& oldName, const std::string& newName);
     void DoOpenChat(const std::string& name);
+    void DoOpenGroupChat(const std::string& key);
+    void DoRepairMermaid(const std::string& source);
     void DoInvitePersona(const std::string& name);
     void DoChatSend(const std::string& text, bool useArticle, const std::string& directTo = "");
     void DoClearChat();

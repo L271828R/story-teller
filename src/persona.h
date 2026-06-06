@@ -64,3 +64,30 @@ std::map<std::string, std::string> ToDataURLs(
 bool RenamePersonaImage(const std::string& oldName,
                         const std::string& newName,
                         const std::string& personasDir = "");
+
+// ── Group chats ───────────────────────────────────────────────────────────────
+
+struct GroupChatInfo {
+    std::string key;
+    std::vector<std::string> participants;
+};
+
+// Canonical key for a group: sort participants by normalized name, join with '+'.
+std::string GroupChatKey(const std::vector<std::string>& names);
+
+// Serialize/deserialize a group chat (participants header + multi-turn history).
+std::string SerializeGroupChat(const std::vector<MultiChatTurn>& turns,
+                               const std::vector<std::string>& participants);
+std::vector<MultiChatTurn> ParseGroupChat(const std::string& body,
+                                          std::vector<std::string>& outParticipants);
+
+// Persist / load a group conversation in chatsDir (defaults to GetPersonaChatsDir()).
+// Saving an empty turns vector deletes the file.
+void SaveGroupConversation(const std::vector<std::string>& participants,
+                           const std::vector<MultiChatTurn>& turns,
+                           const std::string& chatsDir = "");
+std::vector<MultiChatTurn> LoadGroupConversation(const std::vector<std::string>& participants,
+                                                  const std::string& chatsDir = "");
+
+// Return info for every group chat persisted in chatsDir.
+std::vector<GroupChatInfo> ListGroupChats(const std::string& chatsDir = "");

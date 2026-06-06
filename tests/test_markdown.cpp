@@ -163,5 +163,21 @@ int test_markdown() {
         }
     }
 
+    // RenderMarkdown: mermaid wrapper carries data-src for right-click repair
+    {
+        std::string md = "```mermaid\nflowchart LR\n  A --> B\n```\n";
+        std::string html = RenderMarkdown(md);
+        bool hasWrapper = html.find("mermaid-wrapper") != std::string::npos;
+        bool hasDataSrc = html.find("data-src=")       != std::string::npos;
+        bool srcContent = html.find("flowchart LR")    != std::string::npos;
+        if (!hasWrapper || !hasDataSrc || !srcContent) {
+            std::cerr << "FAIL [mermaid-data-src]: wrapper=" << hasWrapper
+                      << " data-src=" << hasDataSrc << " content=" << srcContent << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [mermaid-data-src]\n";
+        }
+    }
+
     return failures;
 }

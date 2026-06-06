@@ -235,6 +235,29 @@ void CharacterTab::PushState() {
     j << "}}";
 
     Run("setCharacters(" + j.str() + ")");
+    PushGroups();
+}
+
+void CharacterTab::PushGroups() {
+    if (!m_ready) return;
+    auto groups = ListGroupChats();
+    std::ostringstream gj;
+    gj << "[";
+    bool fg = true;
+    for (const auto& g : groups) {
+        if (!fg) gj << ",";
+        fg = false;
+        gj << "{\"key\":" << Jq(g.key) << ",\"participants\":[";
+        bool fp = true;
+        for (const auto& p : g.participants) {
+            if (!fp) gj << ",";
+            fp = false;
+            gj << Jq(p);
+        }
+        gj << "]}";
+    }
+    gj << "]";
+    Run("setGroups(" + gj.str() + ")");
 }
 
 // ── Message dispatcher ────────────────────────────────────────────────────────
@@ -251,6 +274,8 @@ void CharacterTab::HandleMessage(const std::string& json) {
     else if (action == "uploadImage")    DoUploadImage(CtField(json,"name"));
     else if (action == "renameCharacter")DoRenameCharacter(CtField(json,"oldName"), CtField(json,"newName"));
     else if (action == "openChat")        DoOpenChat(CtField(json,"name"));
+    else if (action == "openGroupChat")  DoOpenGroupChat(CtField(json,"key"));
+    else if (action == "repairMermaid")  DoRepairMermaid(CtField(json,"source"));
     else if (action == "invitePersona")  DoInvitePersona(CtField(json,"name"));
     else if (action == "sendMessage")    DoChatSend(CtField(json,"text"), CtBool(json,"useArticle"), CtField(json,"directTo"));
     else if (action == "clearChat")      DoClearChat();
@@ -415,11 +440,14 @@ void CharacterTab::RenderPersonaChat(const std::string& pendingQ) {
 }
 
 void CharacterTab::PersistChat() {
-    // Only persist single-persona conversations (group chats are session-only).
-    if (m_activePersonas.size() != 1) return;
-    const std::string& name = m_activePersonas[0];
-    auto single = FromMultiChatHistory(name, m_chatHistory);
-    SavePersonaConversation(name, single);
+    if (m_activePersonas.size() == 1) {
+        const std::string& name = m_activePersonas[0];
+        auto single = FromMultiChatHistory(name, m_chatHistory);
+        SavePersonaConversation(name, single);
+    } else if (m_activePersonas.size() > 1) {
+        SaveGroupConversation(m_activePersonas, m_chatHistory);
+        PushGroups(); // refresh Groups section so new group appears immediately
+    }
 }
 
 void CharacterTab::DoOpenChat(const std::string& name) {
@@ -442,13 +470,116 @@ void CharacterTab::DoOpenChat(const std::string& name) {
     RenderPersonaChat();
 }
 
+void CharacterTab::DoRepairMermaid(const std::string& source) {
+    if (source.empty() || m_activePersonas.empty() || m_chatBusy) return;
+
+    // Track attempts; give up silently after 2 to avoid infinite loops.
+    auto& count = m_mermaidRepairs[source];
+    if (count >= 2) return;
+    ++count;
+
+    m_chatBusy = true;
+    RenderPersonaChat(); // show busy state
+
+    AppState st = LoadAppState();
+    LLMConfig cfg;
+    cfg.backend     = BackendFromLabel(st.backend);
+    cfg.apiKey      = st.apiKey;
+    cfg.ollamaModel = st.ollamaModel;
+
+    std::string prompt = BuildMermaidRepairPrompt(source);
+
+    std::thread([this, prompt, cfg, source]() mutable {
+        LLMResult res = InvokeLLM(prompt, cfg);
+        wxTheApp->CallAfter([this, res, source]() {
+            m_chatBusy = false;
+            if (!res.ok) { RenderPersonaChat(); return; }
+
+            // Strip accidental code fences the LLM may have added.
+            std::string fixed = res.text;
+            if (fixed.rfind("```mermaid", 0) == 0) {
+                auto start = fixed.find('\n');
+                auto end   = fixed.rfind("```");
+                if (start != std::string::npos && end > start)
+                    fixed = fixed.substr(start + 1, end - start - 1);
+            } else if (fixed.rfind("```", 0) == 0) {
+                auto start = fixed.find('\n');
+                auto end   = fixed.rfind("```");
+                if (start != std::string::npos && end > start)
+                    fixed = fixed.substr(start + 1, end - start - 1);
+            }
+            // Ensure trailing newline (mermaid source always ends with \n).
+            if (!fixed.empty() && fixed.back() != '\n') fixed += '\n';
+
+            // Replace old source with fixed source in every response in history.
+            std::string oldBlock = "```mermaid\n" + source + "```";
+            std::string newBlock = "```mermaid\n" + fixed  + "```";
+            bool replaced = false;
+            for (auto& turn : m_chatHistory) {
+                for (auto& r : turn.responses) {
+                    auto pos = r.second.find(oldBlock);
+                    if (pos != std::string::npos) {
+                        r.second.replace(pos, oldBlock.size(), newBlock);
+                        replaced = true;
+                    }
+                }
+            }
+            if (replaced) {
+                m_mermaidRepairs.erase(source); // reset counter for fixed source
+                PersistChat();
+            }
+            RenderPersonaChat();
+        });
+    }).detach();
+}
+
+void CharacterTab::DoOpenGroupChat(const std::string& key) {
+    if (key.empty()) return;
+
+    // Find the group with this key.
+    auto groups = ListGroupChats();
+    const GroupChatInfo* found = nullptr;
+    for (const auto& g : groups)
+        if (g.key == key) { found = &g; break; }
+    if (!found || found->participants.empty()) return;
+
+    m_activePersonas = found->participants;
+    m_chatHistory    = LoadGroupConversation(m_activePersonas);
+
+    Run("startChat(" + Jq(m_activePersonas[0]) + ")");
+    std::ostringstream activeJs;
+    activeJs << "[";
+    for (size_t i = 0; i < m_activePersonas.size(); ++i) {
+        if (i) activeJs << ",";
+        activeJs << Jq(m_activePersonas[i]);
+    }
+    activeJs << "]";
+    Run("setActivePersonas(" + activeJs.str() + ")");
+    RenderPersonaChat();
+}
+
 void CharacterTab::DoInvitePersona(const std::string& name) {
     if (name.empty() || m_activePersonas.empty() || m_chatBusy) return;
     // Don't invite duplicates.
     for (const auto& p : m_activePersonas)
         if (p == name) return;
 
+    bool wasSolo = (m_activePersonas.size() == 1);
+    if (wasSolo) {
+        // Save solo history before transitioning to group mode.
+        PersistChat();
+    }
+
     m_activePersonas.push_back(name);
+
+    if (wasSolo) {
+        // Load existing group history (or start fresh for this group).
+        auto existing = LoadGroupConversation(m_activePersonas);
+        if (!existing.empty())
+            m_chatHistory = std::move(existing);
+        else
+            m_chatHistory.clear(); // new group starts fresh
+    }
 
     // The invited persona immediately reacts to the last user message (if any).
     std::string lastMsg;

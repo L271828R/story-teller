@@ -125,5 +125,28 @@ int test_character_tab_html() {
     check("char-tab-update-triggers-hljs",
           light.find("hljs.highlightElement") != std::string::npos);
 
+    // Groups section: persistent multi-persona chats (Teams-like)
+    check("char-tab-groups-section",
+          light.find("groups-section") != std::string::npos);
+
+    check("char-tab-set-groups",
+          light.find("setGroups") != std::string::npos);
+
+    check("char-tab-open-group-chat",
+          light.find("openGroupChat") != std::string::npos);
+
+    check("char-tab-group-card-css",
+          light.find("group-card") != std::string::npos);
+
+    check("char-tab-gavatar-css",
+          light.find("gavatar") != std::string::npos);
+
+    // Right-click on mermaid diagram → fix menu
+    check("char-tab-mermaid-ctx-menu",
+          light.find("repairMermaid") != std::string::npos);
+
+    check("char-tab-mermaid-ctx-css",
+          light.find("ctx-menu") != std::string::npos);
+
     return failures;
 }

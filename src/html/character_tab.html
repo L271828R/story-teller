@@ -175,6 +175,45 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 
 .empty { color: var(--muted); padding: 32px; text-align: center; width: 100%; }
 
+/* ── Groups section ─────────────────────────────────── */
+.groups-h2 {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); margin: 20px 0 10px;
+}
+.group-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px; cursor: pointer;
+  border: 1.5px solid var(--border); background: var(--surface);
+  margin-bottom: 8px; transition: background .15s, border-color .15s;
+}
+.group-card:hover { background: var(--card-hover); }
+.group-card.active-group {
+  background: var(--card-checked); border-color: var(--card-checked-border);
+}
+.gavatar-stack { position: relative; height: 36px; width: 48px; flex-shrink: 0; }
+.gavatar {
+  position: absolute; width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; color: #fff; overflow: hidden;
+}
+.gavatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+
+/* ── Mermaid right-click context menu ───────────────── */
+.ctx-menu {
+  position: fixed; z-index: 9999; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18); padding: 4px 0; min-width: 150px;
+  display: none;
+}
+.ctx-menu.open { display: block; }
+.ctx-item {
+  padding: 8px 14px; cursor: pointer; font-size: 13px; color: var(--text);
+  white-space: nowrap;
+}
+.ctx-item:hover { background: var(--card-hover); }
+
 /* ── Resizer handle ─────────────────────────────────── */
 #resizer {
   width: 5px; flex-shrink: 0; cursor: col-resize;
@@ -328,6 +367,7 @@ pre code.hljs { border-radius: 6px; font-size: 11px; }
 </div>
 <div class="filter-bar" id="filters"></div>
 <div class="grid" id="grid"></div>
+<div id="groups-section"></div>
 </div>
 
 <div id="resizer"></div>
@@ -360,6 +400,8 @@ pre code.hljs { border-radius: 6px; font-size: 11px; }
 </div>
 
 </div><!-- #shell -->
+
+<div id="ctx-menu" class="ctx-menu"></div>
 
 <script>
 var _cats    = {};
@@ -517,7 +559,7 @@ function renderGrid() {
   if (_addChar) { var ci = document.getElementById('charInp'); if (ci) ci.focus(); }
 }
 
-function render() { renderFilters(); renderGrid(); }
+function render() { renderFilters(); renderGrid(); renderGroups(); }
 
 function setFilter(cat) { _cur = cat; render(); }
 function setSearch(val) { _search = val.trim(); renderGrid(); }
@@ -605,6 +647,56 @@ function setCharacters(data) {
 
 function setDarkMode(dark) {
   document.body.classList.toggle('dark', dark);
+}
+
+// ── Group chats ──────────────────────────────────────────────────────────────
+
+var _groups = []; // [{key, participants:[]}]
+
+function groupKey(participants) {
+  var normed = participants.map(function(n) { return norm(n); }).sort();
+  return normed.join('+');
+}
+
+function renderGroups() {
+  var sec = document.getElementById('groups-section');
+  if (!sec) return;
+  if (!_groups.length) { sec.innerHTML = ''; return; }
+
+  var activeKey = _activePersonas.length > 1 ? groupKey(_activePersonas) : null;
+
+  var h = '<div class="groups-h2">Group Chats</div>';
+  _groups.forEach(function(g) {
+    var isActive = activeKey && g.key === activeKey;
+    // Stacked avatar bubbles (up to 4)
+    var avatarPositions = ['top:0;left:0','bottom:0;right:0','top:0;right:0','bottom:0;left:0'];
+    var avatars = g.participants.slice(0, 4).map(function(pname, i) {
+      var k   = norm(pname);
+      var url = _imgs[k];
+      var bg  = 'background:' + nameColor(pname) + ';';
+      var pos = avatarPositions[i] + ';';
+      var inner = url
+        ? '<img src="' + eattr(url) + '" alt="">'
+        : esc(pname.trim().charAt(0).toUpperCase());
+      return '<div class="gavatar" style="' + bg + pos + '">' + inner + '</div>';
+    }).join('');
+
+    h += '<div class="group-card' + (isActive ? ' active-group' : '') +
+      '" onclick="openGroupChat(\'' + ej(g.key) + '\')">' +
+      '<div class="gavatar-stack">' + avatars + '</div>' +
+      '<div class="group-label">' + esc(g.participants.join(' + ')) + '</div>' +
+      '</div>';
+  });
+  sec.innerHTML = h;
+}
+
+function setGroups(groups) {
+  _groups = groups || [];
+  renderGroups();
+}
+
+function openGroupChat(key) {
+  send({action:'openGroupChat', key:key});
 }
 
 window.updatePersonaImage = function(key, url) {
@@ -756,7 +848,8 @@ function startChat(name) {
     av.style.background = nameColor(name);
   }
 
-  renderGrid(); // re-render grid to highlight active card
+  renderGrid();    // re-render grid to highlight active card
+  renderGroups();  // re-render groups to highlight active group
   var ta = document.getElementById('chat-ta');
   if (ta) { ta.disabled = false; ta.focus(); }
 }
@@ -865,6 +958,46 @@ function chatKey(e) {
     document.removeEventListener('mouseup',   onUp);
   }
 })();
+
+// ── Mermaid right-click repair ───────────────────────────────────────────────
+
+var _ctxSrc = null;
+
+function repairMermaid(source) {
+  send({action:'repairMermaid', source:source});
+  var menu = document.getElementById('ctx-menu');
+  menu.classList.remove('open');
+}
+
+function hideCtxMenu() {
+  document.getElementById('ctx-menu').classList.remove('open');
+  _ctxSrc = null;
+}
+
+document.addEventListener('contextmenu', function(e) {
+  // Walk up manually — closest() is unreliable inside SVG (mermaid error renders).
+  var node = e.target, wrapper = null;
+  while (node && node !== document.body) {
+    if (node.classList && node.classList.contains('mermaid-wrapper')) {
+      wrapper = node; break;
+    }
+    node = node.parentNode;
+  }
+  if (!wrapper) return;
+  e.preventDefault();
+  _ctxSrc = wrapper.getAttribute('data-src') || '';
+  var menu = document.getElementById('ctx-menu');
+  menu.innerHTML =
+    '<div class="ctx-item" onclick="repairMermaid(\'' + ej(_ctxSrc) + '\')">⟳ Fix diagram</div>';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top  = e.clientY + 'px';
+  menu.classList.add('open');
+});
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('ctx-menu');
+  if (menu && !menu.contains(e.target)) hideCtxMenu();
+});
 
 document.addEventListener('DOMContentLoaded', function() {
   send({action:'ready'});

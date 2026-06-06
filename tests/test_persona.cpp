@@ -333,5 +333,88 @@ int test_persona() {
         }
     }
 
+    // GroupChatKey: sorts and normalizes participant names
+    {
+        std::string key = GroupChatKey({"Caveman", "Cavewoman"});
+        if (key != "caveman+cavewoman") {
+            std::cerr << "FAIL [group-chat-key]: got '" << key << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [group-chat-key]\n";
+        }
+    }
+
+    // GroupChatKey: input order doesn't matter
+    {
+        std::string k1 = GroupChatKey({"Alice", "Bob", "Charlie"});
+        std::string k2 = GroupChatKey({"Charlie", "Alice", "Bob"});
+        if (k1 != k2 || k1 != "alice+bob+charlie") {
+            std::cerr << "FAIL [group-chat-key-order]: got '" << k1 << "' vs '" << k2 << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [group-chat-key-order]\n";
+        }
+    }
+
+    // SerializeGroupChat / ParseGroupChat roundtrip
+    {
+        std::vector<std::string> participants = {"Alice", "Bob"};
+        std::vector<MultiChatTurn> turns = {
+            {"Hello!", {{"Alice", "Hi there."}, {"Bob", "Greetings!"}}},
+            {"How are you?", {{"Alice", "Fine."}, {"Bob", "Great."}}}
+        };
+        std::string body = SerializeGroupChat(turns, participants);
+        std::vector<std::string> outParts;
+        auto loaded = ParseGroupChat(body, outParts);
+        bool ok = outParts == participants &&
+                  loaded.size() == 2 &&
+                  loaded[0].userMessage == "Hello!" &&
+                  loaded[0].responses.size() == 2 &&
+                  loaded[0].responses[0].first  == "Alice" &&
+                  loaded[0].responses[0].second == "Hi there." &&
+                  loaded[1].userMessage == "How are you?" &&
+                  loaded[1].responses[1].second == "Great.";
+        if (!ok) {
+            std::cerr << "FAIL [group-chat-roundtrip]: parts=" << outParts.size()
+                      << " turns=" << loaded.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [group-chat-roundtrip]\n";
+        }
+    }
+
+    // SaveGroupConversation / LoadGroupConversation / ListGroupChats
+    {
+        std::string tmpDir = "/tmp/st_gchat_" + std::to_string(getpid());
+        mkdir(tmpDir.c_str(), 0755);
+
+        std::vector<std::string> participants = {"Caveman", "Cavewoman"};
+        std::vector<MultiChatTurn> turns = {
+            {"Fire good!", {{"Caveman", "Ugh!"}, {"Cavewoman", "Warm!"}}}
+        };
+        SaveGroupConversation(participants, turns, tmpDir);
+
+        auto loaded = LoadGroupConversation(participants, tmpDir);
+        auto groups = ListGroupChats(tmpDir);
+
+        std::string key = GroupChatKey(participants);
+        std::string file = tmpDir + "/group_" + key + ".md";
+        ::unlink(file.c_str());
+        ::rmdir(tmpDir.c_str());
+
+        bool ok = loaded.size() == 1 &&
+                  loaded[0].userMessage == "Fire good!" &&
+                  loaded[0].responses[0].first == "Caveman" &&
+                  groups.size() == 1 &&
+                  groups[0].key == key;
+        if (!ok) {
+            std::cerr << "FAIL [group-chat-save-load]: loaded=" << loaded.size()
+                      << " groups=" << groups.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [group-chat-save-load]\n";
+        }
+    }
+
     return failures;
 }

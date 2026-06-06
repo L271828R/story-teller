@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -305,4 +306,144 @@ bool RenamePersonaImage(const std::string& oldName,
         return ::rename(src.c_str(), dst.c_str()) == 0;
     }
     return false;
+}
+
+// ── Group chats ───────────────────────────────────────────────────────────────
+
+std::string GroupChatKey(const std::vector<std::string>& names) {
+    std::vector<std::string> normalized;
+    normalized.reserve(names.size());
+    for (const auto& n : names)
+        normalized.push_back(NormalizePersonaName(n));
+    std::sort(normalized.begin(), normalized.end());
+    std::string key;
+    for (size_t i = 0; i < normalized.size(); ++i) {
+        if (i > 0) key += '+';
+        key += normalized[i];
+    }
+    return key;
+}
+
+std::string SerializeGroupChat(const std::vector<MultiChatTurn>& turns,
+                               const std::vector<std::string>& participants) {
+    std::ostringstream out;
+    out << "Participants:";
+    for (size_t i = 0; i < participants.size(); ++i)
+        out << (i == 0 ? " " : ", ") << participants[i];
+    out << "\n\n";
+    for (const auto& t : turns) {
+        out << "Q: " << t.userMessage << "\n";
+        for (const auto& r : t.responses)
+            out << r.first << ": " << r.second << "\n";
+        out << "\n";
+    }
+    return out.str();
+}
+
+std::vector<MultiChatTurn> ParseGroupChat(const std::string& body,
+                                          std::vector<std::string>& outParticipants) {
+    outParticipants.clear();
+    std::vector<MultiChatTurn> turns;
+    std::istringstream ss(body);
+    std::string line;
+    bool headerDone = false;
+    MultiChatTurn cur;
+    bool inTurn = false;
+
+    while (std::getline(ss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
+        if (!headerDone) {
+            if (line.rfind("Participants: ", 0) == 0) {
+                std::istringstream ns(line.substr(14));
+                std::string name;
+                while (std::getline(ns, name, ',')) {
+                    size_t start = name.find_first_not_of(' ');
+                    size_t end   = name.find_last_not_of(' ');
+                    if (start != std::string::npos)
+                        outParticipants.push_back(name.substr(start, end - start + 1));
+                }
+            } else if (line.empty() && !outParticipants.empty()) {
+                headerDone = true;
+            }
+            continue;
+        }
+
+        if (line.rfind("Q: ", 0) == 0) {
+            if (inTurn) turns.push_back(cur);
+            cur = {line.substr(3), {}};
+            inTurn = true;
+        } else if (inTurn && !line.empty()) {
+            bool isSpeaker = false;
+            for (const auto& p : outParticipants) {
+                std::string prefix = p + ": ";
+                if (line.rfind(prefix, 0) == 0) {
+                    cur.responses.push_back({p, line.substr(prefix.size())});
+                    isSpeaker = true;
+                    break;
+                }
+            }
+            if (!isSpeaker && !cur.responses.empty())
+                cur.responses.back().second += "\n" + line;
+        }
+    }
+    if (inTurn && !cur.userMessage.empty()) turns.push_back(cur);
+    return turns;
+}
+
+void SaveGroupConversation(const std::vector<std::string>& participants,
+                           const std::vector<MultiChatTurn>& turns,
+                           const std::string& chatsDir) {
+    std::string dir  = chatsDir.empty() ? GetPersonaChatsDir() : chatsDir;
+    std::string key  = GroupChatKey(participants);
+    std::string path = dir + "/group_" + key + ".md";
+
+    if (turns.empty()) {
+        ::unlink(path.c_str());
+        return;
+    }
+    mkdir(dir.c_str(), 0755);
+    std::ofstream f(path, std::ios::trunc);
+    if (f) f << SerializeGroupChat(turns, participants);
+}
+
+std::vector<MultiChatTurn> LoadGroupConversation(const std::vector<std::string>& participants,
+                                                  const std::string& chatsDir) {
+    std::string dir  = chatsDir.empty() ? GetPersonaChatsDir() : chatsDir;
+    std::string key  = GroupChatKey(participants);
+    std::string path = dir + "/group_" + key + ".md";
+
+    std::ifstream f(path);
+    if (!f) return {};
+    std::string content((std::istreambuf_iterator<char>(f)), {});
+    std::vector<std::string> outParts;
+    return ParseGroupChat(content, outParts);
+}
+
+std::vector<GroupChatInfo> ListGroupChats(const std::string& chatsDir) {
+    std::string dir = chatsDir.empty() ? GetPersonaChatsDir() : chatsDir;
+    std::vector<GroupChatInfo> result;
+
+    DIR* d = opendir(dir.c_str());
+    if (!d) return result;
+
+    struct dirent* entry;
+    while ((entry = readdir(d)) != nullptr) {
+        std::string fname(entry->d_name);
+        if (fname.rfind("group_", 0) != 0) continue;
+        if (fname.size() < 10) continue;
+        if (fname.compare(fname.size() - 3, 3, ".md") != 0) continue;
+
+        std::string key  = fname.substr(6, fname.size() - 9); // strip "group_" + ".md"
+        std::string path = dir + "/" + fname;
+        std::ifstream f(path);
+        if (!f) continue;
+        std::string content((std::istreambuf_iterator<char>(f)), {});
+        std::vector<std::string> parts;
+        ParseGroupChat(content, parts);
+        if (!parts.empty())
+            result.push_back({key, parts});
+    }
+    closedir(d);
+    return result;
 }

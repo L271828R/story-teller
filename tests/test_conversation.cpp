@@ -554,5 +554,96 @@ int test_conversation() {
         }
     }
 
+    // BuildPersonaPrompt: tidbits stripped from article context
+    {
+        std::vector<ConversationTurn> history;
+        std::string docWithTidbit =
+            "# Main Article\n\nSome content here.\n\n"
+            ":::tidbit[Cavewoman]\nShe invented fire.\n:::\n\n"
+            "More article text.";
+        std::string prompt = BuildPersonaPrompt("Einstein", "", docWithTidbit, history, "Tell me", true);
+        bool hasMain    = prompt.find("Some content here.") != std::string::npos;
+        bool hasMore    = prompt.find("More article text.") != std::string::npos;
+        bool noTidbit   = prompt.find("She invented fire.") == std::string::npos;
+        bool noTidbitFn = prompt.find(":::tidbit")          == std::string::npos;
+        if (!hasMain || !hasMore || !noTidbit || !noTidbitFn) {
+            std::cerr << "FAIL [build-persona-prompt-strips-tidbits]: "
+                      << "hasMain=" << hasMain << " hasMore=" << hasMore
+                      << " noTidbit=" << noTidbit << " noTidbitFn=" << noTidbitFn << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-strips-tidbits]\n";
+        }
+    }
+
+    // BuildPersonaPromptMulti: tidbits stripped from article context
+    {
+        std::vector<MultiChatTurn> history;
+        std::string docWithTidbit =
+            "# Chat Topic\n\n:::tidbit[Caveman]\nHe grunted.\n:::\n\nReal content.";
+        std::string prompt = BuildPersonaPromptMulti("Curie", "", docWithTidbit, history, "Discuss", true);
+        bool hasReal  = prompt.find("Real content.")  != std::string::npos;
+        bool noTidbit = prompt.find("He grunted.")    == std::string::npos;
+        if (!hasReal || !noTidbit) {
+            std::cerr << "FAIL [build-persona-prompt-multi-strips-tidbits]: "
+                      << "hasReal=" << hasReal << " noTidbit=" << noTidbit << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-multi-strips-tidbits]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: prompt encourages sharing opinion, not annoyance
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Einstein", "", "", history, "Hello", false);
+        // Should include guidance about opinion / engagement, not just "in-character"
+        bool hasOpinion = prompt.find("opinion") != std::string::npos ||
+                          prompt.find("perspective") != std::string::npos;
+        bool noAnnoy    = prompt.find("annoyed") == std::string::npos &&
+                          prompt.find("frustrated") == std::string::npos;
+        if (!hasOpinion || !noAnnoy) {
+            std::cerr << "FAIL [build-persona-prompt-opinion]: "
+                      << "hasOpinion=" << hasOpinion << " noAnnoy=" << noAnnoy << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-opinion]\n";
+        }
+    }
+
+    // BuildPersonaPrompt: repeated questions should be welcomed, not deflected
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildPersonaPrompt("Einstein", "", "", history, "Hello", false);
+        bool hasRepeated = prompt.find("repeated") != std::string::npos ||
+                           prompt.find("revisit")  != std::string::npos ||
+                           prompt.find("same question") != std::string::npos;
+        if (!hasRepeated) {
+            std::cerr << "FAIL [build-persona-prompt-repeated-questions]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-persona-prompt-repeated-questions]\n";
+        }
+    }
+
+    // BuildMermaidRepairPrompt: contains the source and asks for corrected syntax
+    {
+        std::string src = "flowchart LR\n  A --> B\n  B --bad syntax-- C\n";
+        std::string prompt = BuildMermaidRepairPrompt(src);
+        bool hasSrc   = prompt.find(src)        != std::string::npos;
+        bool hasFix   = prompt.find("syntax")   != std::string::npos ||
+                        prompt.find("corrected") != std::string::npos ||
+                        prompt.find("fix")       != std::string::npos;
+        bool noFences = prompt.find("```") == std::string::npos; // prompt should not wrap it
+        if (!hasSrc || !hasFix) {
+            std::cerr << "FAIL [build-mermaid-repair-prompt]: hasSrc=" << hasSrc
+                      << " hasFix=" << hasFix << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-mermaid-repair-prompt]\n";
+        }
+        (void)noFences;
+    }
+
     return failures;
 }
