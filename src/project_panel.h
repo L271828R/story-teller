@@ -23,8 +23,9 @@ class ProjectPanel : public wxPanel {
 public:
     using OpenCallback = std::function<void(const std::string&)>;
 
-    ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated);
+    ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bool darkMode = false);
 
+    void SetDarkMode(bool dark);
     void RefreshProjects();
 
 private:
@@ -72,7 +73,10 @@ private:
     wxButton*     m_newProjectBtn;
     wxButton*     m_setFolderBtn;
 
+    void ApplyTheme();
+
     // ---- state --------------------------------------------------------------
+    bool                  m_darkMode = false;
     std::set<std::string> m_expandedPaths;   // paths whose folder nodes are expanded
     wxTreeItemId          m_dragItem;        // item being dragged
     OpenCallback          m_openCallback;

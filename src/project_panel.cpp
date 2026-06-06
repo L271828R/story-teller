@@ -138,8 +138,9 @@ static bool projectMatchesQuery(const std::string& name,
 // Constructor
 // ===========================================================================
 
-ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
+ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bool darkMode)
     : wxPanel(parent, wxID_ANY)
+    , m_darkMode(darkMode)
     , m_openCallback(std::move(onProjectActivated))
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
@@ -214,7 +215,41 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
     outer->Add(inner, 1, wxEXPAND | wxALL, 14);
     SetSizer(outer);
 
+    ApplyTheme();
     RefreshProjects();
+}
+
+// ===========================================================================
+// Dark mode
+// ===========================================================================
+
+void ProjectPanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    ApplyTheme();
+}
+
+void ProjectPanel::ApplyTheme() {
+    if (m_darkMode) {
+        wxColour bg(30, 30, 30);
+        wxColour surface(42, 42, 42);
+        wxColour fg(224, 224, 224);
+        wxColour muted(153, 153, 153);
+
+        SetBackgroundColour(bg);
+        if (m_treeCtrl)         { m_treeCtrl->SetBackgroundColour(surface);  m_treeCtrl->SetForegroundColour(fg); }
+        if (m_searchCtrl)       { m_searchCtrl->SetBackgroundColour(surface); m_searchCtrl->SetForegroundColour(fg); }
+        if (m_sortChoice)       { m_sortChoice->SetBackgroundColour(surface); m_sortChoice->SetForegroundColour(fg); }
+        if (m_projectPathLabel) { m_projectPathLabel->SetBackgroundColour(bg); m_projectPathLabel->SetForegroundColour(muted); }
+        if (m_statsLabel)       { m_statsLabel->SetBackgroundColour(bg);       m_statsLabel->SetForegroundColour(muted); }
+    } else {
+        SetBackgroundColour(wxNullColour);
+        if (m_treeCtrl)         { m_treeCtrl->SetBackgroundColour(wxNullColour);  m_treeCtrl->SetForegroundColour(wxNullColour); }
+        if (m_searchCtrl)       { m_searchCtrl->SetBackgroundColour(wxNullColour); m_searchCtrl->SetForegroundColour(wxNullColour); }
+        if (m_sortChoice)       { m_sortChoice->SetBackgroundColour(wxNullColour); m_sortChoice->SetForegroundColour(wxNullColour); }
+        if (m_projectPathLabel) { m_projectPathLabel->SetBackgroundColour(wxNullColour); m_projectPathLabel->SetForegroundColour(wxNullColour); }
+        if (m_statsLabel)       { m_statsLabel->SetBackgroundColour(wxNullColour); m_statsLabel->SetForegroundColour(wxNullColour); }
+    }
+    Refresh();
 }
 
 // ===========================================================================

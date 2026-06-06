@@ -17,4 +17,6 @@ cmake --build build -j"$(sysctl -n hw.logicalcpu)"
 
 echo ""
 echo "Done. Run with:"
-echo "  ./build/story-teller [file.md|file.html]"
+echo "  open ./build/story-teller.app"
+echo "  # or directly:"
+echo "  ./build/story-teller.app/Contents/MacOS/story-teller [file.md|file.html]"

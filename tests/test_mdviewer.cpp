@@ -292,5 +292,94 @@ int test_mdviewer() {
         }
     }
 
+    // ProjectPanel must have a SetDarkMode method.
+    {
+        std::ifstream src("src/project_panel.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool hasMethod = code.find("SetDarkMode") != std::string::npos;
+        if (!hasMethod) {
+            std::cerr << "FAIL [project-panel-dark-mode-method]: project_panel.cpp "
+                         "must implement SetDarkMode\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-panel-dark-mode-method]\n";
+        }
+    }
+
+    // ProjectPanel::SetDarkMode must apply colours to widgets.
+    {
+        std::ifstream src("src/project_panel.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool setsColour = code.find("SetBackgroundColour") != std::string::npos ||
+                          code.find("SetForegroundColour") != std::string::npos;
+        if (!setsColour) {
+            std::cerr << "FAIL [project-panel-dark-mode-apply]: SetDarkMode must "
+                         "call SetBackgroundColour or SetForegroundColour on widgets\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-panel-dark-mode-apply]\n";
+        }
+    }
+
+    // mdviewer must call m_projectPage->SetDarkMode when toggling theme.
+    {
+        std::ifstream src("src/mdviewer.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool wired = code.find("m_projectPage->SetDarkMode") != std::string::npos;
+        if (!wired) {
+            std::cerr << "FAIL [project-panel-dark-wired]: mdviewer.cpp must call "
+                         "m_projectPage->SetDarkMode in both theme-toggle handlers\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-panel-dark-wired]\n";
+        }
+    }
+
+    // CMakeLists.txt must configure the app as a macOS bundle.
+    {
+        std::ifstream src("CMakeLists.txt");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool hasBundle = code.find("MACOSX_BUNDLE") != std::string::npos;
+        if (!hasBundle) {
+            std::cerr << "FAIL [app-icon-cmake-bundle]: CMakeLists.txt must set "
+                         "MACOSX_BUNDLE to produce a proper .app bundle with an icon\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [app-icon-cmake-bundle]\n";
+        }
+    }
+
+    // CMakeLists.txt must reference AppIcon so the .icns is copied into the bundle.
+    {
+        std::ifstream src("CMakeLists.txt");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool hasIcon = code.find("AppIcon") != std::string::npos;
+        if (!hasIcon) {
+            std::cerr << "FAIL [app-icon-cmake-icon-file]: CMakeLists.txt must "
+                         "reference AppIcon for the bundle icon\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [app-icon-cmake-icon-file]\n";
+        }
+    }
+
+    // tools/gen_icon.swift must exist to generate the emoji icon at build time.
+    {
+        std::ifstream src("tools/gen_icon.swift");
+        bool exists = src.good();
+        if (!exists) {
+            std::cerr << "FAIL [app-icon-gen-script]: tools/gen_icon.swift must "
+                         "exist to render the emoji icon\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [app-icon-gen-script]\n";
+        }
+    }
+
     return failures;
 }

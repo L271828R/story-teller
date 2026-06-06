@@ -1,5 +1,6 @@
 #include "character_tab.h"
 #include "character_tab_html.h"
+#include "inspector.h"
 #include "conversation.h"
 #include "llm.h"
 #include "config.h"
@@ -99,6 +100,7 @@ CharacterTab::CharacterTab(wxWindow* parent, bool darkMode)
     SetSizer(sizer);
 
     m_webView->SetPage(wxString::FromUTF8(BuildCharacterTabHTML(darkMode)), "");
+    EnableWebInspector(m_webView);
 }
 
 void CharacterTab::Run(const std::string& js) {

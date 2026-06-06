@@ -236,7 +236,7 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
 
     // ── Projects page ─────────────────────────────────────────────────────
     m_projectPage = new ProjectPanel(m_notebook,
-        [this](const std::string& path) { LoadFile(path); });
+        [this](const std::string& path) { LoadFile(path); }, m_darkMode);
     m_notebook->AddPage(m_projectPage, "Projects");
 
     // ── Characters/Personas page ──────────────────────────────────────────
@@ -542,6 +542,7 @@ void MDViewerFrame::OnThemeLight(wxCommandEvent&) {
         if (m_quizTab)       m_quizTab->SetDarkMode(false);
         if (m_promptsTab)    m_promptsTab->SetDarkMode(false);
         if (m_socialTab)     m_socialTab->SetDarkMode(false);
+        if (m_projectPage)   m_projectPage->SetDarkMode(false);
         LoadAndRender();
     }
 }
@@ -560,6 +561,7 @@ void MDViewerFrame::OnThemeDark(wxCommandEvent&) {
         if (m_quizTab)       m_quizTab->SetDarkMode(true);
         if (m_promptsTab)    m_promptsTab->SetDarkMode(true);
         if (m_socialTab)     m_socialTab->SetDarkMode(true);
+        if (m_projectPage)   m_projectPage->SetDarkMode(true);
         LoadAndRender();
     }
 }

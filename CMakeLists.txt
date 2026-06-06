@@ -175,8 +175,42 @@ set(SOURCES
     src/js_util.cpp
     src/quiz.cpp
 )
-add_executable(story-teller ${SOURCES})
+# ── App icon — rendered from emoji at build time ──────────────────────────────
+find_program(SWIFT swift)
+if(SWIFT)
+    set(ICONSET_DIR "${CMAKE_CURRENT_BINARY_DIR}/AppIcon.iconset")
+    set(ICON_FILE   "${CMAKE_CURRENT_BINARY_DIR}/AppIcon.icns")
+    set(GEN_ICON_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_icon.swift")
+    add_custom_command(
+        OUTPUT  "${ICON_FILE}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${ICONSET_DIR}"
+        COMMAND ${SWIFT} "${GEN_ICON_SCRIPT}" "${ICONSET_DIR}"
+        COMMAND iconutil -c icns -o "${ICON_FILE}" "${ICONSET_DIR}"
+        DEPENDS "${GEN_ICON_SCRIPT}"
+        COMMENT "Generating AppIcon.icns from 📖 emoji"
+        VERBATIM
+    )
+    add_custom_target(gen_icon ALL DEPENDS "${ICON_FILE}")
+    set(ICON_SOURCES "${ICON_FILE}")
+else()
+    set(ICON_SOURCES "")
+endif()
+# ─────────────────────────────────────────────────────────────────────────────
+
+add_executable(story-teller MACOSX_BUNDLE ${SOURCES} ${ICON_SOURCES})
 add_dependencies(story-teller gen_mermaid_header gen_hljs_headers gen_panel_headers)
+if(SWIFT)
+    add_dependencies(story-teller gen_icon)
+endif()
+
+set_target_properties(story-teller PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME        "StoryTeller"
+    MACOSX_BUNDLE_GUI_IDENTIFIER     "com.luminai.storyteller"
+    MACOSX_BUNDLE_BUNDLE_VERSION     "1.0"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    MACOSX_BUNDLE_ICON_FILE          "AppIcon"
+    RESOURCE                         "${ICON_SOURCES}"
+)
 
 target_include_directories(story-teller PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(story-teller PRIVATE ${wxWidgets_LIBRARIES})

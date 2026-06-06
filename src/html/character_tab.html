@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+{{HLJS_CSS}}
+{{HLJS_JS}}
+{{MERMAID_JS}}
 <style>
 :root {
   --bg:#f5f5f5; --surface:#fff; --border:#ddd;
@@ -242,6 +245,9 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
 .chat-q p:last-child, .chat-a p:last-child { margin-bottom: 0; }
 .chat-q ul, .chat-a ul, .chat-q ol, .chat-a ol { margin: 4px 0 4px 16px; }
 .chat-waiting { color: var(--muted); font-style: italic; }
+pre { margin: 6px 0; border-radius: 6px; overflow-x: auto; }
+pre code.hljs { border-radius: 6px; font-size: 11px; }
+.mermaid-wrapper { border-radius: 6px; overflow: hidden; margin: 6px 0; }
 .chat-speaker {
   display: block; font-size: 10px; font-weight: 600;
   color: var(--accent); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .04em;
@@ -759,6 +765,17 @@ function startChat(name) {
 function updateChatHistory(html, busy) {
   var hist = document.getElementById('chat-history');
   hist.innerHTML = html;
+  // Syntax-highlight any code blocks in the new content.
+  if (typeof hljs !== 'undefined') {
+    hist.querySelectorAll('pre code').forEach(function(el) {
+      hljs.highlightElement(el);
+    });
+  }
+  // Render any mermaid diagrams.
+  if (typeof mermaid !== 'undefined') {
+    var mermaidNodes = Array.from(hist.querySelectorAll('.mermaid'));
+    if (mermaidNodes.length > 0) mermaid.run({nodes: mermaidNodes});
+  }
   hist.scrollTop = hist.scrollHeight;
   var ta  = document.getElementById('chat-ta');
   var btn = document.getElementById('send-btn');

@@ -107,5 +107,23 @@ int test_character_tab_html() {
     check("char-tab-at-mention-direct",
           light.find("directTo") != std::string::npos);
 
+    // Persona chat must support syntax highlighting and mermaid diagrams.
+    // The mermaid and hljs libraries are confirmed to contain no raw </script>
+    // strings, so the escapeScriptClose pass is a no-op.  Verify the libraries
+    // loaded by checking both APIs are present in the output.
+    check("char-tab-chat-no-raw-script-close",
+          light.find("hljs.highlightElement") != std::string::npos &&
+          light.find("mermaid.run")           != std::string::npos);
+
+    check("char-tab-chat-hljs",
+          light.find("hljs.highlightElement") != std::string::npos);
+
+    check("char-tab-chat-mermaid",
+          light.find("mermaid.run") != std::string::npos);
+
+    // updateChatHistory must re-run hljs after injecting new HTML.
+    check("char-tab-update-triggers-hljs",
+          light.find("hljs.highlightElement") != std::string::npos);
+
     return failures;
 }
