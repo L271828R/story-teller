@@ -547,7 +547,7 @@ void CharacterTab::DoOpenGroupChat(const std::string& key) {
     if (key.empty()) return;
 
     // Find the group with this key.
-    auto groups = ListGroupChats();
+    auto groups = ListGroupChats(m_chatContextDir);
     const GroupChatInfo* found = nullptr;
     for (const auto& g : groups)
         if (g.key == key) { found = &g; break; }
