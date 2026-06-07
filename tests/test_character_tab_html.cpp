@@ -107,6 +107,9 @@ int test_character_tab_html() {
     check("char-tab-at-mention-direct",
           light.find("directTo") != std::string::npos);
 
+    check("char-tab-at-mention-multiword",
+          light.find("startsWith('@' + _pn + ' ')") != std::string::npos);
+
     // Persona chat must support syntax highlighting and mermaid diagrams.
     // The mermaid and hljs libraries are confirmed to contain no raw </script>
     // strings, so the escapeScriptClose pass is a no-op.  Verify the libraries
@@ -168,6 +171,29 @@ int test_character_tab_html() {
 
     check("char-tab-mermaid-ctx-css",
           light.find("ctx-menu") != std::string::npos);
+
+    // Markdown tables render as styled HTML tables in chat
+    check("char-tab-chat-table-css",
+          light.find("border-collapse") != std::string::npos);
+
+    check("char-tab-chat-table-th-td",
+          light.find(".chat-a th") != std::string::npos &&
+          light.find(".chat-a td") != std::string::npos);
+
+    // Topic mode dropdown
+    check("char-tab-topic-dropdown",
+          light.find("topic-select") != std::string::npos);
+
+    check("char-tab-topic-options",
+          light.find("general")  != std::string::npos &&
+          light.find("technical") != std::string::npos &&
+          light.find("story")    != std::string::npos &&
+          light.find("debate")   != std::string::npos &&
+          light.find("socratic") != std::string::npos &&
+          light.find("rant")     != std::string::npos);
+
+    check("char-tab-topic-send",
+          light.find("_topicMode") != std::string::npos);
 
     return failures;
 }

@@ -151,6 +151,14 @@ button:disabled{opacity:.5;cursor:default}
 <hr>
 
 <div class="row">
+  <span class="label">What are we discussing?</span>
+  <select id="mode">
+    <option value="general">General</option>
+    <option value="technical">Technical</option>
+    <option value="creative">Creative</option>
+  </select>
+</div>
+<div class="row mt4">
   <span class="label">Style</span>
   <input id="style" list="styleList" class="inp-200" value="Academic essay">
   <datalist id="styleList">
@@ -297,6 +305,7 @@ function formData() {
     return {
         topic:              document.getElementById('topic').value,
         style:              document.getElementById('style').value,
+        mode:               document.getElementById('mode').value,
         context:            document.getElementById('context').value,
         backend:            document.getElementById('backend').value,
         apiKey:             document.getElementById('apiKey').value,
@@ -308,7 +317,7 @@ function generate()   { send(Object.assign({action:'generate'},   formData())); 
 function copyPrompt() { send(Object.assign({action:'copyPrompt'}, formData())); }
 function saveState() {
     const d = formData();
-    send({action:'saveState', topic:d.topic, style:d.style,
+    send({action:'saveState', topic:d.topic, style:d.style, mode:d.mode,
           backend:d.backend, apiKey:d.apiKey, ollamaModel:d.ollamaModel});
 }
 
@@ -447,6 +456,7 @@ function cancelSavePrompt() {
 function restoreFormState(s) {
     if (s.topic)       document.getElementById('topic').value = s.topic;
     if (s.style)       document.getElementById('style').value = s.style;
+    if (s.mode)        document.getElementById('mode').value  = s.mode;
     if (s.backend) {
         document.getElementById('backend').value = s.backend;
         onBackendChange();

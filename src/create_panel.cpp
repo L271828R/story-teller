@@ -238,6 +238,8 @@ void CreatePanel::PushInitialState() {
         stateJs += "topic:"       + JsStr(cfg.defaultPrompt) + ",";
     if (!st.style.empty())
         stateJs += "style:"       + JsStr(st.style) + ",";
+    if (!st.mode.empty())
+        stateJs += "mode:"        + JsStr(st.mode)  + ",";
     if (!st.backend.empty())
         stateJs += "backend:"     + JsStr(st.backend) + ",";
     if (!st.apiKey.empty())
@@ -353,10 +355,10 @@ void CreatePanel::HandleMessage(const std::string& json) {
     }
     else if (action == "newProject")       DoNewProject(f("name"));
     else if (action == "selectProject")    DoSelectProject(f("name"));
-    else if (action == "generate")         DoGenerate(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
-    else if (action == "copyPrompt")       DoCopyPrompt(f("topic"),f("style"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
+    else if (action == "generate")         DoGenerate(f("topic"),f("style"),f("mode"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
+    else if (action == "copyPrompt")       DoCopyPrompt(f("topic"),f("style"),f("mode"),f("context"),f("backend"),f("apiKey"),f("ollamaModel"),n("tidbitsPerChapter",1));
     else if (action == "saveContext")      DoSaveContext(f("text"));
-    else if (action == "saveState")        DoSaveState(f("topic"),f("style"),f("backend"),f("apiKey"),f("ollamaModel"));
+    else if (action == "saveState")        DoSaveState(f("topic"),f("style"),f("mode"),f("backend"),f("apiKey"),f("ollamaModel"));
     else if (action == "backendChanged")   DoBackendChanged(f("backend"));
     else if (action == "refreshOllama")    DoRefreshOllama();
     else if (action == "openFile")         DoOpenFile(f("name"));
@@ -399,6 +401,7 @@ void CreatePanel::DoSelectProject(const std::string& name) {
 }
 
 void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& style,
+                               const std::string& mode,
                                const std::string& context, const std::string& /*backend*/,
                                const std::string& /*apiKey*/, const std::string& /*ollamaModel*/,
                                int tidbitsPerChapter) {
@@ -406,6 +409,7 @@ void CreatePanel::DoCopyPrompt(const std::string& topic, const std::string& styl
     GenerationRequest req;
     req.topic              = topic;
     req.style              = style;
+    req.mode               = mode;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
     if (m_characterTab) {
@@ -432,12 +436,14 @@ void CreatePanel::DoSaveContext(const std::string& text) {
 }
 
 void CreatePanel::DoSaveState(const std::string& topic, const std::string& style,
+                              const std::string& mode,
                               const std::string& backend, const std::string& apiKey,
                               const std::string& ollamaModel) {
     AppState st = LoadAppState();
     st.currentProject = fs::path(m_currentProject).filename().string();
     st.topic       = topic;
     st.style       = style;
+    st.mode        = mode;
     st.backend     = backend;
     st.apiKey      = apiKey;
     st.ollamaModel = ollamaModel;
@@ -487,6 +493,7 @@ void CreatePanel::DoDeleteFile(const std::string& filename) {
 // ── Generate ──────────────────────────────────────────────────────────────────
 
 void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
+                             const std::string& mode,
                              const std::string& context, const std::string& backend,
                              const std::string& apiKey, const std::string& ollamaModel,
                              int tidbitsPerChapter) {
@@ -500,6 +507,7 @@ void CreatePanel::DoGenerate(const std::string& topic, const std::string& style,
     GenerationRequest req;
     req.topic              = topic;
     req.style              = style;
+    req.mode               = mode;
     req.projectContext     = context;
     req.tidbitsPerChapter  = std::max(0, std::min(10, tidbitsPerChapter));
     if (m_characterTab) {

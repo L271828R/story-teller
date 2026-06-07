@@ -672,5 +672,50 @@ int test_creator() {
         }
     }
 
+    // Mode: general produces no extra mode-specific instruction
+    {
+        GenerationRequest req;
+        req.topic = "History of Rome";
+        req.mode  = "general";
+        std::string p = BuildPrompt(req, "");
+        bool noTechNudge = p.find("clarity and precision") == std::string::npos;
+        bool noCreativeNudge = p.find("show rather than tell") == std::string::npos;
+        if (!noTechNudge || !noCreativeNudge) {
+            std::cerr << "FAIL [build-prompt-mode-general]\n"; ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-mode-general]\n";
+        }
+    }
+
+    // Mode: technical injects technical writing guidance
+    {
+        GenerationRequest req;
+        req.topic = "Binary search trees";
+        req.mode  = "technical";
+        std::string p = BuildPrompt(req, "");
+        bool hasTech = p.find("clarity and precision") != std::string::npos ||
+                       p.find("step-by-step") != std::string::npos;
+        if (!hasTech) {
+            std::cerr << "FAIL [build-prompt-mode-technical]\n"; ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-mode-technical]\n";
+        }
+    }
+
+    // Mode: creative injects creative writing guidance
+    {
+        GenerationRequest req;
+        req.topic = "A detective story";
+        req.mode  = "creative";
+        std::string p = BuildPrompt(req, "");
+        bool hasCreative = p.find("show rather than tell") != std::string::npos ||
+                           p.find("narrative") != std::string::npos;
+        if (!hasCreative) {
+            std::cerr << "FAIL [build-prompt-mode-creative]\n"; ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-mode-creative]\n";
+        }
+    }
+
     return failures;
 }

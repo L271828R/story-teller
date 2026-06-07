@@ -277,6 +277,7 @@ void CharacterTab::HandleMessage(const std::string& json) {
     else if (action == "openGroupChat")  DoOpenGroupChat(CtField(json,"key"));
     else if (action == "repairMermaid")  DoRepairMermaid(CtField(json,"source"));
     else if (action == "invitePersona")  DoInvitePersona(CtField(json,"name"));
+    else if (action == "setTopic")       m_topicMode = CtField(json, "mode");
     else if (action == "sendMessage")    DoChatSend(CtField(json,"text"), CtBool(json,"useArticle"), CtField(json,"directTo"));
     else if (action == "clearChat")      DoClearChat();
     else if (action == "closeChat")      DoCloseChat();
@@ -406,13 +407,14 @@ void CharacterTab::SetCurrentDocument(std::string markdown) {
 }
 
 void CharacterTab::SetChatContext(const std::string& projectPath) {
-    if (projectPath.empty()) { m_chatContextDir = ""; return; }
+    if (projectPath.empty()) { m_chatContextDir = ""; PushGroups(); return; }
     // Use the last path component (project folder name) as the subdirectory.
     std::string dirName = projectPath;
     auto slash = dirName.rfind('/');
     if (slash != std::string::npos) dirName = dirName.substr(slash + 1);
-    if (dirName.empty()) { m_chatContextDir = ""; return; }
+    if (dirName.empty()) { m_chatContextDir = ""; PushGroups(); return; }
     m_chatContextDir = GetPersonaChatsDir() + "/" + NormalizePersonaName(dirName);
+    PushGroups();
 }
 
 static std::string StripLeadingLabel(const std::string& name, std::string answer) {
@@ -429,8 +431,9 @@ void CharacterTab::RenderPersonaChat(const std::string& pendingQ) {
     bool multi = m_activePersonas.size() > 1;
     std::ostringstream html;
     for (auto& t : m_chatHistory) {
-        html << "<div class='chat-turn'>"
-             << "<div class='chat-q'>" << RenderMarkdown(t.userMessage) << "</div>";
+        html << "<div class='chat-turn'>";
+        if (!t.userMessage.empty())
+            html << "<div class='chat-q'>" << RenderMarkdown(t.userMessage) << "</div>";
         for (auto& r : t.responses) {
             html << "<div class='chat-a'>";
             if (multi)
@@ -628,7 +631,7 @@ void CharacterTab::DoInvitePersona(const std::string& name) {
     cfg.ollamaModel = st.ollamaModel;
 
     std::string prompt = BuildPersonaPromptMulti(
-        personaName, personaDesc, docMarkdown, history, lastMsg, useArticle);
+        personaName, personaDesc, docMarkdown, history, lastMsg, useArticle, m_topicMode);
 
     std::thread([this, prompt, cfg, personaName, lastMsg]() mutable {
         LLMResult res = InvokeLLM(prompt, cfg);
@@ -682,7 +685,7 @@ void CharacterTab::DoChatSend(const std::string& text, bool useArticle, const st
     std::vector<std::string> prompts;
     for (const auto& pName : personas) {
         std::string desc = m_charDescriptions.count(pName) ? m_charDescriptions.at(pName) : "";
-        prompts.push_back(BuildPersonaPromptMulti(pName, desc, docMarkdown, history, text, useArticle));
+        prompts.push_back(BuildPersonaPromptMulti(pName, desc, docMarkdown, history, text, useArticle, m_topicMode));
     }
 
     std::thread([this, prompts, cfg, personas, text, useArticle]() mutable {
@@ -694,18 +697,57 @@ void CharacterTab::DoChatSend(const std::string& text, bool useArticle, const st
             answers.push_back(std::move(answer));
         }
 
-        wxTheApp->CallAfter([this, personas, text, answers]() {
-            m_chatBusy = false;
-            if (m_activePersonas.empty()) return;
+        wxTheApp->CallAfter([this, personas, text, answers, cfg, useArticle]() {
+            if (m_activePersonas.empty()) { m_chatBusy = false; return; }
 
             MultiChatTurn turn;
             turn.userMessage = text;
             for (size_t i = 0; i < personas.size(); ++i)
                 turn.responses.push_back({personas[i], answers[i]});
             m_chatHistory.push_back(std::move(turn));
-
             PersistChat();
-            RenderPersonaChat();
+
+            // In debate mode fire exactly one automatic follow-up round.
+            // Always use all active personas — round 1 may have been directed at just one.
+            if (m_topicMode == "debate" && !m_debateRound2) {
+                m_debateRound2 = true;
+                RenderPersonaChat(); // still busy; round 2 is about to start
+                auto r2personas = m_activePersonas;
+                auto history    = m_chatHistory;
+                std::string doc = useArticle ? m_currentDocMarkdown : "";
+                std::vector<std::string> r2prompts;
+                for (const auto& pName : r2personas) {
+                    std::string desc = m_charDescriptions.count(pName)
+                                       ? m_charDescriptions.at(pName) : "";
+                    r2prompts.push_back(BuildPersonaPromptMulti(
+                        pName, desc, doc, history, "Continue.", useArticle, m_topicMode));
+                }
+                std::thread([this, r2prompts, cfg, r2personas]() {
+                    std::vector<std::string> r2answers;
+                    for (size_t i = 0; i < r2personas.size(); ++i) {
+                        LLMResult res = InvokeLLM(r2prompts[i], cfg);
+                        std::string ans = res.ok ? res.text : ("Error: " + res.error);
+                        ans = StripLeadingLabel(r2personas[i], std::move(ans));
+                        r2answers.push_back(std::move(ans));
+                    }
+                    wxTheApp->CallAfter([this, r2personas, r2answers]() {
+                        m_debateRound2 = false;
+                        m_chatBusy    = false;
+                        if (m_activePersonas.empty()) return;
+                        MultiChatTurn r2turn;
+                        r2turn.userMessage = ""; // no user bubble for auto-round
+                        for (size_t i = 0; i < r2personas.size(); ++i)
+                            r2turn.responses.push_back({r2personas[i], r2answers[i]});
+                        m_chatHistory.push_back(std::move(r2turn));
+                        PersistChat();
+                        RenderPersonaChat();
+                    });
+                }).detach();
+            } else {
+                m_debateRound2 = false;
+                m_chatBusy    = false;
+                RenderPersonaChat(); // render with busy=false so the input unlocks
+            }
         });
     }).detach();
 }

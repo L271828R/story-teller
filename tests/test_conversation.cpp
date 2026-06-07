@@ -626,6 +626,56 @@ int test_conversation() {
         }
     }
 
+    // Conversation style modes
+    {
+        auto check = [&](const std::string& name, const std::string& mode,
+                         const std::string& needle, const std::string& label) {
+            std::string p = BuildPersonaPrompt("Ada", "", "", {}, "hi", false, mode);
+            bool ok = p.find(needle) != std::string::npos;
+            if (!ok) std::cerr << "FAIL [" << label << "]: '" << needle << "' not found\n";
+            else     std::cout << "PASS [" << label << "]\n";
+            if (!ok) ++failures;
+        };
+        check("Ada", "technical", "prefer markdown tables",  "build-persona-prompt-mode-technical");
+        check("Ada", "story",     "narrative",               "build-persona-prompt-mode-story");
+        check("Ada", "debate",    "speak TO them",            "build-persona-prompt-mode-debate");
+        check("Ada", "simple",    "ten-year-old",            "build-persona-prompt-mode-simple");
+        check("Ada", "socratic",  "ask questions",           "build-persona-prompt-mode-socratic");
+        check("Ada", "rant",      "unfiltered",              "build-persona-prompt-mode-rant");
+
+        std::string gen = BuildPersonaPrompt("Ada", "", "", {}, "hi", false, "general");
+        bool genClean = gen.find("visualization tools") == std::string::npos &&
+                        gen.find("narrative") == std::string::npos &&
+                        gen.find("unfiltered") == std::string::npos;
+        if (!genClean) std::cerr << "FAIL [build-persona-prompt-mode-general-clean]\n";
+        else           std::cout << "PASS [build-persona-prompt-mode-general-clean]\n";
+        if (!genClean) ++failures;
+    }
+    {
+        auto check = [&](const std::string& name, const std::string& mode,
+                         const std::string& needle, const std::string& label) {
+            std::string p = BuildPersonaPromptMulti("Ada", "", "", {}, "hi", false, mode);
+            bool ok = p.find(needle) != std::string::npos;
+            if (!ok) std::cerr << "FAIL [" << label << "]: '" << needle << "' not found\n";
+            else     std::cout << "PASS [" << label << "]\n";
+            if (!ok) ++failures;
+        };
+        check("Ada", "technical", "prefer markdown tables",  "build-persona-prompt-multi-mode-technical");
+        check("Ada", "story",     "narrative",               "build-persona-prompt-multi-mode-story");
+        check("Ada", "debate",    "committed position",      "build-persona-prompt-multi-mode-debate");
+        check("Ada", "simple",    "ten-year-old",            "build-persona-prompt-multi-mode-simple");
+        check("Ada", "socratic",  "ask questions",           "build-persona-prompt-multi-mode-socratic");
+        check("Ada", "rant",      "unfiltered",              "build-persona-prompt-multi-mode-rant");
+
+        std::string gen = BuildPersonaPromptMulti("Ada", "", "", {}, "hi", false, "general");
+        bool genClean = gen.find("visualization tools") == std::string::npos &&
+                        gen.find("narrative") == std::string::npos &&
+                        gen.find("unfiltered") == std::string::npos;
+        if (!genClean) std::cerr << "FAIL [build-persona-prompt-multi-mode-general-clean]\n";
+        else           std::cout << "PASS [build-persona-prompt-multi-mode-general-clean]\n";
+        if (!genClean) ++failures;
+    }
+
     // BuildMermaidRepairPrompt: contains the source and asks for corrected syntax
     {
         std::string src = "flowchart LR\n  A --> B\n  B --bad syntax-- C\n";

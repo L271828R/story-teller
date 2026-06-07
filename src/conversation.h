@@ -47,22 +47,26 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
 std::string BuildMermaidRepairPrompt(const std::string& source);
 
 // Build the LLM prompt for a single-persona conversation.
+// mode: "technical" injects table guidance, "creative" injects ASCII art guidance.
 std::string BuildPersonaPrompt(const std::string& personaName,
                                const std::string& personaDesc,
                                const std::string& docMarkdown,
                                const std::vector<ConversationTurn>& history,
                                const std::string& message,
-                               bool useArticleContext);
+                               bool useArticleContext,
+                               const std::string& mode = "general");
 
 // Build the LLM prompt for one persona's turn in a multi-persona conversation.
 // history contains the full exchange so far (all participants labeled).
 // The responding persona sees the other participants' names and their prior responses.
+// mode: "technical" injects table guidance, "creative" injects ASCII art guidance.
 std::string BuildPersonaPromptMulti(const std::string& personaName,
                                     const std::string& personaDesc,
                                     const std::string& docMarkdown,
                                     const std::vector<MultiChatTurn>& history,
                                     const std::string& message,
-                                    bool useArticleContext);
+                                    bool useArticleContext,
+                                    const std::string& mode = "general");
 
 // Convert a single-persona history (ConversationTurn) to MultiChatTurn format
 // so a solo chat can be promoted to a group chat.

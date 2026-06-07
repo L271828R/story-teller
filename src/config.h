@@ -20,6 +20,7 @@ struct AppState {
     // Create tab form state
     std::string topic;
     std::string style;
+    std::string mode;    // "general" | "technical" | "creative"
     std::string backend;
     std::string checkedChars; // pipe-separated, e.g. "Einstein|Curie"
 

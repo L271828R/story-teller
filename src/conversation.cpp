@@ -195,7 +195,8 @@ std::string BuildPersonaPrompt(const std::string& personaName,
                                const std::string& docMarkdown,
                                const std::vector<ConversationTurn>& history,
                                const std::string& message,
-                               bool useArticleContext) {
+                               bool useArticleContext,
+                               const std::string& mode) {
     std::ostringstream out;
     out << "You are " << personaName << ".";
     if (!personaDesc.empty()) out << " " << personaDesc;
@@ -211,6 +212,39 @@ std::string BuildPersonaPrompt(const std::string& personaName,
         << "insights. If the user revisits the same question or asks repeated questions, "
         << "engage with enthusiasm — they want to hear your perspective, not a deflection. "
         << "Keep responses conversational and engaging, typically a few sentences to a short paragraph.\n\n";
+
+    if (mode == "technical") {
+        out << "You have three visualization tools. For step-by-step traces, prefer markdown tables.\n"
+            << "1. Markdown tables — use | pipe | column | syntax; they render as formatted HTML tables. "
+            << "One rule only: every column must have a header. "
+            << "Structure, columns, metaphors, and emojis are entirely yours — make it feel like you.\n"
+            << "2. ASCII diagrams — plain-text art, optionally with emojis.\n"
+            << "3. Mermaid diagrams — only when the user explicitly asks for one.\n\n";
+    } else if (mode == "story") {
+        out << "Speak at length and in your own voice — this is your moment to tell a story. "
+            << "Draw on personal anecdotes, vivid analogies from your era and experience, "
+            << "and let the concept unfold as a narrative. Don't rush to the answer; "
+            << "let the journey carry meaning. A few rich paragraphs are better than a quick reply.\n\n";
+    } else if (mode == "debate") {
+        out << "Take a clear, committed position and argue for it. "
+            << "When others are in this conversation, address them directly by name — speak TO them, "
+            << "not about them. Challenge their specific claims, push back on their assumptions, "
+            << "and invite them to respond. Don't hedge. Stay in character, but be formidable.\n\n";
+    } else if (mode == "simple") {
+        out << "Explain as if to someone encountering this idea for the very first time. "
+            << "No jargon. Use everyday objects, familiar situations, and plain language. "
+            << "If a curious ten-year-old couldn't follow it, simplify further. "
+            << "Analogies are your primary tool.\n\n";
+    } else if (mode == "socratic") {
+        out << "Don't give answers — ask questions. Respond to what the user says with a "
+            << "question that nudges them one step further toward understanding. "
+            << "Guide them to discover the idea themselves. "
+            << "Only offer a direct answer if they are genuinely stuck and ask for one.\n\n";
+    } else if (mode == "rant") {
+        out << "Hold nothing back. Give your completely unfiltered, passionate take on this. "
+            << "No 'on the other hand,' no hedging — just your raw, authentic reaction "
+            << "expressed fully in your own character. Let it rip.\n\n";
+    }
 
     if (!history.empty()) {
         out << "## Conversation so far\n\n";
@@ -228,7 +262,8 @@ std::string BuildPersonaPromptMulti(const std::string& personaName,
                                     const std::string& docMarkdown,
                                     const std::vector<MultiChatTurn>& history,
                                     const std::string& message,
-                                    bool useArticleContext) {
+                                    bool useArticleContext,
+                                    const std::string& mode) {
     std::ostringstream out;
     out << "You are " << personaName << ".";
     if (!personaDesc.empty()) out << " " << personaDesc;
@@ -259,6 +294,39 @@ std::string BuildPersonaPromptMulti(const std::string& personaName,
         << "insights. If the user revisits the same question or asks repeated questions, "
         << "engage with enthusiasm — they want to hear your perspective, not a deflection. "
         << "Keep responses conversational and engaging, typically a few sentences.\n\n";
+
+    if (mode == "technical") {
+        out << "You have three visualization tools. For step-by-step traces, prefer markdown tables.\n"
+            << "1. Markdown tables — use | pipe | column | syntax; they render as formatted HTML tables. "
+            << "One rule only: every column must have a header. "
+            << "Structure, columns, metaphors, and emojis are entirely yours — make it feel like you.\n"
+            << "2. ASCII diagrams — plain-text art, optionally with emojis.\n"
+            << "3. Mermaid diagrams — only when the user explicitly asks for one.\n\n";
+    } else if (mode == "story") {
+        out << "Speak at length and in your own voice — this is your moment to tell a story. "
+            << "Draw on personal anecdotes, vivid analogies from your era and experience, "
+            << "and let the concept unfold as a narrative. Don't rush to the answer; "
+            << "let the journey carry meaning. A few rich paragraphs are better than a quick reply.\n\n";
+    } else if (mode == "debate") {
+        out << "Take a clear, committed position and argue for it. "
+            << "When others are in this conversation, address them directly by name — speak TO them, "
+            << "not about them. Challenge their specific claims, push back on their assumptions, "
+            << "and invite them to respond. Don't hedge. Stay in character, but be formidable.\n\n";
+    } else if (mode == "simple") {
+        out << "Explain as if to someone encountering this idea for the very first time. "
+            << "No jargon. Use everyday objects, familiar situations, and plain language. "
+            << "If a curious ten-year-old couldn't follow it, simplify further. "
+            << "Analogies are your primary tool.\n\n";
+    } else if (mode == "socratic") {
+        out << "Don't give answers — ask questions. Respond to what the user says with a "
+            << "question that nudges them one step further toward understanding. "
+            << "Guide them to discover the idea themselves. "
+            << "Only offer a direct answer if they are genuinely stuck and ask for one.\n\n";
+    } else if (mode == "rant") {
+        out << "Hold nothing back. Give your completely unfiltered, passionate take on this. "
+            << "No 'on the other hand,' no hedging — just your raw, authentic reaction "
+            << "expressed fully in your own character. Let it rip.\n\n";
+    }
 
     if (!history.empty()) {
         out << "## Conversation so far\n\n";

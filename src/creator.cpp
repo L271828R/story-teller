@@ -197,6 +197,20 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
     if (!req.style.empty())
         out << "Style: **" << req.style << "**\n\n";
 
+    if (req.mode == "technical") {
+        out << "## Writing guidance\n\n"
+            << "This is a technical topic. Write with clarity and precision: use concrete "
+            << "examples, analogies, and step-by-step breakdowns to make concepts accessible. "
+            << "Where helpful, include code blocks, ASCII diagrams, or markdown tables to "
+            << "illustrate concepts. Prefer active voice and concise sentences.\n\n";
+    } else if (req.mode == "creative") {
+        out << "## Writing guidance\n\n"
+            << "This is a creative, narrative-driven piece. Write with vivid, sensory language "
+            << "and strong narrative momentum. Prioritize character voice and emotional resonance "
+            << "— show rather than tell. Each chapter should feel like a scene unfolding, not a "
+            << "summary. Vary sentence rhythm for dramatic effect.\n\n";
+    }
+
     if (!req.characters.empty() && req.tidbitsPerChapter > 0) {
         out << "## Tidbit characters\n\n"
             << "Use the following characters for the `:::tidbit` sections. "

@@ -43,7 +43,9 @@ private:
     std::string m_chatContextDir;   // project-scoped chats dir; empty = global
     std::vector<std::string> m_activePersonas;   // [0] = host, rest = invited
     std::vector<MultiChatTurn> m_chatHistory;
-    bool m_chatBusy = false;
+    bool m_chatBusy      = false;
+    bool m_debateRound2  = false;
+    std::string m_topicMode = "general";
     std::map<std::string, int> m_mermaidRepairs; // source → attempt count
 
     void Run(const std::string& js);

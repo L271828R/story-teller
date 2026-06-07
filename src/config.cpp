@@ -58,6 +58,7 @@ AppState ParseState(const std::string& content) {
         if      (key == "currentProject") st.currentProject = val;
         else if (key == "topic")          st.topic          = val;
         else if (key == "style")          st.style          = val;
+        else if (key == "mode")           st.mode           = val;
         else if (key == "backend")        st.backend        = val;
         else if (key == "checkedChars")   st.checkedChars   = val;
         else if (key == "apiKey")         st.apiKey         = val;
@@ -83,6 +84,7 @@ void SaveAppState(const AppState& state) {
     f << "currentProject = " << state.currentProject << "\n"
       << "topic = "          << state.topic          << "\n"
       << "style = "          << state.style          << "\n"
+      << "mode = "           << state.mode           << "\n"
       << "backend = "        << state.backend        << "\n"
       << "checkedChars = "   << state.checkedChars   << "\n"
       << "apiKey = "         << state.apiKey         << "\n"

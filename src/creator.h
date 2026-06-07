@@ -14,6 +14,7 @@ struct CharacterSpec {
 struct GenerationRequest {
     std::string topic;
     std::string style;
+    std::string mode;          // "general" | "technical" | "creative"
     std::vector<CharacterSpec> characters;
     std::string projectContext;
     int tidbitsPerChapter = 1;
