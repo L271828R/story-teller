@@ -707,12 +707,25 @@ void CharacterTab::DoChatSend(const std::string& text, bool useArticle, const st
             m_chatHistory.push_back(std::move(turn));
             PersistChat();
 
-            // In debate mode fire exactly one automatic follow-up round.
-            // Always use all active personas — round 1 may have been directed at just one.
+            // In debate mode fire one automatic follow-up round for the personas
+            // that did NOT reply in round 1 (e.g. @Caveman → round 2 is Rama's turn).
+            // If everyone already replied, skip round 2 — the exchange is complete.
             if (m_topicMode == "debate" && !m_debateRound2) {
+                std::set<std::string> round1Set(personas.begin(), personas.end());
+                std::vector<std::string> r2personas;
+                for (const auto& p : m_activePersonas)
+                    if (!round1Set.count(p)) r2personas.push_back(p);
+
+                if (r2personas.empty()) {
+                    // Everyone already replied — no round 2 needed.
+                    m_debateRound2 = false;
+                    m_chatBusy    = false;
+                    RenderPersonaChat();
+                    return;
+                }
+
                 m_debateRound2 = true;
                 RenderPersonaChat(); // still busy; round 2 is about to start
-                auto r2personas = m_activePersonas;
                 auto history    = m_chatHistory;
                 std::string doc = useArticle ? m_currentDocMarkdown : "";
                 std::vector<std::string> r2prompts;
