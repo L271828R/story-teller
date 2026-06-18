@@ -4,6 +4,7 @@
 #include "logger.h"
 #include "meta.h"
 #include "project_search.h"
+#include "tab_util.h"
 #include <wx/choice.h>
 #include <wx/dirdlg.h>
 #include <wx/msgdlg.h>
@@ -90,7 +91,9 @@ static std::string lastLLMSummary(const ProjectMeta& meta) {
     if (meta.timings.empty()) return "";
     const auto& last = meta.timings.back();
     std::string out = last.operation + ": " + fmtSecs(last.durationSeconds);
-    if (!last.topic.empty()) out += " - " + last.topic;
+    // Topic can be a multi-line prompt; collapse so the stats wxStaticText
+    // stays a single line and doesn't squeeze the project tree out.
+    if (!last.topic.empty()) out += " - " + CollapseToOneLine(last.topic, 100);
     return out;
 }
 

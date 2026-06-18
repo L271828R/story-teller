@@ -1,5 +1,6 @@
 #include "markdown.h"
 #include "tab_util.h"
+#include <cassert>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -365,6 +366,49 @@ int test_mdviewer() {
             ++failures;
         } else {
             std::cout << "PASS [app-icon-cmake-icon-file]\n";
+        }
+    }
+
+    // CollapseToOneLine: multi-line free-text values must not be displayed
+    // verbatim in single-line wxStaticText labels — they reflow the parent
+    // layout and squeeze sibling widgets (project tree, buttons) off-screen.
+    {
+        bool ok = true;
+        // Newlines become single spaces.
+        ok &= (CollapseToOneLine("a\nb\nc", 100) == "a b c");
+        // Runs of whitespace collapse to one space.
+        ok &= (CollapseToOneLine("a   \n\n b", 100) == "a b");
+        // Tabs and carriage returns are treated as whitespace.
+        ok &= (CollapseToOneLine("x\ty\rz", 100) == "x y z");
+        // Length cap appends ellipsis (UTF-8: …).
+        std::string clipped = CollapseToOneLine("abcdefghij", 5);
+        ok &= (clipped == "abcde\xE2\x80\xA6");
+        if (!ok) {
+            std::cerr << "FAIL [collapse-one-line]: CollapseToOneLine must strip "
+                         "all whitespace runs to single spaces and cap length\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [collapse-one-line]\n";
+        }
+    }
+
+    // The project panel's stats label embeds the last LLM topic, which can be a
+    // multi-line prompt. It must be passed through CollapseToOneLine before
+    // being appended to the label, otherwise the wxStaticText grows tall and
+    // pushes the project tree and right-side buttons out of view.
+    {
+        std::ifstream src("src/project_panel.cpp");
+        std::string code((std::istreambuf_iterator<char>(src)),
+                          std::istreambuf_iterator<char>());
+        bool collapsesTopic =
+            code.find("CollapseToOneLine(last.topic") != std::string::npos;
+        if (!collapsesTopic) {
+            std::cerr << "FAIL [stats-topic-one-line]: project_panel must pass "
+                         "last.topic through CollapseToOneLine before appending "
+                         "to the stats label\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [stats-topic-one-line]\n";
         }
     }
 
