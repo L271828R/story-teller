@@ -83,6 +83,25 @@ bool ProjectExists(const std::string& projectDir) {
     return fs::exists(IndexPath(projectDir));
 }
 
+bool ShouldShowInProjectTree(const std::string& dirName) {
+    return dirName != "persona_chats" && dirName != "personas";
+}
+
+std::vector<std::string> ListProjectArticles(const std::string& projectDir) {
+    std::vector<std::string> out;
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(projectDir, ec)) {
+        if (!entry.is_regular_file(ec)) continue;
+        std::string name = entry.path().filename().string();
+        if (name.empty() || name[0] == '.') continue;
+        if (name == "context.md") continue;
+        if (entry.path().extension() != ".md") continue;
+        out.push_back(entry.path().string());
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 ProjectConfig LoadConfig(const std::string& projectDir) {
     ProjectConfig cfg;
     std::ifstream f(ConfigPath(projectDir));

@@ -151,6 +151,7 @@ set(SOURCES
     src/logger.cpp
     src/meta.cpp
     src/inspector.mm
+    src/trash.mm
     src/persona.cpp
     src/persona_panel_html.cpp
     src/persona_panel.cpp

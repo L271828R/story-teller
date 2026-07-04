@@ -389,5 +389,51 @@ int test_project() {
         fs::remove_all(base);
     }
 
+    // ListProjectArticles lists the readable .md files in a project.
+    {
+        auto base = make_temp_dir();
+        CreateProject(base.string(), "story");
+        fs::path proj = base / "story";
+        std::ofstream(proj / "chapter1.md")    << "# Ch1\n";
+        std::ofstream(proj / "chapter2.md")    << "# Ch2\n";
+        std::ofstream(proj / ".hidden.md")     << "# hidden\n";
+        std::ofstream(proj / "notes.txt")      << "not markdown\n";
+        // context.md already exists from CreateProject and must be excluded.
+
+        auto arts = ListProjectArticles(proj.string());
+        bool sizeOk = (arts.size() == 2);
+        bool hasCh1 = std::find(arts.begin(), arts.end(),
+                                (proj / "chapter1.md").string()) != arts.end();
+        bool hasCh2 = std::find(arts.begin(), arts.end(),
+                                (proj / "chapter2.md").string()) != arts.end();
+        bool sorted = std::is_sorted(arts.begin(), arts.end());
+        if (!sizeOk || !hasCh1 || !hasCh2 || !sorted) {
+            std::cerr << "FAIL [list-articles]: size=" << arts.size()
+                      << " ch1=" << hasCh1 << " ch2=" << hasCh2
+                      << " sorted=" << sorted << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [list-articles]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // ShouldShowInProjectTree hides app-internal plumbing directories.
+    {
+        bool okReal    = ShouldShowInProjectTree("MyStory");
+        bool okDotted  = ShouldShowInProjectTree(".config");     // dotfiles: leave decision to caller if any; here we only filter known plumbing
+        bool hideChats = !ShouldShowInProjectTree("persona_chats");
+        bool hidePers  = !ShouldShowInProjectTree("personas");
+        if (!okReal || !okDotted || !hideChats || !hidePers) {
+            std::cerr << "FAIL [tree-filter-plumbing]: real=" << okReal
+                      << " dot=" << okDotted
+                      << " chats-hidden=" << hideChats
+                      << " personas-hidden=" << hidePers << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [tree-filter-plumbing]\n";
+        }
+    }
+
     return failures;
 }

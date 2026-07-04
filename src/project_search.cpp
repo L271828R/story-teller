@@ -29,33 +29,13 @@ bool ProjectSearchTextMatches(const std::string& searchableText,
 }
 
 std::string BuildProjectSearchText(const std::string& name,
-                                   const std::string& path,
+                                   const std::string& /*path*/,
                                    const std::string& source,
                                    const std::string& lastLLM) {
-    std::string searchable = name + " " + source + " " + lastLLM;
-
-    // Index only the file that activating the project would open — the first
-    // .md alphabetically excluding context.md. This keeps project search
-    // consistent with what Ctrl+F can actually find in the view.
-    std::error_code ec;
-    std::vector<fs::path> mdFiles;
-    for (auto& entry : fs::directory_iterator(path, ec)) {
-        if (!entry.is_regular_file(ec) || entry.path().extension() != ".md")
-            continue;
-        if (entry.path().filename() == "context.md") continue;
-        mdFiles.push_back(entry.path());
-    }
-    std::sort(mdFiles.begin(), mdFiles.end());
-    if (!mdFiles.empty()) {
-        std::ifstream f(mdFiles.front());
-        if (f) {
-            std::ostringstream ss;
-            ss << f.rdbuf();
-            searchable += " " + mdFiles.front().filename().string() + " " + ss.str();
-        }
-    }
-
-    return searchable;
+    // Project-level search covers project metadata only. Article filenames and
+    // contents are searched separately by ArticleMatchesSearch so the caller
+    // can surface *which* article matched.
+    return name + " " + source + " " + lastLLM;
 }
 
 bool ProjectMatchesSearch(const std::string& name,
@@ -66,4 +46,18 @@ bool ProjectMatchesSearch(const std::string& name,
     if (query.empty()) return true;
     return ProjectSearchTextMatches(
         BuildProjectSearchText(name, path, source, lastLLM), query);
+}
+
+bool ArticleMatchesSearch(const std::string& articlePath,
+                          const std::string& query) {
+    if (query.empty()) return true;
+    fs::path p(articlePath);
+    std::string searchable = p.filename().string();
+    std::ifstream f(p);
+    if (f) {
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        searchable += " " + ss.str();
+    }
+    return ProjectSearchTextMatches(searchable, query);
 }

@@ -21,6 +21,11 @@ bool InitProject(const std::string& projectDir);
 // Returns true when <projectDir>/.index exists.
 bool ProjectExists(const std::string& projectDir);
 
+// Returns false for directory names that are app-internal plumbing
+// (e.g. "persona_chats", "personas") and should not appear as user-visible
+// projects/folders in the Projects tab.
+bool ShouldShowInProjectTree(const std::string& dirName);
+
 // Read/write the per-project .config key=value file.
 ProjectConfig LoadConfig(const std::string& projectDir);
 bool SaveConfig(const std::string& projectDir, const ProjectConfig& cfg);
@@ -52,3 +57,8 @@ MoveResult MoveFolder(const std::string& srcPath, const std::string& dstFolderPa
 // Directories that are not projects are recursed into as organisational folders.
 // Example: defaultFolder/Literature/agatha -> "Literature/agatha"
 std::vector<std::string> ListAllProjects(const std::string& defaultFolder);
+
+// Returns the sorted list of readable article files (.md, excluding context.md
+// and files starting with '.') at the top level of projectDir. These are the
+// files a user opens as "articles" from the project tree.
+std::vector<std::string> ListProjectArticles(const std::string& projectDir);

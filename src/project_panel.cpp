@@ -5,9 +5,13 @@
 #include "meta.h"
 #include "project_search.h"
 #include "tab_util.h"
+#include "trash.h"
 #include <wx/choice.h>
+#include <wx/dialog.h>
 #include <wx/dirdlg.h>
+#include <wx/menu.h>
 #include <wx/msgdlg.h>
+#include <wx/radiobox.h>
 #include <wx/sizer.h>
 #include <wx/statline.h>
 #include <wx/textdlg.h>
@@ -33,8 +37,17 @@ enum {
     ID_PP_RENAME,
     ID_PP_REFRESH,
     ID_PP_SET_FOLDER,
-    ID_PP_NEW_SUBFOLDER,
-    ID_PP_NEW_PROJECT
+    ID_PP_NEW,
+    ID_PP_DELETE,
+    ID_PP_KEBAB,
+    ID_PP_MENU_REFRESH,
+    ID_PP_MENU_SET_FOLDER,
+    ID_PP_CTX_OPEN,
+    ID_PP_CTX_RENAME,
+    ID_PP_CTX_DELETE,
+    ID_PP_CTX_NEW,
+    ID_PP_CTX_INIT_PROJECT,
+    ID_PP_CTX_REVEAL
 };
 
 enum class SortOrder { Name, Created, Modified };
@@ -44,16 +57,26 @@ wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
     EVT_CHOICE(ID_PP_SORT,                  ProjectPanel::OnSortChanged)
     EVT_BUTTON(ID_PP_ACTIVATE,              ProjectPanel::OnActivateBtn)
     EVT_BUTTON(ID_PP_RENAME,               ProjectPanel::OnRenameBtn)
-    EVT_BUTTON(ID_PP_NEW_SUBFOLDER,         ProjectPanel::OnNewSubfolder)
-    EVT_BUTTON(ID_PP_NEW_PROJECT,           ProjectPanel::OnNewProject)
+    EVT_BUTTON(ID_PP_NEW,                   ProjectPanel::OnNewBtn)
+    EVT_BUTTON(ID_PP_DELETE,                ProjectPanel::OnDeleteBtn)
     EVT_BUTTON(ID_PP_REFRESH,              ProjectPanel::OnRefreshBtn)
     EVT_BUTTON(ID_PP_SET_FOLDER,           ProjectPanel::OnSetFolderBtn)
+    EVT_BUTTON(ID_PP_KEBAB,                ProjectPanel::OnKebabBtn)
+    EVT_MENU(ID_PP_MENU_REFRESH,           ProjectPanel::OnRefreshBtn)
+    EVT_MENU(ID_PP_MENU_SET_FOLDER,        ProjectPanel::OnSetFolderBtn)
     EVT_TREE_SEL_CHANGED(ID_PP_TREE,       ProjectPanel::OnTreeSelChanged)
     EVT_TREE_ITEM_ACTIVATED(ID_PP_TREE,    ProjectPanel::OnTreeItemActivated)
     EVT_TREE_ITEM_EXPANDING(ID_PP_TREE,    ProjectPanel::OnTreeExpanding)
     EVT_TREE_ITEM_COLLAPSING(ID_PP_TREE,   ProjectPanel::OnTreeCollapsing)
     EVT_TREE_BEGIN_DRAG(ID_PP_TREE,        ProjectPanel::OnTreeBeginDrag)
     EVT_TREE_END_DRAG(ID_PP_TREE,          ProjectPanel::OnTreeEndDrag)
+    EVT_TREE_ITEM_MENU(ID_PP_TREE,         ProjectPanel::OnTreeItemMenu)
+    EVT_MENU(ID_PP_CTX_OPEN,               ProjectPanel::OnActivateBtn)
+    EVT_MENU(ID_PP_CTX_RENAME,             ProjectPanel::OnRenameBtn)
+    EVT_MENU(ID_PP_CTX_DELETE,             ProjectPanel::OnDeleteBtn)
+    EVT_MENU(ID_PP_CTX_NEW,                ProjectPanel::OnNewBtn)
+    EVT_MENU(ID_PP_CTX_INIT_PROJECT,       ProjectPanel::OnCtxInitProject)
+    EVT_MENU(ID_PP_CTX_REVEAL,             ProjectPanel::OnCtxReveal)
 wxEND_EVENT_TABLE()
 
 // ===========================================================================
@@ -149,7 +172,17 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bo
     auto* outer = new wxBoxSizer(wxVERTICAL);
     auto* inner = new wxBoxSizer(wxVERTICAL);
 
-    inner->Add(new wxStaticText(this, wxID_ANY, "Available Projects:"), 0, wxBOTTOM, 6);
+    {
+        auto* headerRow = new wxBoxSizer(wxHORIZONTAL);
+        headerRow->Add(new wxStaticText(this, wxID_ANY, "Available Projects:"),
+                       1, wxALIGN_CENTER_VERTICAL);
+        m_kebabBtn = new wxButton(this, ID_PP_KEBAB,
+                                  wxString::FromUTF8("\xE2\x8B\xAF"),   // ⋯
+                                  wxDefaultPosition, wxSize(32, -1));
+        m_kebabBtn->SetToolTip("More options");
+        headerRow->Add(m_kebabBtn, 0, wxALIGN_CENTER_VERTICAL);
+        inner->Add(headerRow, 0, wxEXPAND | wxBOTTOM, 6);
+    }
 
     {
         auto* searchRow = new wxBoxSizer(wxHORIZONTAL);
@@ -176,7 +209,11 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bo
                                 wxDefaultPosition, wxDefaultSize,
                                 wxTR_HAS_BUTTONS | wxTR_HIDE_ROOT |
                                 wxTR_SINGLE | wxTR_LINES_AT_ROOT);
-    inner->Add(m_treeCtrl, 1, wxEXPAND | wxBOTTOM, 10);
+    inner->Add(m_treeCtrl, 1, wxEXPAND | wxBOTTOM, 6);
+
+    // Details footer strip — subtle top border makes it read as
+    // metadata about the selection rather than dangling captions.
+    inner->Add(new wxStaticLine(this, wxID_ANY), 0, wxEXPAND | wxBOTTOM, 6);
 
     m_projectPathLabel = new wxStaticText(this, wxID_ANY, "Select a project to see its path.");
     wxFont small = m_projectPathLabel->GetFont();
@@ -190,7 +227,7 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bo
 
     auto* btnRow = new wxBoxSizer(wxHORIZONTAL);
 
-    m_activateBtn = new wxButton(this, ID_PP_ACTIVATE, "Activate Project");
+    m_activateBtn = new wxButton(this, ID_PP_ACTIVATE, "Open");
     m_activateBtn->Disable();
     btnRow->Add(m_activateBtn, 0, wxRIGHT, 6);
 
@@ -198,20 +235,15 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated, bo
     m_renameBtn->Disable();
     btnRow->Add(m_renameBtn, 0, wxRIGHT, 6);
 
-    m_newSubfolderBtn = new wxButton(this, ID_PP_NEW_SUBFOLDER, "New Subfolder…");
-    m_newSubfolderBtn->Disable();
-    btnRow->Add(m_newSubfolderBtn, 0, wxRIGHT, 6);
+    m_newBtn = new wxButton(this, ID_PP_NEW, "+ New…");
+    m_newBtn->Disable();
+    btnRow->Add(m_newBtn, 0, wxRIGHT, 6);
 
-    m_newProjectBtn = new wxButton(this, ID_PP_NEW_PROJECT, "New Project…");
-    m_newProjectBtn->Disable();
-    btnRow->Add(m_newProjectBtn, 0, wxRIGHT, 6);
+    m_deleteBtn = new wxButton(this, ID_PP_DELETE, "Delete…");
+    m_deleteBtn->Disable();
+    btnRow->Add(m_deleteBtn, 0, wxRIGHT, 6);
 
     btnRow->AddStretchSpacer();
-
-    m_setFolderBtn = new wxButton(this, ID_PP_SET_FOLDER, "Set Projects Folder…");
-    btnRow->Add(m_setFolderBtn, 0, wxRIGHT, 6);
-
-    btnRow->Add(new wxButton(this, ID_PP_REFRESH, "Refresh"), 0);
 
     inner->Add(btnRow, 0, wxEXPAND | wxBOTTOM, 10);
 
@@ -298,9 +330,23 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
         std::string childPath = entry.path().string();
         std::string childName = entry.path().filename().string();
 
+        if (!ShouldShowInProjectTree(childName)) continue;
+
         if (ProjectExists(childPath)) {
             // ---- Project node ----
-            bool visible = query.empty() || projectMatchesQuery(childName, childPath, query);
+            // A project is included when either its metadata matches OR at
+            // least one of its .md articles matches. When only articles match,
+            // we render just those articles so the user sees WHY the project
+            // was surfaced.
+            bool metaMatch = query.empty() ||
+                             projectMatchesQuery(childName, childPath, query);
+            std::vector<std::string> matchingArticles;
+            if (!query.empty()) {
+                for (const auto& a : ListProjectArticles(childPath))
+                    if (ArticleMatchesSearch(a, query))
+                        matchingArticles.push_back(a);
+            }
+            bool visible = metaMatch || !matchingArticles.empty();
             if (!visible) continue;
 
             std::string source = sourceFromConfig(childPath);
@@ -319,8 +365,44 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
             data->path = childPath;
             data->name = childName;
 
-            wxString label = wxString::FromUTF8("\U0001F4C4 " + childName + dateStr);
-            m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
+            wxString label = wxString::FromUTF8("\U0001F4C1 " + childName + dateStr);
+            wxTreeItemId projectId = m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
+            // Projects are the openable unit — mark them bold so they stand
+            // out from purely organisational folders that share the same icon.
+            wxFont f = m_treeCtrl->GetItemFont(projectId);
+            if (!f.IsOk()) f = m_treeCtrl->GetFont();
+            f.SetWeight(wxFONTWEIGHT_BOLD);
+            m_treeCtrl->SetItemFont(projectId, f);
+
+            // Append the project's .md articles as leaf nodes.
+            //   - With no query: show all articles.
+            //   - With a query and article matches: show only the matches so
+            //     the reason the branch is visible is obvious.
+            //   - With a query and only metadata matches: still show all
+            //     articles so the user can pick one.
+            std::vector<std::string> articlesToShow;
+            if (!query.empty() && !matchingArticles.empty()) {
+                articlesToShow = matchingArticles;
+            } else {
+                articlesToShow = ListProjectArticles(childPath);
+            }
+            for (const auto& articlePath : articlesToShow) {
+                auto* aData = new TreeNode();
+                aData->kind              = TreeNode::Kind::Article;
+                aData->path              = articlePath;
+                aData->name              = fs::path(articlePath).filename().string();
+                aData->parentProjectPath = childPath;
+                aData->parentProjectName = childName;
+                wxString aLabel = wxString::FromUTF8(
+                    "\U0001F4C4 " + aData->name);   // 📄
+                m_treeCtrl->AppendItem(projectId, aLabel, -1, -1, aData);
+            }
+            // Auto-expand under an active query so matching articles are
+            // immediately visible; otherwise honour the user's expand state.
+            if (!query.empty() && !matchingArticles.empty())
+                m_treeCtrl->Expand(projectId);
+            else if (m_expandedPaths.count(childPath))
+                m_treeCtrl->Expand(projectId);
             anyAdded = true;
         } else {
             // ---- Folder node ----
@@ -359,7 +441,8 @@ void ProjectPanel::RefreshProjects() {
     m_treeCtrl->DeleteAllItems();
     m_activateBtn->Disable();
     m_renameBtn->Disable();
-    m_newSubfolderBtn->Disable();
+    m_deleteBtn->Disable();
+    m_newBtn->Disable();
     m_projectPathLabel->SetLabel("Select a project to see its path.");
     m_statsLabel->SetLabel(wxEmptyString);
 
@@ -388,13 +471,12 @@ void ProjectPanel::RefreshProjects() {
     int sortOrder = m_sortChoice ? m_sortChoice->GetSelection() : 0;
     bool anyAdded = PopulateTree(root, cfg.defaultFolder, 4, query, sortOrder);
 
-    // These are always usable once a root folder is configured.
-    m_newSubfolderBtn->Enable(true);
-    m_newProjectBtn->Enable(true);
+    // Always usable once a root folder is configured.
+    m_newBtn->Enable(true);
 
     if (!anyAdded) {
         m_projectPathLabel->SetLabel(query.empty()
-            ? "No projects found in this folder. Use \"New Subfolder…\" to organise, or create a project in the Create tab."
+            ? "No projects found in this folder. Use \"+ New…\" to create a folder or project."
             : "No projects match the current search.");
     }
 
@@ -444,27 +526,36 @@ TreeNode* ProjectPanel::SelectedNode() const {
 void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
     TreeNode* tn = SelectedNode();
 
-    // These are always available as long as a projects folder is set.
+    // Always available as long as a projects folder is set.
     AppConfig cfg = LoadConfig();
-    m_newSubfolderBtn->Enable(!cfg.defaultFolder.empty());
-    m_newProjectBtn->Enable(!cfg.defaultFolder.empty());
+    m_newBtn->Enable(!cfg.defaultFolder.empty());
 
     if (!tn) {
         m_activateBtn->Disable();
         m_renameBtn->Disable();
+        m_deleteBtn->Disable();
         m_projectPathLabel->SetLabel("Select a project to see its path.");
         m_statsLabel->SetLabel(wxEmptyString);
         return;
     }
 
     m_projectPathLabel->SetLabel(wxString::FromUTF8(tn->path));
+    m_deleteBtn->Enable();
 
     if (tn->kind == TreeNode::Kind::Project) {
         m_activateBtn->Enable();
+        m_activateBtn->SetLabel("Open");
         m_renameBtn->Enable();
         m_statsLabel->SetLabel(wxString::FromUTF8(buildStats(tn->path)));
+    } else if (tn->kind == TreeNode::Kind::Article) {
+        m_activateBtn->Enable();
+        m_activateBtn->SetLabel("Read");
+        m_renameBtn->Enable();
+        m_statsLabel->SetLabel(wxString::FromUTF8(
+            "In project: " + tn->parentProjectName));
     } else {
         m_activateBtn->Disable();
+        m_activateBtn->SetLabel("Open");
         m_renameBtn->Enable();
         m_statsLabel->SetLabel(wxEmptyString);
     }
@@ -474,10 +565,12 @@ void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
 void ProjectPanel::OnTreeItemActivated(wxTreeEvent&) {
     TreeNode* tn = SelectedNode();
     if (!tn) return;
-    if (tn->kind == TreeNode::Kind::Project)
-        ActivateSelectedProject();
-    else
+    if (tn->kind == TreeNode::Kind::Project ||
+        tn->kind == TreeNode::Kind::Article) {
+        ActivateSelectedProject();   // handles both kinds — see below
+    } else {
         m_treeCtrl->Toggle(m_treeCtrl->GetSelection());
+    }
 }
 
 void ProjectPanel::OnTreeExpanding(wxTreeEvent& evt) {
@@ -493,9 +586,9 @@ void ProjectPanel::OnTreeCollapsing(wxTreeEvent& evt) {
 }
 
 void ProjectPanel::OnTreeBeginDrag(wxTreeEvent& evt) {
-    // Only allow dragging project or folder nodes (not the hidden root).
+    // Only allow dragging project or folder nodes (not articles or the hidden root).
     TreeNode* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(evt.GetItem()));
-    if (!tn) { evt.Veto(); return; }
+    if (!tn || tn->kind == TreeNode::Kind::Article) { evt.Veto(); return; }
     m_dragItem = evt.GetItem();
     evt.Allow();   // must call Allow() to start the drag
 }
@@ -567,8 +660,11 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
     std::string oldName = tn->name;
     std::string oldPath = tn->path;
     bool isProject = (tn->kind == TreeNode::Kind::Project);
+    bool isArticle = (tn->kind == TreeNode::Kind::Article);
 
-    wxString title = isProject ? "Rename Project" : "Rename Folder";
+    wxString title = isProject ? "Rename Project"
+                     : isArticle ? "Rename Article"
+                                  : "Rename Folder";
     wxString entered = wxGetTextFromUser(
         "Enter a new name:", title,
         wxString::FromUTF8(oldName), this).Trim();
@@ -614,59 +710,97 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
     RefreshProjects();
 }
 
-void ProjectPanel::OnNewSubfolder(wxCommandEvent&) {
-    // Determine where to create the subfolder.
-    // Selected folder → inside it.  Anything else → root projects folder.
-    std::string parentPath;
-    TreeNode* tn = SelectedNode();
-    if (tn && tn->kind == TreeNode::Kind::Folder) {
-        parentPath = tn->path;
-    } else {
-        AppConfig cfg = LoadConfig();
-        parentPath = cfg.defaultFolder;
-    }
+// Small modal that asks for a name and whether to create a plain folder
+// or a project. Returns 0 = Folder, 1 = Project, or -1 if the user cancelled.
+static int ShowNewItemDialog(wxWindow* parent,
+                             const std::string& parentPath,
+                             std::string& outName) {
+    wxDialog dlg(parent, wxID_ANY, "New…",
+                 wxDefaultPosition, wxSize(420, -1));
 
-    if (parentPath.empty()) {
-        wxMessageBox("No projects folder is set.", "New Subfolder",
-                     wxOK | wxICON_WARNING, this);
-        return;
-    }
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
 
-    wxString prompt = wxString::FromUTF8(
-        "Enter a name for the new subfolder.\nWill be created in: " + parentPath);
-    wxString entered = wxGetTextFromUser(prompt, "New Subfolder",
-                                         wxEmptyString, this).Trim();
-    if (entered.empty()) return;
+    sizer->Add(new wxStaticText(&dlg, wxID_ANY,
+                   wxString::FromUTF8("Will be created in: " + parentPath)),
+               0, wxALL, 10);
 
-    std::string folderName = entered.ToStdString();
-    if (!validProjectName(folderName)) {
+    auto* nameCtrl = new wxTextCtrl(&dlg, wxID_ANY);
+    sizer->Add(new wxStaticText(&dlg, wxID_ANY, "Name:"),
+               0, wxLEFT | wxRIGHT, 10);
+    sizer->Add(nameCtrl, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
+    wxArrayString types;
+    types.Add("Folder — organise other items");
+    types.Add("Project — an openable, editable unit");
+    auto* typeBox = new wxRadioBox(&dlg, wxID_ANY, "Type",
+                                   wxDefaultPosition, wxDefaultSize,
+                                   types, 1, wxRA_SPECIFY_COLS);
+    typeBox->SetSelection(1);   // Project by default — matches user intent for "New…"
+    sizer->Add(typeBox, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+
+    sizer->Add(dlg.CreateStdDialogButtonSizer(wxOK | wxCANCEL),
+               0, wxEXPAND | wxALL, 10);
+
+    dlg.SetSizerAndFit(sizer);
+    nameCtrl->SetFocus();
+
+    if (dlg.ShowModal() != wxID_OK) return -1;
+
+    outName = nameCtrl->GetValue().Trim().ToStdString();
+    if (outName.empty()) return -1;
+    return typeBox->GetSelection();   // 0=Folder, 1=Project
+}
+
+void ProjectPanel::CreateFolderAt(const std::string& parentPath,
+                                  const std::string& name) {
+    if (!validProjectName(name)) {
         wxMessageBox("Use a folder-safe name without slashes.",
                      "Invalid Name", wxOK | wxICON_WARNING, this);
         return;
     }
-
-    fs::path newDir = fs::path(parentPath) / folderName;
+    fs::path newDir = fs::path(parentPath) / name;
     if (fs::exists(newDir)) {
         wxMessageBox("A folder with that name already exists.",
-                     "New Subfolder", wxOK | wxICON_WARNING, this);
+                     "New", wxOK | wxICON_WARNING, this);
         return;
     }
-
     std::error_code ec;
     fs::create_directory(newDir, ec);
     if (ec) {
         wxMessageBox(wxString::FromUTF8("Could not create folder: " + ec.message()),
-                     "New Subfolder", wxOK | wxICON_ERROR, this);
+                     "New", wxOK | wxICON_ERROR, this);
         return;
     }
-
-    // Keep the parent expanded so the new folder is immediately visible.
     m_expandedPaths.insert(parentPath);
     Logger::get().log("Created subfolder: " + newDir.string());
     RefreshProjects();
 }
 
-void ProjectPanel::OnNewProject(wxCommandEvent&) {
+void ProjectPanel::CreateProjectAt(const std::string& parentPath,
+                                   const std::string& name) {
+    if (!validProjectName(name)) {
+        wxMessageBox("Use a folder-safe name without slashes.",
+                     "Invalid Name", wxOK | wxICON_WARNING, this);
+        return;
+    }
+    std::string projectPath = (fs::path(parentPath) / name).string();
+    if (fs::exists(projectPath)) {
+        wxMessageBox("A folder with that name already exists.",
+                     "New", wxOK | wxICON_WARNING, this);
+        return;
+    }
+    if (!InitProject(projectPath)) {
+        wxMessageBox("Could not create the project.", "New",
+                     wxOK | wxICON_ERROR, this);
+        return;
+    }
+    m_expandedPaths.insert(parentPath);
+    Logger::get().log("Created project: " + projectPath);
+    RefreshProjects();
+}
+
+void ProjectPanel::OnNewBtn(wxCommandEvent&) {
+    // Parent path: selected folder → inside it. Else → root projects folder.
     std::string parentPath;
     TreeNode* tn = SelectedNode();
     if (tn && tn->kind == TreeNode::Kind::Folder) {
@@ -675,45 +809,130 @@ void ProjectPanel::OnNewProject(wxCommandEvent&) {
         AppConfig cfg = LoadConfig();
         parentPath = cfg.defaultFolder;
     }
-
     if (parentPath.empty()) {
-        wxMessageBox("No projects folder is set.", "New Project",
+        wxMessageBox("No projects folder is set.", "New",
                      wxOK | wxICON_WARNING, this);
         return;
     }
 
-    wxString entered = wxGetTextFromUser(
-        wxString::FromUTF8("Enter a name for the new project.\nWill be created in: " + parentPath),
-        "New Project", wxEmptyString, this).Trim();
-    if (entered.empty()) return;
+    std::string name;
+    int kind = ShowNewItemDialog(this, parentPath, name);
+    if (kind < 0) return;
 
-    std::string projectName = entered.ToStdString();
-    if (!validProjectName(projectName)) {
-        wxMessageBox("Use a folder-safe name without slashes.",
-                     "Invalid Name", wxOK | wxICON_WARNING, this);
+    if (kind == 1) CreateProjectAt(parentPath, name);
+    else           CreateFolderAt(parentPath, name);
+}
+
+void ProjectPanel::OnDeleteBtn(wxCommandEvent&) {
+    TreeNode* tn = SelectedNode();
+    if (!tn) return;
+
+    // Never delete the projects root itself.
+    AppConfig cfg = LoadConfig();
+    if (tn->path == cfg.defaultFolder) {
+        wxMessageBox("Refusing to delete the projects root folder.",
+                     "Delete", wxOK | wxICON_WARNING, this);
         return;
     }
 
-    std::string projectPath = (fs::path(parentPath) / projectName).string();
-    if (fs::exists(projectPath)) {
-        wxMessageBox("A folder with that name already exists.",
-                     "New Project", wxOK | wxICON_WARNING, this);
+    std::string kindWord = (tn->kind == TreeNode::Kind::Project)
+                           ? "project" : "folder";
+    wxString msg = wxString::FromUTF8(
+        "Move this " + kindWord + " to the Trash?\n\n" + tn->path +
+        "\n\nYou can restore it from the Trash if you change your mind.");
+    if (wxMessageBox(msg, "Delete", wxYES_NO | wxICON_QUESTION, this) != wxYES)
+        return;
+
+    std::string err;
+    if (!TrashPath(tn->path, err)) {
+        wxMessageBox(wxString::FromUTF8("Could not move to Trash: " + err),
+                     "Delete", wxOK | wxICON_ERROR, this);
         return;
     }
 
-    if (!InitProject(projectPath)) {
-        wxMessageBox("Could not create the project.", "New Project",
-                     wxOK | wxICON_ERROR, this);
-        return;
+    // If the deleted item was the currently active project, clear it.
+    AppState st = LoadAppState();
+    if (!st.currentProject.empty() && st.currentProject == tn->name) {
+        st.currentProject.clear();
+        SaveAppState(st);
     }
-
-    m_expandedPaths.insert(parentPath);
-    Logger::get().log("Created project: " + projectPath);
+    m_expandedPaths.erase(tn->path);
+    Logger::get().log("Trashed: " + tn->path);
     RefreshProjects();
 }
 
 void ProjectPanel::OnRefreshBtn(wxCommandEvent&) {
     RefreshProjects();
+}
+
+void ProjectPanel::OnKebabBtn(wxCommandEvent&) {
+    wxMenu menu;
+    menu.Append(ID_PP_MENU_REFRESH,     "Refresh");
+    menu.AppendSeparator();
+    menu.Append(ID_PP_MENU_SET_FOLDER,  "Set Projects Folder…");
+    PopupMenu(&menu);
+}
+
+void ProjectPanel::OnTreeItemMenu(wxTreeEvent& evt) {
+    // Select the item under the cursor so downstream handlers see it.
+    m_treeCtrl->SelectItem(evt.GetItem());
+    TreeNode* tn = SelectedNode();
+    if (!tn) return;
+
+    wxMenu menu;
+    if (tn->kind == TreeNode::Kind::Article) {
+        menu.Append(ID_PP_CTX_OPEN,          "Read");
+        menu.AppendSeparator();
+    } else if (tn->kind == TreeNode::Kind::Project) {
+        menu.Append(ID_PP_CTX_OPEN,          "Open");
+        menu.Append(ID_PP_CTX_NEW,           wxString::FromUTF8("New item inside…"));
+        menu.AppendSeparator();
+    } else {
+        menu.Append(ID_PP_CTX_INIT_PROJECT,  "Initialize as project");
+        menu.Append(ID_PP_CTX_NEW,           wxString::FromUTF8("New item inside…"));
+        menu.AppendSeparator();
+    }
+    menu.Append(ID_PP_CTX_RENAME,  "Rename…");
+    menu.Append(ID_PP_CTX_DELETE,  wxString::FromUTF8("Delete…"));
+    menu.AppendSeparator();
+    menu.Append(ID_PP_CTX_REVEAL,  "Reveal in Finder");
+    PopupMenu(&menu);
+}
+
+void ProjectPanel::OnCtxInitProject(wxCommandEvent&) {
+    TreeNode* tn = SelectedNode();
+    if (!tn || tn->kind != TreeNode::Kind::Folder) return;
+    if (ProjectExists(tn->path)) return;
+
+    wxString msg = wxString::FromUTF8(
+        "Initialize this folder as a project?\n\n" + tn->path);
+    if (wxMessageBox(msg, "Initialize as project",
+                     wxYES_NO | wxICON_QUESTION, this) != wxYES)
+        return;
+
+    if (!InitProject(tn->path)) {
+        wxMessageBox("Could not initialise the project.", "Initialize",
+                     wxOK | wxICON_ERROR, this);
+        return;
+    }
+    Logger::get().log("Initialized as project: " + tn->path);
+    RefreshProjects();
+}
+
+void ProjectPanel::OnCtxReveal(wxCommandEvent&) {
+    TreeNode* tn = SelectedNode();
+    if (!tn) return;
+    // Shell-escape the path (single-quote wrapping with embedded ' -> '\'').
+    std::string p = tn->path;
+    std::string escaped;
+    escaped.reserve(p.size() + 2);
+    escaped += '\'';
+    for (char c : p) {
+        if (c == '\'') escaped += "'\\''";
+        else           escaped += c;
+    }
+    escaped += '\'';
+    wxExecute(wxString::FromUTF8("open -R " + escaped), wxEXEC_ASYNC);
 }
 
 void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
@@ -778,7 +997,20 @@ void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
 
 void ProjectPanel::ActivateSelectedProject() {
     TreeNode* tn = SelectedNode();
-    if (!tn || tn->kind != TreeNode::Kind::Project) return;
+    if (!tn) return;
+
+    // Article leaf: record the owning project as current, then open the file.
+    if (tn->kind == TreeNode::Kind::Article) {
+        AppState st = LoadAppState();
+        st.currentProject = tn->parentProjectName;
+        SaveAppState(st);
+        RecordOpen(tn->parentProjectPath);
+        Logger::get().log("Opening article: " + tn->path);
+        if (m_openCallback) m_openCallback(tn->path);
+        return;
+    }
+
+    if (tn->kind != TreeNode::Kind::Project) return;
 
     std::string projectName = tn->name;
     std::string projectPath = tn->path;
@@ -791,23 +1023,12 @@ void ProjectPanel::ActivateSelectedProject() {
     RecordOpen(projectPath);
 
     std::string fileToOpen;
-    {
-        std::error_code ec;
-        std::vector<std::string> mdFiles;
-        for (auto& entry : fs::directory_iterator(projectPath, ec)) {
-            if (entry.is_regular_file(ec) &&
-                entry.path().extension() == ".md" &&
-                entry.path().filename() != "context.md") {
-                mdFiles.push_back(entry.path().string());
-            }
-        }
-        std::sort(mdFiles.begin(), mdFiles.end());
-        if (!mdFiles.empty()) {
-            fileToOpen = mdFiles[0];
-        } else {
-            std::string claudePath = projectPath + "/context.md";
-            if (fs::exists(claudePath)) fileToOpen = claudePath;
-        }
+    auto articles = ListProjectArticles(projectPath);
+    if (!articles.empty()) {
+        fileToOpen = articles.front();
+    } else {
+        std::string claudePath = projectPath + "/context.md";
+        if (fs::exists(claudePath)) fileToOpen = claudePath;
     }
 
     if (!fileToOpen.empty()) {

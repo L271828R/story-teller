@@ -13,10 +13,12 @@
 // Data attached to every node in the project tree.
 // ---------------------------------------------------------------------------
 struct TreeNode : public wxTreeItemData {
-    enum class Kind { Folder, Project };
+    enum class Kind { Folder, Project, Article };
     Kind        kind;
-    std::string path;   // absolute filesystem path
-    std::string name;   // display name (folder or project name)
+    std::string path;              // absolute filesystem path (dir or .md file)
+    std::string name;              // display name
+    std::string parentProjectPath; // for Article: the owning project dir
+    std::string parentProjectName; // for Article: the owning project name
 };
 
 class ProjectPanel : public wxPanel {
@@ -49,10 +51,16 @@ private:
     void OnSortChanged(wxCommandEvent& evt);
     void OnActivateBtn(wxCommandEvent& evt);
     void OnRenameBtn(wxCommandEvent& evt);
-    void OnNewSubfolder(wxCommandEvent& evt);
-    void OnNewProject(wxCommandEvent& evt);
+    void OnNewBtn(wxCommandEvent& evt);
+    void OnDeleteBtn(wxCommandEvent& evt);
     void OnRefreshBtn(wxCommandEvent& evt);
     void OnSetFolderBtn(wxCommandEvent& evt);
+    void OnKebabBtn(wxCommandEvent& evt);
+
+    // Shared creation used by the New… dialog and (later) by "Initialize as
+    // project" on an existing folder.
+    void CreateFolderAt(const std::string& parentPath, const std::string& name);
+    void CreateProjectAt(const std::string& parentPath, const std::string& name);
 
     void OnTreeSelChanged(wxTreeEvent& evt);
     void OnTreeItemActivated(wxTreeEvent& evt);
@@ -60,6 +68,9 @@ private:
     void OnTreeCollapsing(wxTreeEvent& evt);
     void OnTreeBeginDrag(wxTreeEvent& evt);
     void OnTreeEndDrag(wxTreeEvent& evt);
+    void OnTreeItemMenu(wxTreeEvent& evt);
+    void OnCtxInitProject(wxCommandEvent& evt);
+    void OnCtxReveal(wxCommandEvent& evt);
 
     // ---- widgets ------------------------------------------------------------
     wxTextCtrl*   m_searchCtrl;
@@ -69,9 +80,9 @@ private:
     wxStaticText* m_statsLabel;
     wxButton*     m_activateBtn;
     wxButton*     m_renameBtn;
-    wxButton*     m_newSubfolderBtn;
-    wxButton*     m_newProjectBtn;
-    wxButton*     m_setFolderBtn;
+    wxButton*     m_newBtn;
+    wxButton*     m_deleteBtn;
+    wxButton*     m_kebabBtn;
 
     void ApplyTheme();
 
